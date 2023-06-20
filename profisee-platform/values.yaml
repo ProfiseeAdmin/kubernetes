@@ -3,6 +3,8 @@ sqlServer:
     databaseName: "$SQLDBNAME"
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
+ingress:
+    impervaHeaderId: ""
 profiseeRunTime:
     useLetsEncrypt: $USELETSENCRYPT
     adminAccount: "$ADMINACCOUNTNAME"

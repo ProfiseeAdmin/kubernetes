@@ -17,6 +17,17 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "5400"
     nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "5400"
+    nginx.ingress.kubernetes.io/server-snippet: |
+      set $block 0;
+      if ($http_x_imperva_id !~* "{{.Values.ingress.impervaHeaderId}}" ) {
+         set $block 1;
+      }
+      if ($uri == "/healthcheck" ) {
+         set $block 0;
+      }
+      if ($block == 1) {
+         return 403;
+      }
     {{- if .Values.profiseeRunTime.isPaaS }}
     nginx.ingress.kubernetes.io/rewrite-target: /$1
     {{- end }}
