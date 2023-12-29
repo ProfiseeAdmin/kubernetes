@@ -39,7 +39,7 @@ clusterNode:
 image:
     registry: "profisee.azurecr.io"
     repository: "profiseeplatform"
-    tag: "2021r3.0.saas"
+    tag: "{ProfiseeVersion}"
     auth: | #Leave for now but will be supplied per customer in near future
         {
            "auths":{
