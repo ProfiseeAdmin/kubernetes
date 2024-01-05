@@ -1,4 +1,8 @@
 {{- if not .Values.profiseeRunTime.isPaaS }}
+{{- $secondary1 := "cus" }}
+{{- $secondary2 := "wcus"}}
+{{- $secondary3 := "uks"}}
+{{- if not (or (contains $secondary1 .Values.sqlServer.name) (contains $secondary2 .Values.sqlServer.name) (contains $secondary3 .Values.sqlServer.name) ) }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -11,7 +15,7 @@ spec:
       ttlSecondsAfterFinished: 1200
       template:
         spec:
-          nodeSelector:           
+          nodeSelector:
           {{ if hasSuffix "win22" .Values.image.tag }}
             "kubernetes.azure.com/os-sku": Windows2022
             "maintenance": sqlcronjobwin22
