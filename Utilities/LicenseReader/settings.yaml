@@ -13,7 +13,7 @@ profiseeRunTime:
         logonType: "NewCredentials"
         location: "$FILEREPOURL"
         fileShareName: "$FILESHARENAME"
-    externalDnsUrl: "$EXTERNALDNSURL"
+    externalDnsUrl: "https://$EXTERNALDNSNAME"
     externalDnsName: "$EXTERNALDNSNAME"
     webAppName: "$WEBAPPNAME"
     deployIngressRule: true
