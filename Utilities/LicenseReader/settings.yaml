@@ -4,7 +4,7 @@ sqlServer:
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
 profiseeRunTime:
-    useLetsEncrypt: false
+    useLetsEncrypt: "$USELETSENCRYPT"
     adminAccount: "$ADMINACCOUNTNAME"
     fileRepository:
         accountName: "$FILEREPOACCOUNTNAME"
@@ -17,7 +17,7 @@ profiseeRunTime:
     externalDnsName: "$EXTERNALDNSNAME"
     webAppName: "$WEBAPPNAME"
     deployIngressRule: true
-    isPaaS: false
+    isPaaS: true
     oidc:
         name: "OIDCNAME"
         authority: "$OIDCURL"
