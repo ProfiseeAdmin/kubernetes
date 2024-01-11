@@ -19,7 +19,7 @@ profiseeRunTime:
     deployIngressRule: true
     isPaaS: true
     oidc:
-        name: "OIDCNAME"
+        name: "$OIDCNAME"
         authority: "$OIDCURL"
         clientId: "$CLIENTID"
         clientSecret: "$OIDCCLIENTSECRET"
@@ -52,7 +52,7 @@ image:
               }
            }
         }
-licenseFileData: ""Jesv1ueXFYK379yGjPZbdzPo91qG0bBcJX53uRZrxucZh0"
+licenseFileData: "Helloworld"
 preInitScriptData: "$preInitScriptData"
 postInitScriptData: "$postInitScriptData"
 oidcFileData: "$OIDCFileData"
