@@ -53,8 +53,8 @@ image:
            }
         }
 licenseFileData: "Helloworld"
-preInitScriptData: "$preInitScriptData"
-postInitScriptData: "$postInitScriptData"
+preInitScriptData: $preInitScriptData
+postInitScriptData: $postInitScriptData
 oidcFileData: |
     $OIDCFileData
 tlsCert: |
