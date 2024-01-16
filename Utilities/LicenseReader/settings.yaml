@@ -56,8 +56,7 @@ licenseFileData: "Jesv1PJpgL7QwnBUMcgmvkt24EF0Qlpw4pqBHQORLmqtknfy3c5Wih26NpWaZ3
 preInitScriptData: $preInitScriptData
 postInitScriptData: $postInitScriptData
 oidcFileData: |
-    {
-    }
+    $OIDCFileData
 tlsCert: |
     $TLSCERT
 tlsKey: |
