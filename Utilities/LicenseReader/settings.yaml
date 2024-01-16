@@ -56,7 +56,8 @@ licenseFileData: "Helloworld"
 preInitScriptData: $preInitScriptData
 postInitScriptData: $postInitScriptData
 oidcFileData: |
-    $OIDCFileData
+    {
+    }
 tlsCert: |
     $TLSCERT
 tlsKey: |
