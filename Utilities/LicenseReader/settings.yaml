@@ -55,7 +55,8 @@ image:
 licenseFileData: "Helloworld"
 preInitScriptData: "$preInitScriptData"
 postInitScriptData: "$postInitScriptData"
-oidcFileData: "$OIDCFileData"
+oidcFileData: | 
+    $OIDCFileData
 tlsCert: |
     $TLSCERT
 tlsKey: |
