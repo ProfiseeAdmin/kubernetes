@@ -4,7 +4,7 @@ sqlServer:
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
 profiseeRunTime:
-    useLetsEncrypt: "$USELETSENCRYPT"
+    useLetsEncrypt: false
     adminAccount: "$ADMINACCOUNTNAME"
     fileRepository:
         accountName: "$FILEREPOACCOUNTNAME"
