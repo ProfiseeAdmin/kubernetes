@@ -22,7 +22,7 @@ spec:
       terminationGracePeriodSeconds: 60
       serviceAccountName: profiseeserviceaccount
       automountServiceAccountToken: false
-    {{- if gt (.Values.profiseeRunTime.clusterNodeCount)|int 1 }}
+    {{- if (gt (int .Values.profiseeRunTime.clusterNodeCount) 1) }}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
