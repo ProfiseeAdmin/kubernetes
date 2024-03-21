@@ -33,8 +33,8 @@ printenv;
 
 #Get AKS credentials, this allows us to use kubectl commands, if needed.
 az aks get-credentials --resource-group $RESOURCEGROUPNAME --name $CLUSTERNAME --overwrite-existing;
-az extension add --name aks-preview
-az extension update --name aks-preview
+# az extension add --name aks-preview
+# az extension update --name aks-preview
 # az feature register --namespace "Microsoft.ContainerService" --name "EnableWorkloadIdentityPreview"
 # az feature show --namespace "Microsoft.ContainerService" --name "EnableWorkloadIdentityPreview"
 # az provider register --namespace Microsoft.ContainerService
