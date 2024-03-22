@@ -178,7 +178,7 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	    #     echo $"Will sleep for 30 seconds to allow clean uninstall of AAD Pod Identity."
 	    #     sleep 30;
         # fi
-    az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
+    # az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
 	OIDC_ISSUER="$(az aks show -n $CLUSTERNAME -g $RESOURCEGROUPNAME --query "oidcIssuerProfile.issuerUrl" -o tsv)"
 	# helm repo add azure-workload-identity https://azure.github.io/azure-workload-identity/charts
 	# helm install -n profisee v1.0.0 azure-workload-identity/workload-identity-webhook --set azureTenantID=$TENANTID

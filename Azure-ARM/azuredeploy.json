@@ -504,6 +504,9 @@
           "properties": {
               "kubernetesVersion": "[variables('KubernetesVersion')]",
               "dnsPrefix": "profisee",
+              "oidcIssuerProfile": {
+                "enabled": true
+              },
               "agentPoolProfiles": [
                   {
                       "name": "nplinux1",
@@ -543,6 +546,11 @@
                   "outboundType": "loadBalancer",
                   "serviceCidr": "[variables('KubernetesServiceCidr')]",
                   "dnsServiceIP": "[variables('KubernetesDNSServiceIP')]"
+              },
+              "securityProfile": {
+                "workloadIdentity": {
+                  "enabled": true
+                }
               }
           },
           "identity": {
