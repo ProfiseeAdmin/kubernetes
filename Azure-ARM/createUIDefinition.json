@@ -97,7 +97,7 @@
             "name": "ProfiseeVersion",
             "type": "Microsoft.Common.DropDown",
             "label": "Profisee version",
-            "defaultValue": "2023R1.0",
+            "defaultValue": "2023R2.0-win22",
             "toolTip": "Which release of the Profisee Platform to deploy.",
             "constraints": {
               "required": true,
@@ -111,61 +111,16 @@
                   "value": "profiseeplatform:2022r2.0"
                 },
                 {
-                  "label": "2021r2.0",
-                  "value": "profiseeplatform:2021r2.0"
-                },
-                {
                   "label": "2023R1.0",
                   "value": "profiseeplatform:2023r1.0"
                 },
                 {
-                  "label": "2023R2.preview",
-                  "value": "profiseeplatform:2023r2.preview"
+                  "label": "2023R2.0-win19",
+                  "value": "profiseeplatform:2023r2.0-win19"
                 },
                 {
-                  "label": "2023R2.preview-win19",
-                  "value": "profiseeplatformdev:2023r2.preview-win19"
-                },
-                {
-                  "label": "2023R2.preview-win22",
-                  "value": "profiseeplatformdev:2023r2.preview-win22"
-                },
-                {
-                  "label": "win19sa.preview",
-                  "value": "profiseeplatformdev:win19sa.preview-win19"
-                },
-                {
-                  "label": "2023R2.preview-matching",
-                  "value": "profiseeplatformdev:2023r2.preview-matching"
-                },
-                {
-                  "label": "2023R3.preview-win19",
-                  "value": "profiseeplatformdev:2023r3.preview-win19"
-                },
-                {
-                  "label": "2023R3.preview-win22",
-                  "value": "profiseeplatformdev:2023r3.preview-win22"
-                }
-              ]
-            },
-            "visible": true
-          },
-          {
-            "name": "WindowsNodeVersion",
-            "type": "Microsoft.Common.DropDown",
-            "label": "AKS Windows node OS edition",
-            "defaultValue": "Windows 2019",
-            "toolTip": "As of Profisee Version 2023r2.0 Profisee can run on Server 2022 nodes.",
-            "constraints": {
-              "required": true,
-              "allowedValues": [
-                {
-                  "label": "Windows 2019",
-                  "value": "Windows2019"
-                },
-                {
-                  "label": "Windows 2022",
-                  "value": "Windows2022"
+                  "label": "2023R2.0-win22",
+                  "value": "profiseeplatform:2023r2.0-win22"
                 }
               ]
             },
@@ -312,7 +267,7 @@
               ],
               "required": true
             },
-            "visible": "[or(equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2022r1.0'),equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2021r2.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2022r2.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r1.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r2.preview'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r2.preview-win19'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r2.preview-win22'))]"
+            "visible": "[or(equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2022r1.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2022r2.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r1.0'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r2.0-win19'), equals(steps('profisee').ProfiseeVersion, 'profiseeplatform:2023r2.0-win22'))]"
           },
           {
             "name": "PurviewAccountName",
