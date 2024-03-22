@@ -983,6 +983,7 @@
       "ProfiseeLicense": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('profisee').ProfiseeLicenseSecret, steps('profisee').ProfiseeLicense)]",
       "ActiveDirectoryCreateApp": "[steps('profisee').ActiveDirectoryCreateApp]",
       "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId.ActiveDirectoryClientId]",
+      "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win22'), 'Windows2022', 'Windows2019')]",
       "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret.ActiveDirectoryClientSecret]",
       "KubernetesClusterName": "[steps('kubernetes').KubernetesClusterName]",
       "KubernetesVersion": "[steps('kubernetes').KubernetesVersion]",
