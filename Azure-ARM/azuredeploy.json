@@ -507,13 +507,18 @@
               "oidcIssuerProfile": {
                 "enabled": true
               },
+              "securityProfile": {
+                "workloadIdentity": {
+                  "enabled": true
+                }
+              },                
               "agentPoolProfiles": [
                   {
                       "name": "nplinux1",
                       "count": "[variables('KubernetesLinuxNodeCount')]",
                       "vmSize": "[variables('KubernetesLinuxNodeSize')]",
                       "osDiskSizeGB": 100,
-                      "maxPods": 50,
+                      "maxPods": 45,
                       "type": "VirtualMachineScaleSets",
                       "orchestratorVersion": "[variables('KubernetesVersion')]",
                       "enableNodePublicIP": false,
@@ -528,7 +533,7 @@
                       "count": "[variables('KubernetesWindowsNodeCount')]",
                       "vmSize": "[variables('KubernetesWindowsNodeSize')]",
                       "osDiskSizeGB": 100,
-                      "maxPods": 50,
+                      "maxPods": 15,
                       "type": "VirtualMachineScaleSets",
                       "orchestratorVersion": "[variables('KubernetesVersion')]",
                       "enableNodePublicIP": false,
@@ -546,12 +551,7 @@
                   "outboundType": "loadBalancer",
                   "serviceCidr": "[variables('KubernetesServiceCidr')]",
                   "dnsServiceIP": "[variables('KubernetesDNSServiceIP')]"
-              },
-              "securityProfile": {
-                "workloadIdentity": {
-                  "enabled": true
-                }
-              }
+              }              
           },
           "identity": {
               "type": "SystemAssigned"

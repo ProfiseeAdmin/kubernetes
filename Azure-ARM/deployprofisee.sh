@@ -39,17 +39,6 @@ az aks get-credentials --resource-group $RESOURCEGROUPNAME --name $CLUSTERNAME -
 # az feature show --namespace "Microsoft.ContainerService" --name "EnableWorkloadIdentityPreview"
 # az provider register --namespace Microsoft.ContainerService
 
-#Disable built-in AKS file driver, will install further down.
-# az aks update -n $CLUSTERNAME -g $RESOURCEGROUPNAME --disable-file-driver --yes
-
-#Enable Defender Profile
-# echo $"EnableDefenderProfile is $ENABLEDEFENDERPROFILE";
-# echo $"Resourcegroup is $RESOURCEGROUPNAME";
-# echo $"clustername is $CLUSTERNAME";
-# if [ "$ENABLEDEFENDERPROFILE" = "True" ]; then
-# 	az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-defender
-# fi;
-
 #Install dotnet core.
 echo $"Installation of dotnet core started.";
 curl -fsSL -o dotnet-install.sh https://dot.net/v1/dotnet-install.sh
@@ -58,19 +47,6 @@ chmod 755 ./dotnet-install.sh
 #Install dotnet.
 ./dotnet-install.sh -c LTS
 echo $"Installation of dotnet core finished.";
-
-#Downloadind and extracting Proisee license reader.
-# echo $"Download and extraction of Profisee license reader started.";
-# curl -fsSL -o LicenseReader.tar.001 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.001"
-# curl -fsSL -o LicenseReader.tar.002 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.002"
-# curl -fsSL -o LicenseReader.tar.003 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.003"
-# curl -fsSL -o LicenseReader.tar.004 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.004"
-# cat LicenseReader.tar.* | tar xf -
-# rm LicenseReader.tar.001
-# rm LicenseReader.tar.002
-# rm LicenseReader.tar.003
-# rm LicenseReader.tar.004
-#echo $"Download and extraction of Profisee license reader finished.";
 
 #Downloadind and extracting Proisee license reader.
 echo $"Download of Profisee license reader started.";
@@ -161,30 +137,39 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	        echo $"Will sleep for 30 seconds to allow clean uninstall of Key Vault CSI driver."
 	        sleep 30;
         fi
+		kvcsipresentinkubesystem=$(helm list -n kube-system -f csi-secrets-store-provider-azure -o table --short)
+        if [ "$kvcsipresentinkubesystem" = "csi-secrets-store-provider-azure" ]; then
+	        helm uninstall -n kube-system csi-secrets-store-provider-azure;
+	        echo $"Will sleep for 30 seconds to allow clean uninstall of Key Vault CSI driver."
+	        sleep 30;
+        fi
 
-	#https://github.com/Azure/secrets-store-csi-driver-provider-azure/releases/tag/0.0.16
-	#The behavior changed so now you have to enable the secrets-store-csi-driver.syncSecret.enabled=true
 	#We are not but if this is to run on a windows node, then you use this --set windows.enabled=true --set secrets-store-csi-driver.windows.enabled=true
-	helm install -n profisee csi-secrets-store-provider-azure csi-secrets-store-provider-azure/csi-secrets-store-provider-azure --set secrets-store-csi-driver.syncSecret.enabled=true
+	#Recommendation is to have CSI installed in kube-system as per https://azure.github.io/secrets-store-csi-driver-provider-azure/docs/getting-started/installation/
+	helm install -n kube-system csi-secrets-store-provider-azure csi-secrets-store-provider-azure/csi-secrets-store-provider-azure --set secrets-store-csi-driver.syncSecret.enabled=true
 	echo $"Installation of Key Vault Container Storage Interface (CSI) driver finished."
 
-
-	#Install AAD pod identity into AKS.
-	echo $"Installation of Key Vault Azure Active Directory Pod Identity driver started. If present, we uninstall and reinstall it."
-	#If AAD Pod Identity is present, uninstall it.
-        # workloadpodpresent=$(kubectl get pods -A | grep azure-wi-webhook-controller)
-        # if [ "$workloadpodpresent" = "workload-identity" ]; then
-	    #     az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-workload-identity false
-	    #     echo $"Will sleep for 30 seconds to allow clean uninstall of AAD Pod Identity."
-	    #     sleep 30;
-        # fi
-    # az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
+	#Install Azure Workload Identity driver.
+	echo $"Installation of Key Vault Azure Active Directory Workload Identity driver started."
+    #az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
 	OIDC_ISSUER="$(az aks show -n $CLUSTERNAME -g $RESOURCEGROUPNAME --query "oidcIssuerProfile.issuerUrl" -o tsv)"
-	# helm repo add azure-workload-identity https://azure.github.io/azure-workload-identity/charts
-	# helm install -n profisee v1.0.0 azure-workload-identity/workload-identity-webhook --set azureTenantID=$TENANTID
-	echo $"Installation of Key Vault Azure Active Directory workload Identity driver finished."
+	echo $"Installation of Key Vault Azure Active Directory Workload Identity driver finished."
 
-	#Assign AAD roles to the AKS AgentPool Managed Identity. The Pod identity communicates with the AgentPool MI, which in turn communicates with the Key Vault specific Managed Identity.
+	#Uninstall AAD pod identity from AKS.
+	echo $"Uninstallation of Key Vault Azure Active Directory Pod Identity driver started. If present, we uninstall it."
+	#If AAD Pod Identity is present, uninstall it.
+        aadpodpresent=$(helm list -n profisee -f pod-identity -o table --short)
+        if [ "$aadpodpresent" = "pod-identity" ]; then
+	        helm uninstall -n profisee pod-identity;
+	        echo $"Will sleep for 30 seconds to allow clean uninstall of AAD Pod Identity."
+	        sleep 30;
+        fi
+	#AAD Pod identity is no longed required, replaced by Workload Identity.
+	#helm repo add aad-pod-identity https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts
+	#helm install -n profisee pod-identity aad-pod-identity/aad-pod-identity
+	#echo $"Installation of Key Vault Azure Active Directory Pod Identity driver finished."
+
+	#Assign AAD roles to the AKS AgentPool Managed Identity.
 	echo $"AKS Managed Identity configuration for Key Vault access started."
 
 	echo $"AKS AgentPool Managed Identity configuration for Key Vault access step 1 started."
@@ -200,10 +185,12 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	echo $"Key Vault Specific Managed Identity configuration for Key Vault access step 2 started."
 	identityName="AKSKeyVaultUser"
 	akskvidentityClientId=$(az identity create -g $AKSINFRARESOURCEGROUPNAME -n $identityName --query 'clientId' -o tsv);
+
+	#Create Federated Credential and assign it to the Profisee Service Account
 	az identity federated-credential create --name ProfiseefederatedId --identity-name $identityName  --resource-group $AKSINFRARESOURCEGROUPNAME --issuer $OIDC_ISSUER --subject system:serviceaccount:profisee:profiseeserviceaccount --audience api://AzureADTokenExchange
 	akskvidentityClientResourceId=$(az identity show -g $AKSINFRARESOURCEGROUPNAME -n $identityName --query 'id' -o tsv)
 	principalId=$(az identity show -g $AKSINFRARESOURCEGROUPNAME -n $identityName --query 'principalId' -o tsv)
-	echo $"Key VAult Specific Managed Identity configuration for Key Vault access step 2 finished."
+	echo $"Key Vault Specific Managed Identity configuration for Key Vault access step 2 finished."
 
 	echo $"Key Vault Specific Managed Identity configuration for KV access step 3 started."
 	echo "Sleeping for 60 seconds to wait for MI to be ready"
@@ -248,7 +235,6 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	fi
 
 fi
-
 
 
 #Installation of nginx
@@ -415,7 +401,7 @@ if [ "$UPDATEAAD" = "Yes" ]; then
 		az ad app credential delete --id $CLIENTID --key-id $appregsecretid
 		echo $"Application registration secret ID $appregsecretid has been deleted."
 		echo "Will sleep for 10 seconds to avoid request concurrency errors."
-		sleep 10		
+		sleep 10
 		echo "Creating new application registration secret now."
 		CLIENTSECRET=$(az ad app credential reset --id $CLIENTID --append --display-name "Profisee env in cluster $CLUSTERNAME" --years 2 --query "password" -o tsv)
 	else
@@ -473,7 +459,7 @@ echo "The variables will now be set in the Settings.yaml file"
 FILEREPOUSERNAME="Azure\\\\\\\\${STORAGEACCOUNTNAME}"
 FILEREPOURL="\\\\\\\\\\\\\\\\${STORAGEACCOUNTNAME}.file.core.windows.net\\\\\\\\${STORAGEACCOUNTFILESHARENAME}"
 
-#PROFISEEVERSION looks like this profiseeplatform:2022R2.0
+#PROFISEEVERSION looks like this profiseeplatform:2023R1.0
 #The repository name is profiseeplatform, it is everything to the left of the colon sign :
 #The label is everything to the right of the :
 
@@ -483,20 +469,30 @@ IFS=':' read -r -a repostring <<< "$PROFISEEVERSION"
 ACRREPONAME="${repostring[0],,}";
 ACRREPOLABEL="${repostring[1],,}"
 
-
 #Installation of Azure File CSI Driver
 WINDOWS_NODE_VERSION="$(az aks show -n $CLUSTERNAME -g $RESOURCEGROUPNAME --query "agentPoolProfiles[1].osSku" -o tsv)"
 if [ "$WINDOWS_NODE_VERSION" = "Windows2019" ]; then
+	#Disable built-in AKS file driver, will install further down.
+	echo $"Disabling AKS Built-in CSI Driver to install Azure File CSI."
 	az aks update -n $CLUSTERNAME -g $RESOURCEGROUPNAME --disable-file-driver --yes
-	echo $"Installation of Azure File CSI Driver started.";
+	echo $"Installation of Azure File CSI Driver started. If present, we uninstall it first.";
+	azfilecsipresent=$(helm list -n kube-system -f azurefile-csi-driver -o table --short)
+	if [ "$azfilecsipresent" = "azurefile-csi-driver" ]; then
+		helm -n kube-system uninstall azurefile-csi-driver;
+		echo "Will sleep for 30 seconds to allow clean uninstall."
+		sleep 30;
+	fi
 	echo $"Adding Azure File CSI Driver repo."
 	helm repo add azurefile-csi-driver https://raw.githubusercontent.com/kubernetes-sigs/azurefile-csi-driver/master/charts
+	helm repo update azurefile-csi-driver
+	#Controller Replicas MUST be 2 in Prod, okay to be 1 in Dev (i.e. do NOT add --set controller.replica=1 in Prod). This is dependent on number of available Linux nodes in the nodepool. In Prod, it is minimum of 2, Dev is 1.
 	helm install azurefile-csi-driver azurefile-csi-driver/azurefile-csi-driver --namespace kube-system --set controller.replicas=1
 	echo $"Azure File CSI Driver installation finished."
 fi
 
+
 #Get the vCPU and RAM so we can change the stateful set CPU and RAM limits on the fly.
-# echo "Let's see how many vCPUs and how much RAM we can allocate to Profisee's pod on the Windows node size you've selected."
+echo "Let's see how many vCPUs and how much RAM we can allocate to Profisee's pod on the Windows node size you've selected."
 findwinnodename=$(kubectl get nodes -l kubernetes.io/os=windows -o 'jsonpath={.items[0].metadata.name}')
 findallocatablecpu=$(kubectl get nodes $findwinnodename -o 'jsonpath={.status.allocatable.cpu}')
 findallocatablememory=$(kubectl get nodes $findwinnodename -o 'jsonpath={.status.allocatable.memory}')
@@ -515,6 +511,7 @@ echo $"The safe RAM value to assign to Profisee pod is $saferamvalueinkibibytes.
 # echo $"Profisee's stateful set has been patched to use $safecpuvalueinmilicores for CPU."
 # kubectl patch statefulsets -n profisee profisee --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/resources/limits/memory", "value":'"$saferamvalueinkibibytes"'}]'
 # echo $"Profisee's stateful set has been patched to use $saferamvalueinkibibytes for RAM."
+#settings DNSName value to custom coredns-configmap
 curl -fsSL -o coredns-custom.yaml "$REPOURL/Azure-ARM/coredns-custom.yaml";
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' coredns-custom.yaml
 
@@ -545,7 +542,6 @@ sed -i -e 's/$PURVIEWCLIENTSECRET/'"$PURVIEWCLIENTSECRET"'/g' Settings.yaml
 sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
-sed -i -e 's/$Nodename/'"$findwinnodename"'/g' Settings.yaml
 if [ "$USEKEYVAULT" = "Yes" ]; then
 	sed -i -e 's/$USEKEYVAULT/'true'/g' Settings.yaml
 
@@ -598,8 +594,15 @@ fi
 #Adding Settings.yaml as a secret generated only from the initial deployment of Profisee. Future updates, such as license changes via the profisee-license secret, or SQL credentials updates via the profisee-sql-password secret, will NOT be reflected in this secret. Proceed with caution!
 kubectl delete secret profisee-settings -n profisee --ignore-not-found
 kubectl create secret generic profisee-settings -n profisee --from-file=Settings.yaml
+
+#Replacing Coredns with custom coredns config map
 kubectl replace -f ./coredns-custom.yaml
 
+#Adding this only in dev environment so SuperAdmin can edit the app registration values. Please do not implement this in Prod
+# ObjectId="$(az ad user show --id $ADMINACCOUNTNAME --query id -o tsv)"
+# echo $"ObjectId of ADMIN is $ObjectId";
+# az ad app owner add --id $CLIENTID --owner-object-id $ObjectId
+#################################################################
 
 #################################Install Profisee Start #######################################
 echo "Installation of Profisee platform started $(date +"%Y-%m-%d %T")";
@@ -653,8 +656,11 @@ result="{\"Result\":[\
 echo $result
 kubectl delete secret profisee-deploymentlog -n profisee --ignore-not-found
 kubectl create secret generic profisee-deploymentlog -n profisee --from-file=$logfile
+
+#Change Authentication context: disable local accounts, Enabled Azure AD with Azure RBAC and assign the Azure Kubernetes Service RBAC Cluster Admin role to the Profisee Super Admin account.
 echo $"AuthenticationType is $AUTHENTICATIONTYPE";
 echo $"Resourcegroup is $RESOURCEGROUPNAME";
+echo $"WindowsNodeVersion is $WINDOWSNODEVERSION";
 echo $"clustername is $CLUSTERNAME";
 if [ "$AUTHENTICATIONTYPE" = "AzureRBAC" ]; then
 	az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-aad --enable-azure-rbac --disable-local-accounts

@@ -55,7 +55,6 @@ image:
 licenseFileData: $LICENSEDATA
 preInitScriptData: Cg==
 postInitScriptData: Cg==
-Node: $Nodename
 oidcFileData: |
     {
     }

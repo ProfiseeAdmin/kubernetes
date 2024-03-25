@@ -12,7 +12,7 @@ spec:
     metadata:
       labels:
         app: profisee-keyvault
-        # aadpodidbinding: azure-pod-identity-binding-selector
+        #aadpodidbinding: azure-pod-identity-binding-selector
     spec:
       terminationGracePeriodSeconds: 60
       nodeSelector:

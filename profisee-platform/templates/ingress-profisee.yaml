@@ -5,18 +5,27 @@ metadata:
   name: profisee-ingress
   annotations:
     kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/client-header-buffer-size: "512k"
+    #kubernetes.io/ingress.class: azure/application-gateway
     nginx.ingress.kubernetes.io/client_body_buffer_size: "512k"
+    nginx.ingress.kubernetes.io/client-header-buffer-size: "512k"
     nginx.ingress.kubernetes.io/large-client-header-buffers: "32 512k"
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "512k"
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-buffers: "32 512k"
-    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "512k"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "5400"
-    nginx.ingress.kubernetes.io/proxy-next-upstream: "off"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "5400"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "5400"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "512k"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "512k"  
+    # kubernetes.io/ingress.class: nginx
+    # nginx.ingress.kubernetes.io/client-header-buffer-size: "512k"
+    # nginx.ingress.kubernetes.io/client_body_buffer_size: "512k"
+    # nginx.ingress.kubernetes.io/large-client-header-buffers: "32 512k"
+    # nginx.ingress.kubernetes.io/proxy-buffer-size: "512k"
+    # nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # nginx.ingress.kubernetes.io/proxy-buffers: "32 512k"
+    # nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "512k"
+    # nginx.ingress.kubernetes.io/proxy-connect-timeout: "5400"
+    # nginx.ingress.kubernetes.io/proxy-next-upstream: "off"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "5400"
+    # nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "5400"
     # nginx.ingress.kubernetes.io/server-snippet: |
     #   set $block 0;
     #   if ($http_x_imperva_id !~* "{{.Values.ingress.impervaHeaderId}}" ) {
@@ -37,6 +46,7 @@ metadata:
     {{- end }}
 
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
     - {{.Values.profiseeRunTime.externalDnsName}}
