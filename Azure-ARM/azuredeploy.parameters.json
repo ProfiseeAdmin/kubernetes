@@ -143,7 +143,10 @@
         },    
         "AuthenticationType":{
             "value": ""
-        }
+        },
+        "InfraAdminAccount":{
+            "value": ""
+        }         
     }
 }
 

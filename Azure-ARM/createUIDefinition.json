@@ -926,6 +926,20 @@
             "visible": "[equals(steps('networking').DNSUpdate,'Yes')]"
           },
           {
+            "name": "InfraAdminAccount",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Certificate Expirations User",
+            "defaultValue": "",
+            "placeholder": "first.last@company.com",
+            "toolTip": "Please specify an email address for the user, or group, that should receive email notifications for certificate expiration.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[not(equals(steps('networking').HttpsConfigure, 'Yes'))]"
+          },          
+          {
             "name": "UserDefinedHTTPS",
             "type": "Microsoft.Common.Section",
             "label": "User provided TLS certificate",
