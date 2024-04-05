@@ -4,8 +4,9 @@ sqlServer:
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
 profiseeRunTime:
-    useLetsEncrypt: false
+    useLetsEncrypt: $USELETSENCRYPT
     adminAccount: "$ADMINACCOUNTNAME"
+    InfraAdminAccount: "$INFRAADMINACCOUNT"
     fileRepository:
         accountName: "$FILEREPOACCOUNTNAME"
         userName: "$FILEREPOUSERNAME"
@@ -52,7 +53,7 @@ image:
               }
            }
         }
-licenseFileData: $LicenseFileData
+licenseFileData: $LICENSEDATA
 preInitScriptData: $preInitScriptData
 postInitScriptData: $postInitScriptData
 oidcFileData: |
