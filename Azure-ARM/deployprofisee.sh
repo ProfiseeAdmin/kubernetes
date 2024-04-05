@@ -493,12 +493,12 @@ OIDCCMEmailAddress="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
 
 PodCount=1
 
-sed -i -e 's/$OIDCNAME/'"$OIDCNAME"'/g' Settings.yaml
-sed -i -e 's/$OIDCCMUSERNAME/'"$OIDCCMUSERNAME"'/g' Settings.yaml
-sed -i -e 's/$OIDCCMUserID/'"$OIDCCMUserID"'/g' Settings.yaml
-sed -i -e 's/$OIDCCMFirstName/'"$OIDCCMFirstName"'/g' Settings.yaml
-sed -i -e 's/$OIDCCMLastName/'"$OIDCCMLastName"'/g' Settings.yaml
-sed -i -e 's/$OIDCCMEmailAddress/'"$OIDCCMEmailAddress"'/g' Settings.yaml
+sed -i -e 's~$OIDCNAME~'"$OIDCNAME"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMUSERNAME~'"$OIDCCMUSERNAME"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMUserID~'"$OIDCCMUserID"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMFirstName~'"$OIDCCMFirstName"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMLastName~'"$OIDCCMLastName"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMEmailAddress~'"$OIDCCMEmailAddress"'~g' Settings.yaml
 
 sed -i -e 's/$PodCount/'"$PodCount"'/g' Settings.yaml
 
@@ -506,9 +506,10 @@ sed -i -e 's/$PodCount/'"$PodCount"'/g' Settings.yaml
 #pre,post init script and oidcfiledata
 preInitScriptData="Cg=="
 postInitScriptData="Cg=="
+OIDCFileData="ewp9Cg=="
 sed -i -e 's/$preInitScriptData/'"$preInitScriptData"'/g' Settings.yaml
 sed -i -e 's/$postInitScriptData/'"$postInitScriptData"'/g' Settings.yaml
-
+sed -i -e 's/$OIDCFileData/'"$OIDCFileData"'/g' Settings.yaml
 
 
 #Get the vCPU and RAM so we can change the stateful set CPU and RAM limits on the fly.
