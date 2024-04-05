@@ -485,7 +485,7 @@ fi
 
 #Add AzureAD Claims and Pod Count
 OIDCNAME="Azure Active Directory"
-OIDCCMUSERNAME="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+OIDCCMUserName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
 OIDCCMUserID="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
 OIDCCMFirstName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
 OIDCCMLastName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
@@ -494,7 +494,7 @@ OIDCCMEmailAddress="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
 PodCount=1
 
 sed -i -e 's~$OIDCNAME~'"$OIDCNAME"'~g' Settings.yaml
-sed -i -e 's~$OIDCCMUSERNAME~'"$OIDCCMUSERNAME"'~g' Settings.yaml
+sed -i -e 's~$OIDCCMUserName~'"$OIDCCMUserName"'~g' Settings.yaml
 sed -i -e 's~$OIDCCMUserID~'"$OIDCCMUserID"'~g' Settings.yaml
 sed -i -e 's~$OIDCCMFirstName~'"$OIDCCMFirstName"'~g' Settings.yaml
 sed -i -e 's~$OIDCCMLastName~'"$OIDCCMLastName"'~g' Settings.yaml
