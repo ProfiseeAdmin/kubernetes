@@ -20,17 +20,17 @@ profiseeRunTime:
     deployIngressRule: true
     isPaaS: true
     oidc:
-        name: "Azure Active Directory"
+        name: "$OIDCNAME"
         authority: "$OIDCURL"
         clientId: "$CLIENTID"
         clientSecret: "$OIDCCLIENTSECRET"
-        usernameClaim: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
-        userIdClaim: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
-        firstNameClaim: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
-        lastNameClaim: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
-        emailClaim: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+        usernameClaim: "$OIDCCMUserName"
+        userIdClaim: "$OIDCCMUserID"
+        firstNameClaim: "$OIDCCMFirstName"
+        lastNameClaim: "$OIDCCMLastName"
+        emailClaim: "$OIDCCMEmailAddress"
         groupsClaim: "groups"
-    clusterNodeCount: 1
+    clusterNodeCount: "$PodCount"
 clusterNode:
     limits:
       cpu: $CPULIMITSVALUE
@@ -54,11 +54,10 @@ image:
            }
         }
 licenseFileData: $LICENSEDATA
-preInitScriptData: Cg==
-postInitScriptData: Cg==
+preInitScriptData: $preInitScriptData
+postInitScriptData: $postInitScriptData
 oidcFileData: |
-    {
-    }
+    $OIDCFileData
 tlsCert: |
     $TLSCERT
 tlsKey: |
@@ -94,5 +93,8 @@ cloud:
         clientSecret: "$PURVIEWCLIENTSECRET"
     aws:
       isProvider: false
+      ebsVolumeId: ""
     google:
       isProvider: false
+      gceVolumeName: ""
+      

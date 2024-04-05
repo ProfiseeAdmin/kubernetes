@@ -483,6 +483,34 @@ if [ "$WINDOWS_NODE_VERSION" = "Windows2019" ]; then
 fi
 
 
+#Add AzureAD Claims and Pod Count
+OIDCNAME="Azure Active Directory"
+OIDCCMUSERNAME="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+OIDCCMUserID="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+OIDCCMFirstName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
+OIDCCMLastName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
+OIDCCMEmailAddress="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+
+PodCount=1
+
+sed -i -e 's/$OIDCNAME/'"$OIDCNAME"'/g' Settings.yaml
+sed -i -e 's/$OIDCCMUSERNAME/'"$OIDCCMUSERNAME"'/g' Settings.yaml
+sed -i -e 's/$OIDCCMUserID/'"$OIDCCMUserID"'/g' Settings.yaml
+sed -i -e 's/$OIDCCMFirstName/'"$OIDCCMFirstName"'/g' Settings.yaml
+sed -i -e 's/$OIDCCMLastName/'"$OIDCCMLastName"'/g' Settings.yaml
+sed -i -e 's/$OIDCCMEmailAddress/'"$OIDCCMEmailAddress"'/g' Settings.yaml
+
+sed -i -e 's/$PodCount/'"$PodCount"'/g' Settings.yaml
+
+
+#pre,post init script and oidcfiledata
+preInitScriptData="Cg=="
+postInitScriptData="Cg=="
+sed -i -e 's/$preInitScriptData/'"$preInitScriptData"'/g' Settings.yaml
+sed -i -e 's/$postInitScriptData/'"$postInitScriptData"'/g' Settings.yaml
+
+
+
 #Get the vCPU and RAM so we can change the stateful set CPU and RAM limits on the fly.
 echo "Let's see how many vCPUs and how much RAM we can allocate to Profisee's pod on the Windows node size you've selected."
 findwinnodename=$(kubectl get nodes -l kubernetes.io/os=windows -o 'jsonpath={.items[0].metadata.name}')
