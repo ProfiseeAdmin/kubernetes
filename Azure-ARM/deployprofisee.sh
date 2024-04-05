@@ -506,7 +506,8 @@ sed -i -e 's/$PodCount/'"$PodCount"'/g' Settings.yaml
 #pre,post init script and oidcfiledata
 preInitScriptData="Cg=="
 postInitScriptData="Cg=="
-OIDCFileData="Cg=="
+OIDC="ewp9Cg=="
+OIDCFileData=echo $OIDC | base64 -d
 sed -i -e 's/$preInitScriptData/'"$preInitScriptData"'/g' Settings.yaml
 sed -i -e 's/$postInitScriptData/'"$postInitScriptData"'/g' Settings.yaml
 sed -i -e 's/$OIDCFileData/'"$OIDCFileData"'/g' Settings.yaml
