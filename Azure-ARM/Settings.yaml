@@ -57,7 +57,7 @@ licenseFileData: $LICENSEDATA
 preInitScriptData: $preInitScriptData
 postInitScriptData: $postInitScriptData
 oidcFileData: |
-$OIDCFileData
+    $OIDCFileData
 tlsCert: |
     $TLSCERT
 tlsKey: |
