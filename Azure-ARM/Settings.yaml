@@ -24,11 +24,11 @@ profiseeRunTime:
         authority: "$OIDCURL"
         clientId: "$CLIENTID"
         clientSecret: "$OIDCCLIENTSECRET"
-        usernameClaim: $OIDCCMUserName
-        userIdClaim: $OIDCCMUserID
-        firstNameClaim: $OIDCCMFirstName
-        lastNameClaim: $OIDCCMLastName
-        emailClaim: $OIDCCMEmailAddress
+        usernameClaim: "$OIDCCMUserName"
+        userIdClaim: "$OIDCCMUserID"
+        firstNameClaim: "$OIDCCMFirstName"
+        lastNameClaim: "$OIDCCMLastName"
+        emailClaim: "$OIDCCMEmailAddress"
         groupsClaim: "groups"
     clusterNodeCount: "$PodCount"
 clusterNode:
@@ -97,4 +97,4 @@ cloud:
     google:
       isProvider: false
       gceVolumeName: ""
-
+      
