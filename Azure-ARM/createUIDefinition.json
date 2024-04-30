@@ -133,7 +133,7 @@
               ]
             },
             "visible": true
-          },          
+          },
           {
             "name": "ProfiseeAdminUserAccount",
             "type": "Microsoft.Common.TextBox",
@@ -236,6 +236,19 @@
             "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
           },
           {
+            "name": "SecretNameClientID",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Client ID",
+            "placeholder": "Key Vault client ID secret name: ex. profisee-app-clientid",
+            "toolTip": "App Registration Client ID Keyvault Secret Name to pass.",
+            "constraints": {
+              "required": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]",
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+          },
+          {
             "name": "UserSuppliedClientSecret",
             "type": "Microsoft.Common.Section",
             "label": "",
@@ -255,6 +268,19 @@
               }
             ],
             "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
+          },
+          {
+            "name": "AppRegClientSecret",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Client Secret",
+            "placeholder": "Key Vault client ID secret name: ex. profisee-app-clientSecret",
+            "toolTip": "App Registration Client Secret Keyvault Secret Name to pass.",
+            "constraints": {
+              "required": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]",
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
           },
           {
             "name": "UsePurview",
@@ -938,7 +964,7 @@
               "validationMessage": ""
             },
             "visible": "[not(equals(steps('networking').HttpsConfigure, 'Yes'))]"
-          },          
+          },
           {
             "name": "UserDefinedHTTPS",
             "type": "Microsoft.Common.Section",
