@@ -230,7 +230,7 @@
                   "regex": "",
                   "validationMessage": ""
                 },
-                "visible": true
+                "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
               }
             ],
             "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
@@ -251,7 +251,7 @@
                   "regex": "",
                   "validationMessage": ""
                 },
-                "visible": true
+                "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
               }
             ],
             "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
