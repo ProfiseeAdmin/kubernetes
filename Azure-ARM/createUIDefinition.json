@@ -280,7 +280,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+            "visible": "[and(equals(steps('profisee').UseKeyVault,'Yes'),equals(steps('profisee').ActiveDirectoryCreateApp,'No'))]"
           },
           {
             "name": "UsePurview",
