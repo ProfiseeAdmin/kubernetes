@@ -276,7 +276,7 @@
             "placeholder": "Key Vault client ID secret name: ex. profisee-app-clientSecret",
             "toolTip": "App Registration Client Secret Keyvault Secret Name to pass.",
             "constraints": {
-              "required": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]",
+              "required": "[or(contains(steps('profisee').ProfiseeVersion, '-win19'), contains(steps('profisee').ProfiseeVersion, '-win22'))]",
               "regex": "",
               "validationMessage": ""
             },
