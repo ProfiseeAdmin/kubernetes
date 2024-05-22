@@ -1,3 +1,5 @@
+#Pull Product Services, IIS, Event Viewer logs as well as Netstat and TCPConnection logs
+$DT = get-date -Format "ddd-MM-dd-yy-HHmmss-ffff-Z" 
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Config" 
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Gateway"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Attachments"
@@ -21,6 +23,8 @@ robocopy "c:\profisee\services\workflows\logfiles" "$env:TEMP\all-Logs\$DT\Profi
 robocopy "c:\profisee\web\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Web" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\webportal\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Webportal" /E /COPYALL /DCOPY:T
 robocopy "c:\inetpub\logs\LogFiles\W3SVC1" "$env:TEMP\all-Logs\$DT\IISLogs" /E /COPYALL /DCOPY:T
+netstat -anobq > $env:TEMP\all-Logs\$DT\TCPLogs\netstat.txt
+Get-NetTCPConnection | Group-Object -Property State, OwningProcess | Select -Property Count, Name, @{Name="ProcessName";Expression={(Get-Process -PID ($_.Name.Split(',')[-1].Trim(' '))).Name}}, Group | Sort Count -Descending | out-file $env:TEMP\all-Logs\$DT\TCPLogs\TCPconnections.txt
 
 #Compress and copy to fileshare
 compress-archive -Path "$env:TEMP\all-Logs\$DT\" -DestinationPath "$env:TEMP\all-Logs-$DT.zip"
