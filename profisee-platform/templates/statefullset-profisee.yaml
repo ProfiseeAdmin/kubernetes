@@ -101,7 +101,7 @@ spec:
                 - powershell
                 - >-
                   curl.exe -fsSL -o .\Fileshare\forensics_log_pull.ps1
-                  "https://raw.githubusercontent.com/profiseedev/kubernetes/master/Azure-ARM/forensics_log_pull.ps1"
+                  "https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/forensics_log_pull.ps1"
           preStop:
             exec:
               command:
