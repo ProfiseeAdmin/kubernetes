@@ -94,13 +94,8 @@ spec:
           initialDelaySeconds: 200
           timeoutSeconds: 5
           periodSeconds: 10
-        {{- $secondary1 := "cus" }}
-        {{- $secondary2 := "ukw"}}
-        {{- $secondary3 := "neu"}}
-        {{- $secondary4 := "ause"}}
-        {{- $secondary5 := "cae"}}
-        {{- $secondary6 := "wcus"}}
-        {{- if not (or (contains $secondary1 .Values.sqlServer.name) (contains $secondary2 .Values.sqlServer.name) (contains $secondary3 .Values.sqlServer.name) (contains $secondary4 .Values.sqlServer.name) (contains $secondary5 .Values.sqlServer.name) (contains $secondary6 .Values.sqlServer.name)) }}
+        {{- if not .Values.profiseeRunTime.isPaaS }}
+        {{- if not .Values.profiseeRunTime.secondary -}}
         lifecycle:
           postStart:
             exec:
@@ -115,6 +110,22 @@ spec:
                 - powershell
                 - .\Fileshare\forensics_log_pull.ps1
         {{- end }}
+        {{- end }}
+        {{- if .Values.profiseeRunTime.isPaaS }}
+        lifecycle:
+          postStart:
+            exec:
+              command:
+                - powershell
+                - >-
+                  curl.exe -fsSL -o .\Fileshare\forensics_log_pull.ps1
+                  "https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/forensics_log_pull.ps1"
+          preStop:
+            exec:
+              command:
+                - powershell
+                - .\Fileshare\forensics_log_pull.ps1
+        {{- end }}        
         volumeMounts:
         - name: data-volume
           mountPath: C:\data
