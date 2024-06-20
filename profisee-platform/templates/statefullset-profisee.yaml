@@ -99,8 +99,8 @@ spec:
         {{- $secondary3 := "neu"}}
         {{- $secondary4 := "ause"}}
         {{- $secondary5 := "cae"}}
-        {{- $secondary6 := "wcus"}}  
-        {{- if not (or (contains $secondary1 .Values.sqlServer.name) (contains $secondary2 .Values.sqlServer.name) (contains $secondary3 .Values.sqlServer.name) (contains $secondary4 .Values.sqlServer.name) (contains $secondary5 .Values.sqlServer.name) (contains $secondary6 .Values.sqlServer.name)) }}          
+        {{- $secondary6 := "wcus"}}
+        {{- if not (or (contains $secondary1 .Values.sqlServer.name) (contains $secondary2 .Values.sqlServer.name) (contains $secondary3 .Values.sqlServer.name) (contains $secondary4 .Values.sqlServer.name) (contains $secondary5 .Values.sqlServer.name) (contains $secondary6 .Values.sqlServer.name)) }}
         lifecycle:
           postStart:
             exec:
@@ -114,7 +114,7 @@ spec:
               command:
                 - powershell
                 - .\Fileshare\forensics_log_pull.ps1
-        {{- end }}        
+        {{- end }}
         volumeMounts:
         - name: data-volume
           mountPath: C:\data
