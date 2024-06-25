@@ -20,7 +20,7 @@ profiseeRunTime:
     webAppName: ""
     deployIngressRule: true
     isPaaS: true
-    secondary: false
+    secondary: "false"
     oidc:
         name: "Azure Active Directory"
         authority: "$OIDCURL"
