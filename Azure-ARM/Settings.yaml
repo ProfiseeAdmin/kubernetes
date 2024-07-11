@@ -19,7 +19,7 @@ profiseeRunTime:
     webAppName: "$WEBAPPNAME"
     deployIngressRule: true
     isPaaS: true
-    secondary: $SECONDARY
+    secondary: "$SECONDARY"
     oidc:
         name: "$OIDCNAME"
         authority: "$OIDCURL"
