@@ -1,5 +1,5 @@
 {{- if not .Values.profiseeRunTime.isPaaS }}
-{{- if .Values.profiseeRunTime.secondary }}
+{{- if not .Values.profiseeRunTime.secondary }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
