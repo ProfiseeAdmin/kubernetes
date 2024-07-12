@@ -87,13 +87,11 @@ spec:
             command:
               - powershell
               - >-
-                if(((Get-Service profisee).Status -ne 'Stopped') -and
-                ($(Get-IISAppPool | Where-Object { $_.State -eq "Stopped"
-                }).State -ne 'Stopped')){return 0}else{throw 'Profisee is
-                down'}
-          initialDelaySeconds: 200
+                if((Get-Service profisee).Status -ne 'Stopped'){return
+                0}else{throw 'Profisee service is down'}
+          initialDelaySeconds: 600
           timeoutSeconds: 5
-          periodSeconds: 10
+          periodSeconds: 60
         {{- if not .Values.profiseeRunTime.isPaaS }}
         {{- if not .Values.profiseeRunTime.secondary }}
         lifecycle:
