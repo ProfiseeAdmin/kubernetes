@@ -1,21 +1,37 @@
-#Pull Product Services, IIS, Event Viewer logs as well as Netstat and TCPConnection
-$DT = get-date -Format "ddd-MM-dd-yy-HHmmss-ffff-Z" 
-mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs"
+# Pull Product Services, IIS, Event Viewer logs as well as Netstat and TCPConnection logs
+$DT = get-date -UFormat "%m-%d-%Y-%H%M%S-UTC-%a" 
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Config" 
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Gateway"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Attachments"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Auth"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Governance"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monolith"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Workflows"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Web"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Webportal"
 mkdir "$env:TEMP\all-Logs\$DT\EventViewerLogs"
 mkdir "$env:TEMP\all-Logs\$DT\TCPLogs"
 mkdir "$env:TEMP\all-Logs\$DT\IISLogs"
-Copy-Item "$env:SystemRoot\System32\winevt\Logs\*" -Destination "$env:TEMP\all-Logs\$DT\EventViewerLogs\"
-Copy-Item c:\profisee\configuration\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\config-log.log
-Copy-Item c:\profisee\gateway\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\gateway-log.log
-Copy-Item c:\profisee\services\attachments\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\attachments-log.log
-Copy-Item c:\profisee\services\auth\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\auth-log.log
-Copy-Item c:\profisee\services\governance\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\governance-log.log
-Copy-Item c:\profisee\services\monolith\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\monolith-log.log
-Copy-Item c:\profisee\services\workflows\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\workflows-log.log
-Copy-Item c:\profisee\web\logfiles\systemlog.log -Destination $env:TEMP\all-Logs\$DT\ProfiseeLogs\web-log.log
-Copy-Item C:\inetpub\logs\LogFiles\W3SVC1\*.log -Destination $env:TEMP\all-Logs\$DT\IISLogs\
+robocopy "$env:SystemRoot\System32\winevt\Logs\" "$env:TEMP\all-Logs\$DT\EventViewerLogs" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\configuration\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Config" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\gateway\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Gateway" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\services\attachments\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Attachments" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\services\auth\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Auth" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\services\governance\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Governance" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\services\monolith\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monolith" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\services\workflows\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Workflows" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\web\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Web" /E /COPYALL /DCOPY:T
+robocopy "c:\profisee\webportal\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Webportal" /E /COPYALL /DCOPY:T
+robocopy "c:\inetpub\logs\LogFiles\W3SVC1" "$env:TEMP\all-Logs\$DT\IISLogs" /E /COPYALL /DCOPY:T
 netstat -anobq > $env:TEMP\all-Logs\$DT\TCPLogs\netstat.txt
 Get-NetTCPConnection | Group-Object -Property State, OwningProcess | Select -Property Count, Name, @{Name="ProcessName";Expression={(Get-Process -PID ($_.Name.Split(',')[-1].Trim(' '))).Name}}, Group | Sort Count -Descending | out-file $env:TEMP\all-Logs\$DT\TCPLogs\TCPconnections.txt
-#Compress and Copy-Item to fileshare
-compress-archive -Path "$env:TEMP\all-Logs\$DT\" -DestinationPath "$env:TEMP\all-Logs-$DT.zip"
-Copy-Item "$env:TEMP\all-Logs-$DT.zip" -Destination "C:\fileshare"
+
+# Make Webapp name w/ Capital letter
+$WebAppName = $env:ProfiseeWebAppName.substring(0, 1).ToUpper() + $env:ProfiseeWebAppName.Substring(1)
+
+# Compress and copy to fileshare
+compress-archive -Path "$env:TEMP\all-Logs\$DT\" -DestinationPath "$env:TEMP\$WebAppName-All-Logs-$DT.zip"
+copy "$env:TEMP\$WebAppName-All-Logs-$DT.zip" "C:\fileshare\"
+
+# Delete older zipped log files more than 30 days
+Get-ChildItem -Path C:\Fileshare\* -Include *all-logs-*.zip -Recurse | Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-30)} | Remove-Item
