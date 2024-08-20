@@ -1,6 +1,33 @@
+# Strings to look for
+$regvars = @("ause-pc-profisee-", "cae-pc-profisee-", "cus-pc-profisee-", "neu-pc-profisee-", "ukw-pc-profisee-", "wcus-pc-profisee-", "wus-pc-profisee-")
+
+# Function to check if the SQL Server starts with any of the specified values
+function Check-region {
+    param (
+        [string]$SqlServer
+    )
+
+    # Check if the SQL Server starts with any of the values
+    foreach ($regvar in $regvars) {
+        if ($SqlServer.StartsWith($regvar)) {
+            Write-Host "Condition met: Terminating script execution."
+            exit
+        }
+    }
+
+    Write-Host "Condition not met: Continuing script execution."
+}
+
+# Call the function with the variable
+Check-region -SqlServer $env:ProfiseeSqlServer
+
+# Rest of the script
+Write-Host "Executing the rest of the script..."
+
+New-Item -Path "C:\Fileshare\" -Name "alllogs" -ItemType "directory" -ErrorAction Ignore
 # Pull Product Services, IIS, Event Viewer logs as well as Netstat and TCPConnection logs
-$DT = get-date -UFormat "%m-%d-%Y-%H%M%S-UTC-%a" 
-mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Config" 
+$DT = get-date -UFormat "%m-%d-%Y-%H%M%S-UTC-%a"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Config"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Gateway"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Attachments"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Auth"
@@ -9,6 +36,9 @@ mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monolith"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Workflows"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Web"
 mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Webportal"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monitor"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Data"
+mkdir "$env:TEMP\all-Logs\$DT\ProfiseeLogs\ConnEx"
 mkdir "$env:TEMP\all-Logs\$DT\EventViewerLogs"
 mkdir "$env:TEMP\all-Logs\$DT\TCPLogs"
 mkdir "$env:TEMP\all-Logs\$DT\IISLogs"
@@ -20,6 +50,9 @@ robocopy "c:\profisee\services\auth\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLo
 robocopy "c:\profisee\services\governance\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Governance" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\services\monolith\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monolith" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\services\workflows\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Workflows" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\Monitor\LogFiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Monitor" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\Data\LogFiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Data" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\ConnEx\LogFiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\ConnEx" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\web\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Web" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\webportal\logfiles" "$env:TEMP\all-Logs\$DT\ProfiseeLogs\Webportal" /E /COPYALL /DCOPY:T
 robocopy "c:\inetpub\logs\LogFiles\W3SVC1" "$env:TEMP\all-Logs\$DT\IISLogs" /E /COPYALL /DCOPY:T
@@ -31,7 +64,7 @@ $WebAppName = $env:ProfiseeWebAppName.substring(0, 1).ToUpper() + $env:ProfiseeW
 
 # Compress and copy to fileshare
 compress-archive -Path "$env:TEMP\all-Logs\$DT\" -DestinationPath "$env:TEMP\$WebAppName-All-Logs-$DT.zip"
-copy "$env:TEMP\$WebAppName-All-Logs-$DT.zip" "C:\fileshare\"
+copy "$env:TEMP\$WebAppName-All-Logs-$DT.zip" "C:\fileshare\alllogs"
 
 # Delete older zipped log files more than 30 days
 Get-ChildItem -Path C:\Fileshare\* -Include *all-logs-*.zip -Recurse | Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-30)} | Remove-Item
