@@ -1,25 +1,21 @@
 # Strings to look for
-$regvars = @("ause-pc-profisee-", "cae-pc-profisee-", "cus-pc-profisee-", "neu-pc-profisee-", "ukw-pc-profisee-", "wcus-pc-profisee-", "wus-pc-profisee-")
+$sqlQuery = "SELECT DATABASEPROPERTYEX('$env:ProfiseeSqlDatabase', 'Updateability') AS Updateability"
+$SqlConnection = New-Object System.Data.SqlClient.SqlConnection;
+$SqlConnection.ConnectionString = 'Data Source={0};database={1};User ID={2};Password={3}' -f $env:ProfiseeSqlServer,$env:ProfiseeSqlDatabase,$env:ProfiseeSqlUserName,$env:ProfiseeSqlPassword;
+$SqlConnection.Open();
+$SqlCmd = New-Object System.Data.SqlClient.SqlCommand;
+$SqlCmd.CommandText = $sqlQuery;
+$SqlCmd.Connection = $SqlConnection;
+$result = $SqlCmd.ExecuteScalar();
+$SqlConnection.Close();
 
 # Function to check if the SQL Server starts with any of the specified values
-function Check-region {
-    param (
-        [string]$SqlServer
-    )
-
-    # Check if the SQL Server starts with any of the values
-    foreach ($regvar in $regvars) {
-        if ($SqlServer.StartsWith($regvar)) {
-            Write-Host "Condition met: Terminating script execution."
-            exit
-        }
-    }
-
-    Write-Host "Condition not met: Continuing script execution."
+if ($result -eq 'READ_ONLY') {
+    Write-Output "Database is read-only. Exiting script."
+    exit
+} else {
+    Write-Output "Database is not read-only. Continuing script execution."
 }
-
-# Call the function with the variable
-Check-region -SqlServer $env:ProfiseeSqlServer
 
 # Rest of the script
 Write-Host "Executing the rest of the script..."
