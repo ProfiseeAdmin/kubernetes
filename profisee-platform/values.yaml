@@ -4,7 +4,7 @@ sqlServer:
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
 ingress:
-    impervaHeaderId: ""
+    impervaHeaderId: ""    
 profiseeRunTime:
     useLetsEncrypt: $USELETSENCRYPT
     adminAccount: "$ADMINACCOUNTNAME"
@@ -20,7 +20,6 @@ profiseeRunTime:
     webAppName: ""
     deployIngressRule: true
     isPaaS: true
-    secondary: $SECONDARY
     oidc:
         name: "Azure Active Directory"
         authority: "$OIDCURL"
