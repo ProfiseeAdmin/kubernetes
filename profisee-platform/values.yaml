@@ -77,6 +77,8 @@ cloud:
           sqlPassword: ""
           tlsCertificate: ""
           license: ""
+          oidcclientId: ""
+          oidcsecret: "" 
         name: ""
         resourceGroup: ""
         subscriptionId: ""
