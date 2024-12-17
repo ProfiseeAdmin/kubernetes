@@ -1,5 +1,4 @@
 {{- if not .Values.profiseeRunTime.isPaaS }}
-{{- if not .Values.profiseeRunTime.secondary }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -51,9 +50,6 @@ spec:
             - $SqlCmd = New-Object System.Data.SqlClient.SqlCommand;
             - $SqlCmd.CommandText = $sqlText;
             - $SqlCmd.Connection = $SqlConnection;
-            - $SqlCmd.ExecuteNonQuery();
-            - $sqlquery="exec [dbo].[AzureSQLMaintenance] @Operation='all' ,@debug = 'off',@RebuildHeaps = 0,@mode = 'smart',@ResumableIndexRebuild = 0,@LogToTable=1";
-            - $SqlCmd.CommandText = $sqlquery;
             - $SqlCmd.CommandTimeout=0;
             - $SqlCmd.ExecuteNonQuery();
             - $SqlConnection.Close();
@@ -61,5 +57,4 @@ spec:
           imagePullSecrets:
             - name: profisee-containerregistry
       backoffLimit: 0
-{{- end }}
 {{- end }}

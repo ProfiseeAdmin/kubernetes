@@ -15,16 +15,13 @@ spec:
       name: profisee
       labels:
         app: profisee
-        {{- if .Values.profiseeRunTime.isPaaS}}
+        {{- if .Values.cloud.azure.useManagedIdentity}}
         aadpodidbinding: {{.Values.cloud.azure.managedIdentity.name | lower}}
         {{- end}}
     spec:
       terminationGracePeriodSeconds: 60
       serviceAccountName: profiseeserviceaccount
       automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-    {{- if (gt (int .Values.profiseeRunTime.clusterNodeCount) 1) }}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -34,7 +31,6 @@ spec:
                 matchLabels:
                   app: profisee
               topologyKey: "kubernetes.io/hostname"
-    {{- end}}
       nodeSelector:
       {{- if .Values.cloud.azure.isProvider }}
           {{ if hasSuffix "win22" .Values.image.tag }}
@@ -94,8 +90,6 @@ spec:
           initialDelaySeconds: 600
           timeoutSeconds: 5
           periodSeconds: 60
-        {{- if not .Values.profiseeRunTime.isPaaS }}
-        {{- if not .Values.profiseeRunTime.secondary }}
         lifecycle:
           postStart:
             exec:
@@ -109,23 +103,6 @@ spec:
               command:
                 - powershell
                 - .\Fileshare\forensics_log_pull.ps1
-        {{- end }}
-        {{- end }}
-        {{- if .Values.profiseeRunTime.isPaaS }}
-        lifecycle:
-          postStart:
-            exec:
-              command:
-                - powershell
-                - >-
-                  curl.exe -fsSL -o .\Fileshare\forensics_log_pull.ps1
-                  "https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/forensics_log_pull.ps1"
-          preStop:
-            exec:
-              command:
-                - powershell
-                - .\Fileshare\forensics_log_pull.ps1
-        {{- end }}
         volumeMounts:
         - name: data-volume
           mountPath: C:\data
@@ -216,3 +193,4 @@ spec:
           - containerPort: 80
       imagePullSecrets:
       - name: profisee-containerregistry
+      
