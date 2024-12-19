@@ -575,6 +575,8 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	sed -i -e 's/$SQL_USERPASSWORDSECRET/'"$SQLUSERPASSWORD"'/g' Settings.yaml
 	sed -i -e 's/$TLS_CERTSECRET/'"$TLSCERT"'/g' Settings.yaml
 	sed -i -e 's/$LICENSE_DATASECRET/'"$LICENSEDATASECRETNAME"'/g' Settings.yaml
+	sed -i -e 's/$OIDCCLIENTID/'"$CLIENTID"'/g' Settings.yaml
+	sed -i -e 's/$OIDCCLIENTSECRET/'"$CLIENTSECRET"'/g' Settings.yaml
 	sed -i -e 's/$KUBERNETESCLIENTID/'"$KUBERNETESCLIENTID"'/g' Settings.yaml
 
 	sed -i -e 's/$KEYVAULTNAME/'"$keyVaultName"'/g' Settings.yaml
@@ -582,6 +584,7 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 
 	sed -i -e 's/$AZURESUBSCRIPTIONID/'"$keyVaultSubscriptionId"'/g' Settings.yaml
 	sed -i -e 's/$AZURETENANTID/'"$TENANTID"'/g' Settings.yaml
+
 
 else
 	sed -i -e 's/$USEKEYVAULT/'false'/g' Settings.yaml

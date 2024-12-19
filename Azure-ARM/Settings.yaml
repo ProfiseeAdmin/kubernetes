@@ -19,7 +19,6 @@ profiseeRunTime:
     webAppName: "$WEBAPPNAME"
     deployIngressRule: true
     isPaaS: true
-    secondary: $SECONDARY
     oidc:
         name: "$OIDCNAME"
         authority: "$OIDCURL"
@@ -76,6 +75,8 @@ cloud:
           sqlPassword: $SQL_USERPASSWORDSECRET
           tlsCertificate: $TLS_CERTSECRET
           license: $LICENSE_DATASECRET
+          oidcclientId: $OIDCCLIENTID
+          oidcsecret: $OIDCCLIENTSECRET
         name: "$KEYVAULTNAME"
         resourceGroup: "$KEYVAULTRESOURCEGROUP"
         subscriptionId: "$AZURESUBSCRIPTIONID"
