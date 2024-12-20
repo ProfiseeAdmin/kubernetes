@@ -658,7 +658,7 @@
             "defaultValue": "mysqlrg",
             "toolTip": "Enter a globally unique Azure SQL Server name. Name can contain only lowercase letters, numbers, and hyphens. The name cannot start or end with a hyphen or contain more than 63 characters.",
             "constraints": {
-              "required": true,
+              "required": false,
               "validations": [
                 {
                   "isValid": "[steps('sql').CheckSqlNameRestApiResponse.nameAvailable]",
