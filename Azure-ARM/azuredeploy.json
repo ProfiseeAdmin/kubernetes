@@ -15,7 +15,8 @@
     "type": "String"
   },
   "ActiveDirectoryCreateApp": {
-    "type": "String"
+    "type": "String",
+    "defaultValue": "No"
   },
   "ActiveDirectoryClientId": {
     "defaultValue": "",

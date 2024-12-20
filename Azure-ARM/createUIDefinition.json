@@ -63,7 +63,7 @@
             "name": "UseKeyVault",
             "type": "Microsoft.Common.OptionsGroup",
             "label": "Use Key Vault?",
-            "defaultValue": "No, I will supply the required values.",
+            "defaultValue": "Yes, pull sensitive information from Key Vault.",
             "toolTip": "Profisee can pull a TLS certificate from a Key Vault, as well as these secrets: SQL Username, SQL Password and Profisee License.",
             "constraints": {
               "allowedValues": [
@@ -78,7 +78,7 @@
               ],
               "required": true
             },
-            "visible": true
+            "visible": false
           },
           {
             "name": "KeyVault",
@@ -148,28 +148,28 @@
             },
             "visible": true
           },
-          {
-            "name": "ProfiseeLicense",
-            "type": "Microsoft.Common.FileUpload",
-            "label": "Profisee license",
-            "toolTip": "This file will be provided by Profisee Support. Please provide the file in txt format.",
-            "constraints": {
-              "required": true,
-              "accept": ".txt"
-            },
-            "options": {
-              "multiple": false,
-              "uploadMode": "file",
-              "openMode": "text",
-              "encoding": "UTF-8"
-            },
-            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
-          },
+          // {
+          //   "name": "ProfiseeLicense",
+          //   "type": "Microsoft.Common.FileUpload",
+          //   "label": "Profisee license",
+          //   "toolTip": "This file will be provided by Profisee Support. Please provide the file in txt format.",
+          //   "constraints": {
+          //     "required": true,
+          //     "accept": ".txt"
+          //   },
+          //   "options": {
+          //     "multiple": false,
+          //     "uploadMode": "file",
+          //     "openMode": "text",
+          //     "encoding": "UTF-8"
+          //   },
+          //   "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
+          // },
           {
             "name": "ProfiseeLicenseSecret",
             "type": "Microsoft.Common.TextBox",
             "label": " Profisee License",
-            "defaultValue": "",
+            "defaultValue": "license",
             "placeholder": "License secret name in Key Vault",
             "toolTip": "This file will be provided by Profisee Support. Please provide the name of the secret that holds the Profisee license: ex. profisee-license",
             "constraints": {
@@ -193,27 +193,27 @@
             },
             "visible": true
           },
-          {
-            "name": "ActiveDirectoryCreateApp",
-            "type": "Microsoft.Common.OptionsGroup",
-            "label": "Create a new Azure AD application registration for you?",
-            "defaultValue": "Yes, create and configure it for me.",
-            "toolTip": "An Azure AD application registration will be used for authentication via ID tokens. For more information please visit https://support.profisee.com/wikis/profiseeplatform/deploying_the_AKS_cluster_with_the_arm_template.",
-            "constraints": {
-              "allowedValues": [
-                {
-                  "label": "Yes, create and configure it for me.",
-                  "value": "Yes"
-                },
-                {
-                  "label": "No, I will specify the client ID of an existing Azure Active Directory app registration.",
-                  "value": "No"
-                }
-              ],
-              "required": true
-            },
-            "visible": true
-          },
+          // {
+          //   "name": "ActiveDirectoryCreateApp",
+          //   "type": "Microsoft.Common.OptionsGroup",
+          //   "label": "Create a new Azure AD application registration for you?",
+          //   "defaultValue": "Yes, create and configure it for me.",
+          //   "toolTip": "An Azure AD application registration will be used for authentication via ID tokens. For more information please visit https://support.profisee.com/wikis/profiseeplatform/deploying_the_AKS_cluster_with_the_arm_template.",
+          //   "constraints": {
+          //     "allowedValues": [
+          //       {
+          //         "label": "Yes, create and configure it for me.",
+          //         "value": "Yes"
+          //       },
+          //       {
+          //         "label": "No, I will specify the client ID of an existing Azure Active Directory app registration.",
+          //         "value": "No"
+          //       }
+          //     ],
+          //     "required": true
+          //   },
+          //   "visible": true
+          // },
           {
             "name": "UserSuppliedClientId",
             "type": "Microsoft.Common.Section",
@@ -224,16 +224,16 @@
                 "type": "Microsoft.Common.TextBox",
                 "label": "Application Registration Client Id",
                 "defaultValue": "",
-                "toolTip": "Please provide the client ID of the Azure AD application to be used by Profisee for authentication.",
+                "toolTip": "Please provide the client ID keyvault secret of the Azure AD application to be used by Profisee for authentication.",
                 "constraints": {
-                  "required": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]",
+                  "required": true,
                   "regex": "",
                   "validationMessage": ""
                 },
                 "visible": true
               }
             ],
-            "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
+            "visible": true
           },
           {
             "name": "UserSuppliedClientSecret",
@@ -245,16 +245,16 @@
                 "type": "Microsoft.Common.TextBox",
                 "label": "Application Registration Client Secret",
                 "defaultValue": "",
-                "toolTip": "Please provide the client secret of the Azure AD application to be used by Profisee for authentication.",
+                "toolTip": "Please provide the client secret keyvault secret of the Azure AD application to be used by Profisee for authentication.",
                 "constraints": {
-                  "required": "[or(contains(steps('profisee').ProfiseeVersion, '-win19'), contains(steps('profisee').ProfiseeVersion, '-win22'))]",
+                  "required": true,
                   "regex": "",
                   "validationMessage": ""
                 },
                 "visible": true
               }
             ],
-            "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
+            "visible": true
           },
           {
             "name": "UsePurview",
@@ -1023,7 +1023,6 @@
       "ProfiseeVersion": "[steps('profisee').ProfiseeVersion]",
       "ProfiseeAdminUserAccount": "[steps('profisee').ProfiseeAdminUserAccount]",
       "ProfiseeLicense": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('profisee').ProfiseeLicenseSecret, steps('profisee').ProfiseeLicense)]",
-      "ActiveDirectoryCreateApp": "[steps('profisee').ActiveDirectoryCreateApp]",
       "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId.ActiveDirectoryClientId]",
       "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret.ActiveDirectoryClientSecret]",
       "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win22'), 'Windows2022', 'Windows2019')]",
