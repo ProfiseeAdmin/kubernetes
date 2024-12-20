@@ -640,29 +640,19 @@
             "visible": "[equals(steps('sql').SQLServerCreateNew,'No')]"
           },
           {
-            "name": "CheckSqlNameRestApiResponse",
-            "type": "Microsoft.Solutions.ArmApiControl",
-            "request": {
-              "method": "POST",
-              "path": "[concat(subscription().id,'/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-05-01-preview')]",
-              "body": {
-                "name": "[steps('sql').SQLServerName]",
-                "type": "Microsoft.Sql/servers"
-              }
-            }
-          },
-          {
             "name": "SQLServerName",
             "type": "Microsoft.Common.TextBox",
             "label": "Server Name",
-            "defaultValue": "mysqlrg",
+            "defaultValue": "",
             "toolTip": "Enter a globally unique Azure SQL Server name. Name can contain only lowercase letters, numbers, and hyphens. The name cannot start or end with a hyphen or contain more than 63 characters.",
+            "placeholder": "",
+            "multiLine": false,
             "constraints": {
-              "required": false,
+              "required": true,
               "validations": [
                 {
-                  "isValid": "[steps('sql').CheckSqlNameRestApiResponse.nameAvailable]",
-                  "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
+                  "regex": "^[a-z0-9A-Z -.:\n]{1,60}$",
+                  "message": "Only 1-60 alphanumeric characters, hyphens, spaces, periods, and colons are allowed."
                 }
               ]
             },
@@ -1054,7 +1044,6 @@
       "PurviewClientSecret": "[steps('profisee').PurviewClientSecret]",
       "PurviewAccountResourceGroup": "[last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5))]",
       "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]",
-      "message": "[steps('sql').SQLServerName]"
     }
   }
 }
