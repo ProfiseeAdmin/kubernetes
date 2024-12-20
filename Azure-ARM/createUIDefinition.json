@@ -969,7 +969,7 @@
       "ManagedIdentityName": "[basics('ManagedIdentityName')]",
       "ProfiseeVersion": "[steps('profisee').ProfiseeVersion]",
       "ProfiseeAdminUserAccount": "[steps('profisee').ProfiseeAdminUserAccount]",
-      "ProfiseeLicense": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('profisee').ProfiseeLicenseSecret, steps('profisee').ProfiseeLicense)]",
+      "ProfiseeLicense": "[steps('profisee').ProfiseeLicenseSecret]",
       "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId]",
       "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret]",
       "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win22'), 'Windows2022', 'Windows2019')]",
