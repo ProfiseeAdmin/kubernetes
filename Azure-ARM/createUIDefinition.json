@@ -640,6 +640,18 @@
             "visible": "[equals(steps('sql').SQLServerCreateNew,'No')]"
           },
           {
+            "name": "CheckSqlNameRestApiResponse",
+            "type": "Microsoft.Solutions.ArmApiControl",
+            "request": {
+              "method": "POST",
+              "path": "[concat(subscription().id,'/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-05-01-preview')]",
+              "body": {
+                "name": "[steps('sql').SQLServerName]",
+                "type": "Microsoft.Sql/servers"
+              }
+            }
+          },
+          {
             "name": "SQLServerName",
             "type": "Microsoft.Common.TextBox",
             "label": "Server Name",
@@ -653,6 +665,10 @@
                 {
                   "regex": "^[a-z0-9A-Z -.:\n]{1,60}$",
                   "message": "Only 1-60 alphanumeric characters, hyphens, spaces, periods, and colons are allowed."
+                },
+                {
+                  "isValid": "[steps('sql').CheckSqlNameRestApiResponse.nameAvailable]",
+                  "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
                 }
               ]
             },
