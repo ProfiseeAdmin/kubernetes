@@ -1043,7 +1043,7 @@
       "PurviewCollectionFriendlyName": "[steps('profisee').PurviewCollectionFriendlyName]",
       "PurviewClientSecret": "[steps('profisee').PurviewClientSecret]",
       "PurviewAccountResourceGroup": "[last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5))]",
-      "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]",
+      "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]"
     }
   }
 }
