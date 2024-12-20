@@ -633,22 +633,10 @@
             "visible": "[equals(steps('sql').SQLServerCreateNew,'Yes')]"
           },
           {
-            "name": "SQLServerUser",
-            "type": "Microsoft.Common.TextBox",
-            "label": "SQL Username",
-            "defaultValue": "sqladmin",
-            "toolTip": "Administrator SQL login name to create with the new SQL Server OR provide the login to connect to an existing SQL Server.  Your login name must not contain a SQL Identifier or a typical system name (like admin, administrator, sa, root, dbmanager, loginmanager, etc.) or a built-in database user or role (like dbo, guest, public, etc.).  Your login name must not include non-alphanumeric characters.  Your login name must not start with numbers or symbols.",
-            "constraints": {
-              "required": true,
-              "regex": "",
-              "validationMessage": ""
-            },
-            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
-          },
-          {
             "name": "SQLServerUserSecret",
             "type": "Microsoft.Common.TextBox",
             "label": "SQL Username",
+            "defaultValue": "sqlusername",
             "placeholder": "Key Vault secret name: ex. profisee-sql-username",
             "toolTip": "Administrator SQL login name to create with the new SQL Server OR provide the login to connect to existing SQL Server.  Your login name must not contain a SQL Identifier or a typical system name (like admin, administrator, sa, root, dbmanager, loginmanager, etc.) or a built-in database user or role (like dbo, guest, public, etc.).  Your login name must not include non-alphanumeric characters.  Your login name must not start with numbers or symbols.",
             "constraints": {
@@ -656,31 +644,13 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
-          },
-          {
-            "name": "SQLServerPassword",
-            "type": "Microsoft.Common.PasswordBox",
-            "label": {
-              "password": " SQL Password",
-              "confirmPassword": "Confirm password"
-            },
-            "toolTip": "",
-            "constraints": {
-              "required": true,
-              "regex": "^((?=.*[A-Z])(?=.*\\d)(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])|(?=.*[a-z])(?=.*\\d)(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])|(?=.*[a-z])(?=.*\\d)(?=.*[A-Z])|(?=.*[a-z])(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])(?=.*[A-Z]))[\\w~`!@#$%^&*()\\-+={[}\\]|\\\\:;\"'<,>.?\\\/]{8,128}$",
-              "validationMessage": "Your password must be at least 8 characters in length.  Your password must be no more than 128 characters in length.  Your password must contain characters from three of the following categories – English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.).  Your password cannot contain all or part of the login name. Part of a login name is defined as three or more consecutive alphanumeric characters."
-            },
-            "options": {
-              "hideConfirmation": false
-            },
-            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
+            "visible": true
           },
           {
             "name": "SQLServerPasswordSecret",
             "type": "Microsoft.Common.TextBox",
             "label": "SQL Password",
-            "defaultValue": "",
+            "defaultValue": "sqlpassword",
             "placeholder": "Key Vault secret name: ex. profisee-sql-password",
             "toolTip": "",
             "constraints": {
@@ -688,7 +658,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+            "visible": true
           },
           {
             "name": "SQLServerDatabaseName",
@@ -990,8 +960,8 @@
       "KubernetesDockerBridgeCidr": "[steps('kubernetes').KubernetesAdvanced.KubernetesDockerBridgeCidr]",
       "SQLServerCreateNew": "[steps('sql').SQLServerCreateNew]",
       "SQLServerName": "[if(equals(steps('sql').SQLServerCreateNew, 'Yes'), steps('sql').SQLServerName, steps('sql').SQLServerNameExisting.name)]",
-      "SQLServerUser": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerUserSecret, steps('sql').SQLServerUser)]",
-      "SQLServerPassword": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerPasswordSecret, steps('sql').SQLServerPassword)]",
+      "SQLServerUser": "[steps('sql').SQLServerUserSecret]",
+      "SQLServerPassword": "[steps('sql').SQLServerPasswordSecret]",
       "SQLServerDatabaseName": "[steps('sql').SQLServerDatabaseName]",
       "StorageAccountCreateNew": "[if(equals(steps('storage').StorageAccountNameSection.StorageAccountName.newOrExisting, 'new'), 'Yes', 'No')]",
       "StorageAccountName": "[steps('storage').StorageAccountNameSection.StorageAccountName.name]",
