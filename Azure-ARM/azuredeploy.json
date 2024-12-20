@@ -373,7 +373,7 @@
       },
 
       {
-          "apiVersion": "2022-09-01",
+          "apiVersion": "2024-11-01",
           "name": "Sql",
           "type": "Microsoft.Resources/deployments",
           "condition": "[equals(tolower(parameters('UseKeyVault')),tolower('Yes'))]",
@@ -394,7 +394,7 @@
                       "name": "[tolower(parameters('SQLServerName'))]",
                       "type": "Microsoft.Sql/servers",
                       "location": "[resourceGroup().location]",
-                      "apiVersion": "2023-05-01-preview",
+                      "apiVersion": "2024-05-01-preview",
                       "dependsOn": [],
                       "tags": {
                           "displayName": "SQLServer"
@@ -407,9 +407,9 @@
                           {
                               "condition": "[equals(tolower(parameters('SQLServerCreateNew')),tolower('Yes'))]",
                               "name": "AllowAllWindowsAzureIps",
-                              "type": "firewallrules",
+                              "type": "firewallRules",
                               "location": "[resourceGroup().location]",
-                              "apiVersion": "2023-05-01-preview",
+                              "apiVersion": "2024-05-01-preview",
                               "dependsOn": [
                                   "[concat('Microsoft.Sql/servers/', tolower(parameters('SQLServerName')))]"
                               ],
@@ -421,7 +421,7 @@
                           {
                           "condition": "[equals(tolower(parameters('SQLServerCreateNew')),tolower('Yes'))]",
                           "type": "databases",
-                          "apiVersion": "2023-05-01-preview",
+                          "apiVersion": "2024-05-01-preview",
                           "name": "[parameters('SQLServerDatabaseName')]",
                           "location": "[resourceGroup().location]",
                           "dependsOn": [
