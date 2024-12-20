@@ -667,7 +667,7 @@
                   "message": "Only 1-60 alphanumeric characters, hyphens, spaces, periods, and colons are allowed."
                 },
                 {
-                  "isValid": "[steps('sql').CheckSqlNameRestApiResponse.nameAvailable]",
+                  "isValid": "[equals(steps('sql').CheckSqlNameRestApiResponse.available,true)]",
                   "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
                 }
               ]
