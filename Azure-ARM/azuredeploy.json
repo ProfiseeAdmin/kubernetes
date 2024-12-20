@@ -107,7 +107,7 @@
     "type": "string"
   },
   "InfraAdminAccount":{
-    "defaultValue": "",      
+    "defaultValue": "",
     "type": "string"
   },
   "SQLServerCreateNew": {
@@ -717,7 +717,7 @@
                   },
                    {
                       "name": "LICENSEDATASECRETNAME",
-                      "value": "[if(equals(parameters('UseKeyVault'),'Yes'), variables('LICENSEDATA'),'')]"
+                      "value": "[variables('LICENSEDATA')]"
                   },
                   {
                       "name": "ACRUSER",
