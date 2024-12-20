@@ -171,7 +171,8 @@
     "type": "String"
   },
   "UseKeyVault": {
-    "type": "String"
+    "type": "String",
+    "defaultValue": "Yes"
   },
   "KeyVault": {
     "defaultValue": "",
