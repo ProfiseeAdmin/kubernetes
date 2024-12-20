@@ -91,7 +91,7 @@
                 "location": "All"
               }
             },
-            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+            "visible": true
           },
           {
             "name": "ProfiseeVersion",
@@ -160,7 +160,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+            "visible": true
           },
           {
             "name": "ProfiseeWebAppName",
