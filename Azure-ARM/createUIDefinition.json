@@ -148,23 +148,6 @@
             },
             "visible": true
           },
-          // {
-          //   "name": "ProfiseeLicense",
-          //   "type": "Microsoft.Common.FileUpload",
-          //   "label": "Profisee license",
-          //   "toolTip": "This file will be provided by Profisee Support. Please provide the file in txt format.",
-          //   "constraints": {
-          //     "required": true,
-          //     "accept": ".txt"
-          //   },
-          //   "options": {
-          //     "multiple": false,
-          //     "uploadMode": "file",
-          //     "openMode": "text",
-          //     "encoding": "UTF-8"
-          //   },
-          //   "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
-          // },
           {
             "name": "ProfiseeLicenseSecret",
             "type": "Microsoft.Common.TextBox",
