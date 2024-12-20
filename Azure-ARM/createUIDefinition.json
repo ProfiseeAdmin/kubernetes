@@ -665,11 +665,11 @@
                 {
                   "regex": "^[a-z0-9A-Z -.:\n]{1,60}$",
                   "message": "Only 1-60 alphanumeric characters, hyphens, spaces, periods, and colons are allowed."
-                },
-                {
-                  "isValid": "[equals(steps('sql').CheckSqlNameRestApiResponse.available,true)]",
-                  "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
                 }
+                // {
+                //   "isValid": "[equals(steps('sql').CheckSqlNameRestApiResponse.available,true)]",
+                //   "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
+                // }
               ]
             },
             "visible": "[equals(steps('sql').SQLServerCreateNew,'Yes')]"
