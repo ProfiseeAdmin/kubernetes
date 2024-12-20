@@ -373,7 +373,7 @@
       },
 
       {
-          "apiVersion": "2024-11-01",
+          "apiVersion": "2022-09-01",
           "name": "Sql",
           "type": "Microsoft.Resources/deployments",
           "condition": "[equals(tolower(parameters('UseKeyVault')),tolower('Yes'))]",
