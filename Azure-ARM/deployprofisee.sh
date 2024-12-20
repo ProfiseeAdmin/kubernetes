@@ -51,6 +51,14 @@ echo $"Installation of dotnet core finished.";
 #Downloadind and extracting Proisee license reader.
 echo $"Download of Profisee license reader started.";
 curl -fsSL -o LicenseReader "$REPOURL/Utilities/LicenseReader/LicenseReader"
+#curl -fsSL -o LicenseReader.tar.002 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.002"
+#curl -fsSL -o LicenseReader.tar.003 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.003"
+#curl -fsSL -o LicenseReader.tar.004 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.004"
+#cat LicenseReader.tar.* | tar xf -
+#rm LicenseReader.tar.001
+#rm LicenseReader.tar.002
+#rm LicenseReader.tar.003
+#rm LicenseReader.tar.004
 echo $"Download of Profisee license reader finished.";
 
 echo $"Clean Profisee license string of any unwanted characters such as linebreaks, spaces, etc...";
@@ -482,7 +490,6 @@ if [ "$WINDOWS_NODE_VERSION" = "Windows2019" ]; then
 	echo $"Azure File CSI Driver installation finished."
 fi
 
-
 #Add AzureAD Claims and Pod Count
 OIDCNAME="Azure Active Directory"
 OIDCCMUserName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
@@ -533,7 +540,6 @@ echo $"The safe RAM value to assign to Profisee pod is $saferamvalueinkibibytes.
 # echo $"Profisee's stateful set has been patched to use $safecpuvalueinmilicores for CPU."
 # kubectl patch statefulsets -n profisee profisee --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/resources/limits/memory", "value":'"$saferamvalueinkibibytes"'}]'
 # echo $"Profisee's stateful set has been patched to use $saferamvalueinkibibytes for RAM."
-#settings DNSName value to custom coredns-configmap
 curl -fsSL -o coredns-custom.yaml "$REPOURL/Azure-ARM/coredns-custom.yaml";
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' coredns-custom.yaml
 
@@ -551,7 +557,6 @@ sed -i -e 's~$OIDCURL~'"$OIDCURL"'~g' Settings.yaml
 sed -i -e 's/$CLIENTID/'"$CLIENTID"'/g' Settings.yaml
 sed -i -e 's/$OIDCCLIENTSECRET/'"$CLIENTSECRET"'/g' Settings.yaml
 sed -i -e 's/$ADMINACCOUNTNAME/'"$ADMINACCOUNTNAME"'/g' Settings.yaml
-sed -i -e 's/$INFRAADMINACCOUNT/'"$INFRAADMINACCOUNT"'/g' Settings.yaml
 sed -i -e 's~$EXTERNALDNSURL~'"$EXTERNALDNSURL"'~g' Settings.yaml
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' Settings.yaml
 sed -i -e 's~$LICENSEDATA~'"$LICENSEDATA"'~g' Settings.yaml
@@ -575,8 +580,6 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	sed -i -e 's/$SQL_USERPASSWORDSECRET/'"$SQLUSERPASSWORD"'/g' Settings.yaml
 	sed -i -e 's/$TLS_CERTSECRET/'"$TLSCERT"'/g' Settings.yaml
 	sed -i -e 's/$LICENSE_DATASECRET/'"$LICENSEDATASECRETNAME"'/g' Settings.yaml
-	sed -i -e 's/$OIDCCLIENTID/'"$CLIENTID"'/g' Settings.yaml
-	sed -i -e 's/$OIDCCLIENTSECRET/'"$CLIENTSECRET"'/g' Settings.yaml
 	sed -i -e 's/$KUBERNETESCLIENTID/'"$KUBERNETESCLIENTID"'/g' Settings.yaml
 
 	sed -i -e 's/$KEYVAULTNAME/'"$keyVaultName"'/g' Settings.yaml
@@ -584,7 +587,6 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 
 	sed -i -e 's/$AZURESUBSCRIPTIONID/'"$keyVaultSubscriptionId"'/g' Settings.yaml
 	sed -i -e 's/$AZURETENANTID/'"$TENANTID"'/g' Settings.yaml
-
 
 else
 	sed -i -e 's/$USEKEYVAULT/'false'/g' Settings.yaml
@@ -612,6 +614,7 @@ if [ "$USELETSENCRYPT" = "Yes" ]; then
 	sleep 30;
 	sed -i -e 's/$USELETSENCRYPT/'true'/g' Settings.yaml
 	echo "Let's Encrypt installation finshed";
+	sed -i -e 's/$INFRAADMINACCOUNT/'"$INFRAADMINACCOUNT"'/g' Settings.yaml
 	#################################Lets Encrypt End #######################################
 else
 	sed -i -e 's/$USELETSENCRYPT/'false'/g' Settings.yaml
@@ -623,12 +626,6 @@ kubectl create secret generic profisee-settings -n profisee --from-file=Settings
 
 #Replacing Coredns with custom coredns config map
 kubectl replace -f ./coredns-custom.yaml
-
-#Adding this only in dev environment so SuperAdmin can edit the app registration values. Please do not implement this in Prod
-# ObjectId="$(az ad user show --id $ADMINACCOUNTNAME --query id -o tsv)"
-# echo $"ObjectId of ADMIN is $ObjectId";
-# az ad app owner add --id $CLIENTID --owner-object-id $ObjectId
-#################################################################
 
 #################################Install Profisee Start #######################################
 echo "Installation of Profisee platform started $(date +"%Y-%m-%d %T")";
@@ -696,5 +693,3 @@ if [ "$AUTHENTICATIONTYPE" = "AzureRBAC" ]; then
 fi;
 
 echo $result > $AZ_SCRIPTS_OUTPUT_PATH
-
-
