@@ -129,7 +129,7 @@
                 {
                   "label": "2024R2.0-win22",
                   "value": "profiseeplatform:2024r2.0-win22"
-                }                
+                }
               ]
             },
             "visible": true
@@ -645,19 +645,23 @@
             "request": {
               "method": "POST",
               "path": "[concat(subscription().id,'/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-05-01-preview')]",
-              "body": "[parse(concat('{\"name\":\"',steps('sql').SQLServerName,'\",\"type\":\"Microsoft.Sql/servers\"}'))]"
+              "body": {
+                "name": "[steps('sql').SQLServerName]",
+                "type": "Microsoft.Sql/servers"
+              }
             }
           },
           {
             "name": "SQLServerName",
             "type": "Microsoft.Common.TextBox",
             "label": "Server Name",
+            "defaultValue": "mysqlrg",
             "toolTip": "Enter a globally unique Azure SQL Server name. Name can contain only lowercase letters, numbers, and hyphens. The name cannot start or end with a hyphen or contain more than 63 characters.",
             "constraints": {
               "required": true,
               "validations": [
                 {
-                  "isValid": "[equals(steps('sql').CheckSqlNameRestApiResponse.available,true)]",
+                  "isValid": "[steps('sql').CheckSqlNameRestApiResponse.nameAvailable]",
                   "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
                 }
               ]
@@ -1049,7 +1053,8 @@
       "PurviewCollectionFriendlyName": "[steps('profisee').PurviewCollectionFriendlyName]",
       "PurviewClientSecret": "[steps('profisee').PurviewClientSecret]",
       "PurviewAccountResourceGroup": "[last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5))]",
-      "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]"
+      "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]",
+      "message": "[steps('sql').SQLServerName]"
     }
   }
 }
