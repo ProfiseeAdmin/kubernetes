@@ -337,7 +337,14 @@ echo $"WEBAPPNAME is now lower $WEBAPPNAME";
 
 #Create the Azure app id (clientid)
 azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/signin-microsoft"
-ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query value -o tsv)
+echo $"KEYVAULT is $KEYVAULT"
+echo $"keyVaultName is $keyVaultName"
+echo $"subscriptionID is $keyVaultSubscriptionId"
+echo $"CLIENTID is $CLIENTID";
+ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value" -o tsv)
+#SECRET_VALUE=$(az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET_NAME" --query "value" -o tsv)
+
+
 #CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
 echo $"CLIENTID is $ClientIdvalue";
 echo "10"
