@@ -337,78 +337,56 @@ echo $"WEBAPPNAME is now lower $WEBAPPNAME";
 
 #Create the Azure app id (clientid)
 azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/signin-microsoft"
-if [ "$UPDATEAAD" = "Yes" ]; then
-	echo "Update of Azure Active Directory started. Now we will create the Azure AD Application registration.";
-	azureClientName="${RESOURCEGROUPNAME}_${CLUSTERNAME}";
-	echo $"azureClientName is $azureClientName";
-	echo $"azureAppReplyUrl is $azureAppReplyUrl";
+ClientIdValue=$(az keyvault secret show --name $CLIENTID --name $keyVaultName --subscription $keyVaultSubscriptionId --query value -o tsv)
+#CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
+echo $"CLIENTID is $ClientIdvalue";
 
-	echo "Creation of the Azure Active Directory application registration started."
-	CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
-	echo $"CLIENTID is $CLIENTID";
-	if [ -z "$CLIENTID" ]; then
-		echo $"CLIENTID is null fetching";
-		CLIENTID=$(az ad app list --display-name $azureClientName --query [0].appId -o tsv)
-		echo $"CLIENTID is $CLIENTID";
-	fi
-	echo "Creation of the Azure Active Directory application registration finished."
-	echo "Sleeping for 20 seconds to wait for the app registration to be ready."
-	sleep 20;
+existing_redirect_uris=$(az ad app show --id $ClientIdvalue --query web.redirectUris --output tsv)
+echo $existing_redirect_uris
+if [[ $existing_redirect_uris == *$azureAppReplyUrl* ]]; then
+    echo "The URI $azureAppReplyUrl already exists"
+else
+    echo "Adding the URI $azureAppReplyUrl to the list"
+    az ad app update --id $ClientIdValue --web-redirect-uris $existing_redirect_uris $azureAppReplyUrl
+fi
 
-	#If Azure Application Registration User.Read permission is present, skip adding it.
-	echo $"Let's check to see if the User.Read permission is granted, skip if has been."
-    appregpermissionspresent=$(az ad app permission list --id $CLIENTID --query "[].resourceAccess[].id" -o tsv)
-    if [ "$appregpermissionspresent" = "e1fe6dd8-ba31-4d61-89e7-88639da4683d" ]; then
-	    echo $"User.Read permissions already present, no need to add it."
-	else
-	    echo "Update of the application registration's permissions, step 1 started."
-	    #Add a Graph API permission to "Sign in and read user profile"
-	    az ad app permission add --id $CLIENTID --api 00000003-0000-0000-c000-000000000000 --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
-	    echo "Creation of the service principal started."
-	    az ad sp create --id $CLIENTID
-	    echo "Creation of the service principal finished."
-	    echo "Update of the application registration's permissions, step 1 finished."
+echo $"Let's Enable ID Tokens for App registration"
+az ad app update --id $ClientIdvalue --enable-id-token-issuance true
+#If Azure Application Registration User.Read permission is present, skip adding it.
+echo $"Let's check to see if the User.Read permission is granted, skip if has been."
+appregpermissionspresent=$(az ad app permission list --id $ClientIdValue --query "[].resourceAccess[].id" -o tsv)
+if [ "$appregpermissionspresent" = "e1fe6dd8-ba31-4d61-89e7-88639da4683d" ]; then
+    echo $"User.Read permissions already present, no need to add it."
+else
+    echo "Update of the application registration's permissions, step 1 started."
+    #Add a Graph API permission to "Sign in and read user profile"
+    az ad app permission add --id $ClientIdValue --api 00000003-0000-0000-c000-000000000000 --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
+    echo "Creation of the service principal started."
+    az ad sp create --id $ClientIdValue
+    echo "Creation of the service principal finished."
+    echo "Update of the application registration's permissions, step 1 finished."
 
-	    echo "Update of the application registration's permissions, step 2 started."
-	    az ad app permission grant --id $CLIENTID --api 00000003-0000-0000-c000-000000000000 --scope User.Read
-	    echo "Update of the application registration's permissions, step 2 finished."
-	    echo "Update of Azure Active Directory finished.";
-	fi
-	#If Azure Application Registration "groups" token is present, skip adding it.
-	echo $"Let's check to see if the "groups" token is present, skip if present."
-    appregtokengroupsclaimpresent=$(az ad app list --app-id $CLIENTID --query "[].optionalClaims[].idToken[].name" -o tsv)
-    if [ "$appregtokengroupsclaimpresent" = "groups" ]; then
-	    echo $"Token is configured with groups token claim, no need to add it."
-	else
-	    echo "Update of the application registration's token configuration started."
-	    #Add a groups claim token for idTokens
-	    az ad app update --id $CLIENTID --set groupMembershipClaims=ApplicationGroup --optional-claims '{"idToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"accessToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"saml2Token":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}]}'
-		appregidtokengroupsclaimpresent=$(az ad app list --app-id $CLIENTID --query "[].optionalClaims[].idToken[].name" -o tsv)
-		appregaccesstokengroupsclaimpresent=$(az ad app list --app-id $CLIENTID --query "[].optionalClaims[].accessToken[].name" -o tsv)
-		appregsaml2tokengroupsclaimpresent=$(az ad app list --app-id $CLIENTID --query "[].optionalClaims[].saml2Token[].name" -o tsv)
-		echo $"idToken claim is now '$appregidtokengroupsclaimpresent'"
-		echo $"accessToken claim is now '$appregaccesstokengroupsclaimpresent'"
-		echo $"saml2Token claim is now '$appregsaml2tokengroupsclaimpresent'"
-	    echo "Update of the application registration's token configuration finished."
-	fi
-	#Create application Registration secret to be used for Authentication.
-	echo $"Let's check to see if an application registration secret has been created for Profisee, we'll recreate it if it is present as it can only be acquired during creation."
-    appregsecretpresent=$(az ad app list --app-id $CLIENTID --query "[].passwordCredentials[?displayName=='Profisee env in cluster $CLUSTERNAME'].displayName | [0]" -o tsv)
-	if [ "$appregsecretpresent" = "Profisee env in cluster $CLUSTERNAME" ]; then
-	    echo $"Application registration secret for 'Profisee in cluster $CLUSTERNAME' is already present, but need to recreate it. Acquiring secret ID so it can be deleted."
-		appregsecretid=$(az ad app list --app-id $CLIENTID --query "[].passwordCredentials[?displayName=='Profisee env in cluster $CLUSTERNAME'].keyId | [0]" -o tsv)
-		echo $"Application registration secret ID is $appregsecretid, deleting it."
-		az ad app credential delete --id $CLIENTID --key-id $appregsecretid
-		echo $"Application registration secret ID $appregsecretid has been deleted."
-		echo "Will sleep for 10 seconds to avoid request concurrency errors."
-		sleep 10
-		echo "Creating new application registration secret now."
-		CLIENTSECRET=$(az ad app credential reset --id $CLIENTID --append --display-name "Profisee env in cluster $CLUSTERNAME" --years 2 --query "password" -o tsv)
-	else
-	    echo "Secret for cluster $CLUSTERNAME does not exist, creating it."
-	    echo "Creating new application registration secret now."
-		CLIENTSECRET=$(az ad app credential reset --id $CLIENTID --append --display-name "Profisee env in cluster $CLUSTERNAME" --years 2 --query "password" -o tsv)
-	fi
+    echo "Update of the application registration's permissions, step 2 started."
+    az ad app permission grant --id $ClientIdValue --api 00000003-0000-0000-c000-000000000000 --scope User.Read
+    echo "Update of the application registration's permissions, step 2 finished."
+    echo "Update of Azure Active Directory finished.";
+fi
+#If Azure Application Registration "groups" token is present, skip adding it.
+echo $"Let's check to see if the "groups" token is present, skip if present."
+appregtokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].idToken[].name" -o tsv)
+if [ "$appregtokengroupsclaimpresent" = "groups" ]; then
+    echo $"Token is configured with groups token claim, no need to add it."
+else
+    echo "Update of the application registration's token configuration started."
+    #Add a groups claim token for idTokens
+    az ad app update --id $ClientIdValue --set groupMembershipClaims=ApplicationGroup --optional-claims '{"idToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"accessToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"saml2Token":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}]}'
+	appregidtokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].idToken[].name" -o tsv)
+	appregaccesstokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].accessToken[].name" -o tsv)
+	appregsaml2tokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].saml2Token[].name" -o tsv)
+	echo $"idToken claim is now '$appregidtokengroupsclaimpresent'"
+	echo $"accessToken claim is now '$appregaccesstokengroupsclaimpresent'"
+	echo $"saml2Token claim is now '$appregsaml2tokengroupsclaimpresent'"
+    echo "Update of the application registration's token configuration finished."
 fi
 
 #If not supplied, acquire storage account credentials.
@@ -570,29 +548,23 @@ sed -i -e 's/$PURVIEWCLIENTSECRET/'"$PURVIEWCLIENTSECRET"'/g' Settings.yaml
 sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
-if [ "$USEKEYVAULT" = "Yes" ]; then
-	sed -i -e 's/$USEKEYVAULT/'true'/g' Settings.yaml
+sed -i -e 's/$USEKEYVAULT/'true'/g' Settings.yaml
+sed -i -e 's/$KEYVAULTIDENTITCLIENTID/'"$akskvidentityClientId"'/g' Settings.yaml
+sed -i -e 's~$KEYVAULTIDENTITYRESOURCEID~'"$akskvidentityClientResourceId"'~g' Settings.yaml
 
-	sed -i -e 's/$KEYVAULTIDENTITCLIENTID/'"$akskvidentityClientId"'/g' Settings.yaml
-	sed -i -e 's~$KEYVAULTIDENTITYRESOURCEID~'"$akskvidentityClientResourceId"'~g' Settings.yaml
+sed -i -e 's/$SQL_USERNAMESECRET/'"$SQLUSERNAME"'/g' Settings.yaml
+sed -i -e 's/$SQL_USERPASSWORDSECRET/'"$SQLUSERPASSWORD"'/g' Settings.yaml
+sed -i -e 's/$TLS_CERTSECRET/'"$TLSCERT"'/g' Settings.yaml
+sed -i -e 's/$LICENSE_DATASECRET/'"$LICENSEDATASECRETNAME"'/g' Settings.yaml
+sed -i -e 's/$OIDCCLIENTID/'"$CLIENTID"'/g' Settings.yaml
+sed -i -e 's/$OIDCCLIENTSECRET/'"$CLIENTSECRET"'/g' Settings.yaml
+sed -i -e 's/$KUBERNETESCLIENTID/'"$KUBERNETESCLIENTID"'/g' Settings.yaml
 
-	sed -i -e 's/$SQL_USERNAMESECRET/'"$SQLUSERNAME"'/g' Settings.yaml
-	sed -i -e 's/$SQL_USERPASSWORDSECRET/'"$SQLUSERPASSWORD"'/g' Settings.yaml
-	sed -i -e 's/$TLS_CERTSECRET/'"$TLSCERT"'/g' Settings.yaml
-	sed -i -e 's/$LICENSE_DATASECRET/'"$LICENSEDATASECRETNAME"'/g' Settings.yaml
-	sed -i -e 's/$OIDCCLIENTID/'"$CLIENTID"'/g' Settings.yaml
-	sed -i -e 's/$OIDCCLIENTSECRET/'"$CLIENTSECRET"'/g' Settings.yaml
-	sed -i -e 's/$KUBERNETESCLIENTID/'"$KUBERNETESCLIENTID"'/g' Settings.yaml
+sed -i -e 's/$KEYVAULTNAME/'"$keyVaultName"'/g' Settings.yaml
+sed -i -e 's/$KEYVAULTRESOURCEGROUP/'"$keyVaultResourceGroup"'/g' Settings.yaml
 
-	sed -i -e 's/$KEYVAULTNAME/'"$keyVaultName"'/g' Settings.yaml
-	sed -i -e 's/$KEYVAULTRESOURCEGROUP/'"$keyVaultResourceGroup"'/g' Settings.yaml
-
-	sed -i -e 's/$AZURESUBSCRIPTIONID/'"$keyVaultSubscriptionId"'/g' Settings.yaml
-	sed -i -e 's/$AZURETENANTID/'"$TENANTID"'/g' Settings.yaml
-
-else
-	sed -i -e 's/$USEKEYVAULT/'false'/g' Settings.yaml
-fi
+sed -i -e 's/$AZURESUBSCRIPTIONID/'"$keyVaultSubscriptionId"'/g' Settings.yaml
+sed -i -e 's/$AZURETENANTID/'"$TENANTID"'/g' Settings.yaml
 
 if [ "$USELETSENCRYPT" = "Yes" ]; then
 	#################################Lets Encrypt Start #####################################
