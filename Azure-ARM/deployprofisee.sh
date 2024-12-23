@@ -389,7 +389,7 @@ else
 	echo $"saml2Token claim is now '$appregsaml2tokengroupsclaimpresent'"
     echo "Update of the application registration's token configuration finished."
 fi
-
+echo "12-1"
 #If not supplied, acquire storage account credentials.
 if [ "$FILEREPOPASSWORD" = "" ]; then
 	echo $"FILEREPOPASSWORD was not passed in, acquiring credentials from the storage account."
@@ -399,7 +399,7 @@ if [ "$FILEREPOPASSWORD" = "" ]; then
 else
 	echo $"FILEREPOPASSWORD was passed in, we'll use it."
 fi
-
+echo "12-2"
 echo $"Correction of TLS variables finished.";
 
 #If deployment of a new SQL database has been selected, we will create a SQL firewall rule to allow traffic from the AKS cluster's egress IP.
