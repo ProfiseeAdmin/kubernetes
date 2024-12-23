@@ -340,7 +340,7 @@ azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/signin-microsoft"
 ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query value -o tsv)
 #CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
 echo $"CLIENTID is $ClientIdvalue";
-
+echo "10"
 existing_redirect_uris=$(az ad app show --id $ClientIdvalue --query web.redirectUris --output tsv)
 echo $existing_redirect_uris
 if [[ $existing_redirect_uris == *$azureAppReplyUrl* ]]; then
@@ -349,7 +349,7 @@ else
     echo "Adding the URI $azureAppReplyUrl to the list"
     az ad app update --id $ClientIdValue --web-redirect-uris $existing_redirect_uris $azureAppReplyUrl
 fi
-
+echo "11"
 echo $"Let's Enable ID Tokens for App registration"
 az ad app update --id $ClientIdvalue --enable-id-token-issuance true
 #If Azure Application Registration User.Read permission is present, skip adding it.
@@ -374,6 +374,7 @@ fi
 #If Azure Application Registration "groups" token is present, skip adding it.
 echo $"Let's check to see if the "groups" token is present, skip if present."
 appregtokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].idToken[].name" -o tsv)
+echo "12"
 if [ "$appregtokengroupsclaimpresent" = "groups" ]; then
     echo $"Token is configured with groups token claim, no need to add it."
 else
