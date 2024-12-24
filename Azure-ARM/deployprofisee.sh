@@ -67,7 +67,6 @@ LICENSEDATA=$(echo $LICENSEDATA|tr -d '\n')
 echo $"Clean Profisee clientID string of any unwanted characters such as linebreaks, spaces, etc...";
 CLIENTIDVALUE=$(echo $CLIENTIDVALUE|tr -d '\n')
 echo $"CLIENTID is $CLIENTIDVALUE";
-echo "10"
 
 echo $"Search Profisee license for the fully qualified domain name value...";
 EXTERNALDNSURLLICENSE=$(./LicenseReader "ExternalDnsUrl" $LICENSEDATA)
@@ -353,7 +352,6 @@ echo $"newurl is $azureAppReplyUrl";
 
 #CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
 echo $"CLIENTID is $CLIENTIDVALUE";
-echo "10"
 existing_redirect_uris=$(az ad app show --id $CLIENTIDVALUE --query web.redirectUris --output tsv)
 echo $"existing_redirect_uris are $existing_redirect_uris";
 if [[ $existing_redirect_uris == *$azureAppReplyUrl* ]]; then
@@ -362,7 +360,6 @@ else
     echo "Adding the URI $azureAppReplyUrl to the list"
     az ad app update --id $CLIENTIDVALUE --web-redirect-uris $existing_redirect_uris $azureAppReplyUrl
 fi
-echo "11"
 echo $"Let's Enable ID Tokens for App registration"
 az ad app update --id $CLIENTIDVALUE --enable-id-token-issuance true
 #If Azure Application Registration User.Read permission is present, skip adding it.
@@ -387,7 +384,6 @@ fi
 #If Azure Application Registration "groups" token is present, skip adding it.
 echo $"Let's check to see if the "groups" token is present, skip if present."
 appregtokengroupsclaimpresent=$(az ad app list --app-id $CLIENTIDVALUE --query "[].optionalClaims[].idToken[].name" -o tsv)
-echo "12"
 if [ "$appregtokengroupsclaimpresent" = "groups" ]; then
     echo $"Token is configured with groups token claim, no need to add it."
 else
@@ -402,7 +398,6 @@ else
 	echo $"saml2Token claim is now '$appregsaml2tokengroupsclaimpresent'"
     echo "Update of the application registration's token configuration finished."
 fi
-echo "12-1"
 #If not supplied, acquire storage account credentials.
 if [ "$FILEREPOPASSWORD" = "" ]; then
 	echo $"FILEREPOPASSWORD was not passed in, acquiring credentials from the storage account."
@@ -412,7 +407,6 @@ if [ "$FILEREPOPASSWORD" = "" ]; then
 else
 	echo $"FILEREPOPASSWORD was passed in, we'll use it."
 fi
-echo "12-2"
 echo $"Correction of TLS variables finished.";
 
 #If deployment of a new SQL database has been selected, we will create a SQL firewall rule to allow traffic from the AKS cluster's egress IP.
