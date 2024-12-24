@@ -342,7 +342,7 @@ echo $"keyVaultName is $keyVaultName"
 echo $"subscriptionID is $keyVaultSubscriptionId"
 echo $"CLIENTID is $CLIENTID";
 echo $"newurl is $azureAppReplyUrl";
-ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value" -o tsv)
+ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value")
 #SECRET_VALUE=$(az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET_NAME" --query "value" -o tsv)
 
 
