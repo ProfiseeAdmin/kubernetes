@@ -352,12 +352,19 @@
                   "parameters": {
                       "LicenseFromVault": {
                       "type": "securestring"
+                      },
+                      "ClientIDFromVault": {
+                        "type": "securestring"
                       }
                       },
                       "outputs": {
                           "ValueInVault": {
                           "value": "[parameters('LicenseFromVault')]",
                           "type": "string"
+                          },
+                          "ClientIDInVault": {
+                            "value": "[parameters('ClientIDFromVault')]",
+                            "type": "string"
                           }
                       }
                   },
@@ -369,6 +376,14 @@
                       },
                       "secretName": "[parameters('ProfiseeLicense')]"
                       }
+                  },
+                  "ClientIDFromVault": {
+                     "reference": {
+                     "keyVault": {
+                      "id": "[parameters('KeyVault')]"
+                     },
+                     "secretName": "[parameters('ActiveDirectoryClientId')]"
+                     }
                   }
               }
           }
@@ -716,7 +731,7 @@
                       "name": "LICENSEDATA",
                       "value": "[if(equals(parameters('UseKeyVault'),'Yes'), reference('License').outputs.valueInVault.value,variables('LICENSEDATA'))]"
                   },
-                   {
+                  {
                       "name": "LICENSEDATASECRETNAME",
                       "value": "[variables('LICENSEDATA')]"
                   },
@@ -743,6 +758,10 @@
                   {
                       "name": "UPDATEAAD",
                       "value": "[variables('UPDATEAAD')]"
+                  },
+                  {
+                      "name": "CLIENTIDVALUE",
+                      "value": "[if(equals(parameters('UseKeyVault'),'Yes'), reference('License').outputs.ClientIDInVault.value,variables('CLIENTID'))]"
                   },
                   {
                       "name": "CLIENTID",

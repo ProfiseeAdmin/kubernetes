@@ -64,6 +64,11 @@ echo $"Download of Profisee license reader finished.";
 echo $"Clean Profisee license string of any unwanted characters such as linebreaks, spaces, etc...";
 LICENSEDATA=$(echo $LICENSEDATA|tr -d '\n')
 
+echo $"Clean Profisee clientID string of any unwanted characters such as linebreaks, spaces, etc...";
+CLIENTIDVALUE=$(echo $CLIENTIDVALUE|tr -d '\n')
+echo $"CLIENTID is $CLIENTIDVALUE";
+echo "10"
+
 echo $"Search Profisee license for the fully qualified domain name value...";
 EXTERNALDNSURLLICENSE=$(./LicenseReader "ExternalDnsUrl" $LICENSEDATA)
 
@@ -342,56 +347,56 @@ echo $"keyVaultName is $keyVaultName"
 echo $"subscriptionID is $keyVaultSubscriptionId"
 echo $"CLIENTID is $CLIENTID";
 echo $"newurl is $azureAppReplyUrl";
-ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value")
+#ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value")
 #SECRET_VALUE=$(az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET_NAME" --query "value" -o tsv)
 
 
 #CLIENTID=$(az ad app create --display-name $azureClientName --web-redirect-uris $azureAppReplyUrl --enable-id-token-issuance --query 'appId' -o tsv);
-echo $"CLIENTID is $ClientIdvalue";
+echo $"CLIENTID is $CLIENTIDVALUE";
 echo "10"
-existing_redirect_uris=$(az ad app show --id $ClientIdvalue --query web.redirectUris --output tsv)
+existing_redirect_uris=$(az ad app show --id $CLIENTIDVALUE --query web.redirectUris --output tsv)
 echo $"existing_redirect_uris are $existing_redirect_uris";
 if [[ $existing_redirect_uris == *$azureAppReplyUrl* ]]; then
     echo "The URI $azureAppReplyUrl already exists"
 else
     echo "Adding the URI $azureAppReplyUrl to the list"
-    az ad app update --id $ClientIdValue --web-redirect-uris $existing_redirect_uris $azureAppReplyUrl
+    az ad app update --id $CLIENTIDVALUE --web-redirect-uris $existing_redirect_uris $azureAppReplyUrl
 fi
 echo "11"
 echo $"Let's Enable ID Tokens for App registration"
-az ad app update --id $ClientIdvalue --enable-id-token-issuance true
+az ad app update --id $CLIENTIDVALUE --enable-id-token-issuance true
 #If Azure Application Registration User.Read permission is present, skip adding it.
 echo $"Let's check to see if the User.Read permission is granted, skip if has been."
-appregpermissionspresent=$(az ad app permission list --id $ClientIdValue --query "[].resourceAccess[].id" -o tsv)
+appregpermissionspresent=$(az ad app permission list --id $CLIENTIDVALUE --query "[].resourceAccess[].id" -o tsv)
 if [ "$appregpermissionspresent" = "e1fe6dd8-ba31-4d61-89e7-88639da4683d" ]; then
     echo $"User.Read permissions already present, no need to add it."
 else
     echo "Update of the application registration's permissions, step 1 started."
     #Add a Graph API permission to "Sign in and read user profile"
-    az ad app permission add --id $ClientIdValue --api 00000003-0000-0000-c000-000000000000 --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
+    az ad app permission add --id $CLIENTIDVALUE --api 00000003-0000-0000-c000-000000000000 --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
     echo "Creation of the service principal started."
-    az ad sp create --id $ClientIdValue
+    az ad sp create --id $CLIENTIDVALUE
     echo "Creation of the service principal finished."
     echo "Update of the application registration's permissions, step 1 finished."
 
     echo "Update of the application registration's permissions, step 2 started."
-    az ad app permission grant --id $ClientIdValue --api 00000003-0000-0000-c000-000000000000 --scope User.Read
+    az ad app permission grant --id $CLIENTIDVALUE--api 00000003-0000-0000-c000-000000000000 --scope User.Read
     echo "Update of the application registration's permissions, step 2 finished."
     echo "Update of Azure Active Directory finished.";
 fi
 #If Azure Application Registration "groups" token is present, skip adding it.
 echo $"Let's check to see if the "groups" token is present, skip if present."
-appregtokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].idToken[].name" -o tsv)
+appregtokengroupsclaimpresent=$(az ad app list --app-id $CLIENTIDVALUE --query "[].optionalClaims[].idToken[].name" -o tsv)
 echo "12"
 if [ "$appregtokengroupsclaimpresent" = "groups" ]; then
     echo $"Token is configured with groups token claim, no need to add it."
 else
     echo "Update of the application registration's token configuration started."
     #Add a groups claim token for idTokens
-    az ad app update --id $ClientIdValue --set groupMembershipClaims=ApplicationGroup --optional-claims '{"idToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"accessToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"saml2Token":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}]}'
-	appregidtokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].idToken[].name" -o tsv)
-	appregaccesstokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].accessToken[].name" -o tsv)
-	appregsaml2tokengroupsclaimpresent=$(az ad app list --app-id $ClientIdValue --query "[].optionalClaims[].saml2Token[].name" -o tsv)
+    az ad app update --id $CLIENTIDVALUE --set groupMembershipClaims=ApplicationGroup --optional-claims '{"idToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"accessToken":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}],"saml2Token":[{"additionalProperties":[],"essential":false,"name":"groups","source":null}]}'
+	appregidtokengroupsclaimpresent=$(az ad app list --app-id $CLIENTIDVALUE --query "[].optionalClaims[].idToken[].name" -o tsv)
+	appregaccesstokengroupsclaimpresent=$(az ad app list --app-id $CLIENTIDVALUE --query "[].optionalClaims[].accessToken[].name" -o tsv)
+	appregsaml2tokengroupsclaimpresent=$(az ad app list --app-id $CLIENTIDVALUE --query "[].optionalClaims[].saml2Token[].name" -o tsv)
 	echo $"idToken claim is now '$appregidtokengroupsclaimpresent'"
 	echo $"accessToken claim is now '$appregaccesstokengroupsclaimpresent'"
 	echo $"saml2Token claim is now '$appregsaml2tokengroupsclaimpresent'"
