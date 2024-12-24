@@ -341,6 +341,7 @@ echo $"KEYVAULT is $KEYVAULT"
 echo $"keyVaultName is $keyVaultName"
 echo $"subscriptionID is $keyVaultSubscriptionId"
 echo $"CLIENTID is $CLIENTID";
+echo $"newurl is $azureAppReplyUrl";
 ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultName --subscription $keyVaultSubscriptionId --query "value" -o tsv)
 #SECRET_VALUE=$(az keyvault secret show --vault-name "$KEYVAULT_NAME" --name "$SECRET_NAME" --query "value" -o tsv)
 
@@ -349,7 +350,7 @@ ClientIdValue=$(az keyvault secret show --name $CLIENTID --vault-name $keyVaultN
 echo $"CLIENTID is $ClientIdvalue";
 echo "10"
 existing_redirect_uris=$(az ad app show --id $ClientIdvalue --query web.redirectUris --output tsv)
-echo $existing_redirect_uris
+echo $"existing_redirect_uris are $existing_redirect_uris";
 if [[ $existing_redirect_uris == *$azureAppReplyUrl* ]]; then
     echo "The URI $azureAppReplyUrl already exists"
 else
