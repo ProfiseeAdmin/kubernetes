@@ -120,37 +120,37 @@ If the instance doesn’t appear in Session Manager:
 - Verify the jumpbox IAM role includes `AmazonSSMManagedInstanceCore`
 - Ensure VPC endpoints exist: `ssm`, `ssmmessages`, `ec2messages`
 
-## 4) Download files and edit placeholders
+## 5) Download files and edit placeholders
 Set repo variables (PowerShell):
 ```
 $RepoOwner = "<GITHUB_ORG>"
 $RepoName = "<REPO_NAME>"
-$RepoPath = "<PATH_IN_REPO>"
+$RepoPath = "kubernetes/AWS-automated"
 $Branch = "<BRANCH_OR_TAG>"
 $BaseRaw = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/$Branch/$RepoPath"
 ```
 
 Download core files:
 ```
-Invoke-WebRequest -Uri "$BaseRaw/FullyPrivateEKS.yaml" -OutFile "FullyPrivateEKS.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/deployprofisee-aws.ps1" -OutFile "deployprofisee-aws.ps1"
-Invoke-WebRequest -Uri "$BaseRaw/deployprofisee-aws-stack.ps1" -OutFile "deployprofisee-aws-stack.ps1"
-Invoke-WebRequest -Uri "$BaseRaw/Settings-aws.yaml" -OutFile "Settings-aws.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/traefik-values.yaml" -OutFile "traefik-values.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/traefik-values-public.yaml" -OutFile "traefik-values-public.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/infra/FullyPrivateEKS.yaml" -OutFile "FullyPrivateEKS.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/scripts/deployprofisee-aws.ps1" -OutFile "deployprofisee-aws.ps1"
+Invoke-WebRequest -Uri "$BaseRaw/scripts/deployprofisee-aws-stack.ps1" -OutFile "deployprofisee-aws-stack.ps1"
+Invoke-WebRequest -Uri "$BaseRaw/values/Settings-aws.yaml" -OutFile "Settings-aws.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/values/traefik-values.yaml" -OutFile "traefik-values.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/values/traefik-values-public.yaml" -OutFile "traefik-values-public.yaml"
 ```
 
 Optional files:
 ```
-Invoke-WebRequest -Uri "$BaseRaw/smb-csi-values.yaml" -OutFile "smb-csi-values.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/smb-secret.yaml" -OutFile "smb-secret.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/smb-storageclass.yaml" -OutFile "smb-storageclass.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/smb-pvc.yaml" -OutFile "smb-pvc.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/profisee-ingress.yaml" -OutFile "profisee-ingress.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/cert-manager-route53-issuer.yaml" -OutFile "cert-manager-route53-issuer.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/cert-manager-certificate.yaml" -OutFile "cert-manager-certificate.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/route53-credentials-secret.yaml" -OutFile "route53-credentials-secret.yaml"
-Invoke-WebRequest -Uri "$BaseRaw/secretsmanager-cert.example.json" -OutFile "secretsmanager-cert.example.json"
+Invoke-WebRequest -Uri "$BaseRaw/values/smb-csi-values.yaml" -OutFile "smb-csi-values.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/smb-secret.yaml" -OutFile "smb-secret.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/smb-storageclass.yaml" -OutFile "smb-storageclass.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/smb-pvc.yaml" -OutFile "smb-pvc.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/profisee-ingress.yaml" -OutFile "profisee-ingress.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/cert-manager-route53-issuer.yaml" -OutFile "cert-manager-route53-issuer.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/cert-manager-certificate.yaml" -OutFile "cert-manager-certificate.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/manifests/route53-credentials-secret.yaml" -OutFile "route53-credentials-secret.yaml"
+Invoke-WebRequest -Uri "$BaseRaw/examples/secretsmanager-cert.example.json" -OutFile "secretsmanager-cert.example.json"
 ```
 
 **Edit these files before use:**
@@ -161,7 +161,7 @@ Invoke-WebRequest -Uri "$BaseRaw/secretsmanager-cert.example.json" -OutFile "sec
 - `cert-manager-certificate.yaml` → set hostname  
 - `profisee-ingress.yaml` → set hostname (if used)
 
-## 5) Create Secrets Manager secrets (if not pre‑done)
+## 6) Create Secrets Manager secrets (if not pre‑done)
 **SQL credentials**  
 CloudFormation already creates the RDS master secret. You can use its ARN from stack outputs.
 
@@ -175,7 +175,7 @@ aws secretsmanager create-secret --name profisee-license --secret-string file://
 aws secretsmanager create-secret --name profisee-tls --secret-string file://secretsmanager-cert.example.json
 ```
 
-## 6) Deployment examples (common combinations)
+## 7) Deployment examples (common combinations)
 Set shared variables:
 ```
 $StackName = "ProfiseeStack"
