@@ -1,0 +1,68 @@
+sqlServer:
+  name: "<RDS_ENDPOINT>"
+  databaseName: "<DB_NAME>"
+  userName: "<DB_MASTER_USERNAME>"
+  password: "<DB_MASTER_PASSWORD>"
+profiseeRunTime:
+  useLetsEncrypt: "<USE_LETS_ENCRYPT>"
+  adminAccount: "<ADMIN_ACCOUNT_EMAIL>"
+  InfraAdminAccount: "<INFRA_ADMIN_EMAIL>"
+  fileRepository:
+    accountName: "<FSX_DNS_NAME>"
+    userName: "<DOMAIN_USER>"
+    password: "<DOMAIN_PASSWORD>"
+    logonType: "NewCredentials"
+    location: "\\\\<FSX_DNS_NAME>\\share"
+    fileShareName: "share"
+  externalDnsUrl: "https://<FQDN>"
+  externalDnsName: "<FQDN>"
+  webAppName: "<WEBAPPNAME>"
+  deployIngressRule: true
+  isPaaS: true
+  oidc:
+    name: "<OIDC_NAME>"
+    authority: "<OIDC_AUTHORITY_URL>"
+    clientId: "<OIDC_CLIENT_ID>"
+    clientSecret: "<OIDC_CLIENT_SECRET>"
+    usernameClaim: "<OIDC_USERNAME_CLAIM>"
+    userIdClaim: "<OIDC_USERID_CLAIM>"
+    firstNameClaim: "<OIDC_FIRSTNAME_CLAIM>"
+    lastNameClaim: "<OIDC_LASTNAME_CLAIM>"
+    emailClaim: "<OIDC_EMAIL_CLAIM>"
+    groupsClaim: "groups"
+  clusterNodeCount: 1
+clusterNode:
+  limits:
+    cpu: 3000m
+    memory: 8000Mi
+  requests:
+    cpu: 1
+    memory: 1000Mi
+image:
+  registry: "<IMAGE_REGISTRY>"
+  repository: "<IMAGE_REPOSITORY>"
+  tag: "<IMAGE_TAG>"
+  auth: |
+    {
+      "auths": {
+        "<IMAGE_REGISTRY>": {
+          "username": "<REGISTRY_USERNAME>",
+          "password": "<REGISTRY_PASSWORD>",
+          "email": "<REGISTRY_EMAIL>",
+          "auth": "<REGISTRY_AUTH_BASE64>"
+        }
+      }
+    }
+licenseFileData: "<LICENSE_BASE64>"
+preInitScriptData: "<PREINIT_BASE64>"
+postInitScriptData: "<POSTINIT_BASE64>"
+oidcFileData: |
+  {}
+tlsCert: |
+  NA
+tlsKey: |
+  NA
+cloud:
+  aws:
+    isProvider: true
+    ebsVolumeId: "<EBS_VOLUME_ID>"

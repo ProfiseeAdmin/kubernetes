@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: profisee-tls
+  namespace: profisee
+spec:
+  secretName: profisee-tls
+  issuerRef:
+    name: letsencrypt-route53
+    kind: ClusterIssuer
+  commonName: "profisee.example.com"
+  dnsNames:
+    - "profisee.example.com"

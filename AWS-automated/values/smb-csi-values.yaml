@@ -1,0 +1,17 @@
+linux:
+  enabled: true
+
+windows:
+  enabled: true
+
+controller:
+  nodeSelector:
+    kubernetes.io/os: linux
+
+node:
+  nodeSelector:
+    kubernetes.io/os: linux
+
+windowsNode:
+  nodeSelector:
+    kubernetes.io/os: windows

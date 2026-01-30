@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: profisee-ingress
+  namespace: profisee
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  tls:
+    - hosts:
+        - "profisee.example.com"
+      secretName: profisee-tls
+  rules:
+    - host: "profisee.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: profisee
+                port:
+                  number: 80
