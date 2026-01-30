@@ -108,7 +108,6 @@ function Ensure-File {
 $settingsLeaf = [System.IO.Path]::GetFileName($SettingsTemplate)
 $settingsRemote = "values/$settingsLeaf"
 Ensure-File -LocalPath $SettingsTemplate -RemotePath $settingsRemote -Label "Settings template"
-}
 
 $awsArgs = @()
 if (-not [string]::IsNullOrWhiteSpace($AwsProfile)) { $awsArgs += @("--profile", $AwsProfile) }

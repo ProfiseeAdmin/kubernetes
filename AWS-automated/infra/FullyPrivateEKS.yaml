@@ -782,6 +782,8 @@ Resources:
       Name: !Ref ClusterName
       Version: !If [HasEKSVersion, !Ref EKSVersion, !Ref AWS::NoValue]
       RoleArn: !GetAtt EKSClusterRole.Arn
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
       ResourcesVpcConfig:
         SecurityGroupIds: [!Ref ControlPlaneSecurityGroup ]
         SubnetIds: [ !Ref PrivateEKSSubnet01, !Ref PrivateEKSSubnet02 ]
@@ -839,7 +841,9 @@ Resources:
                   - eks:DescribeAccessEntry
                   - eks:ListAccessEntries
                   - eks:ListAssociatedAccessPolicies
-                Resource: !Sub 'arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+                Resource:
+                  - !Sub 'arn:aws:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+                  - !Sub 'arn:aws:eks:${AWS::Region}:${AWS::AccountId}:access-entry/${ClusterName}/*'
         - PolicyName: JumpboxCfnRead
           PolicyDocument:
             Version: "2012-10-17"
@@ -977,15 +981,17 @@ Resources:
         Fn::Base64:
           Fn::Sub: |
             <powershell>
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            choco upgrade chocolatey awscli kubernetes-cli kubernetes-helm eksctl -y
-            Import-Module C:\ProgramData\chocolatey\helpers\chocolateyProfile.psm1
-            refreshenv
-
+            $ProgressPreference = 'SilentlyContinue'
             # Give IAM/SSM/EKS time to settle and permissions to propagate
             Start-Sleep -Seconds 300
+
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            $env:ChocolateyUsePowerShellHttpClient = 'true'
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            choco upgrade chocolatey awscli kubernetes-cli kubernetes-helm eksctl -y --no-progress
+            Import-Module C:\ProgramData\chocolatey\helpers\chocolateyProfile.psm1
+            refreshenv
 
             $natMode = "${NatMode}"
             if ($natMode -ne "None") {
@@ -1224,6 +1230,18 @@ Conditions:
   HasEKSVersion: !Not [ !Equals [ !Ref EKSVersion, "" ] ]
 
 Outputs:
+
+  ClusterName:
+    Description: EKS cluster name
+    Value: !Ref ClusterName
+
+  ClusterArn:
+    Description: EKS cluster ARN
+    Value: !GetAtt ProfiseeEKSCluster.Arn
+
+  ClusterRegion:
+    Description: AWS region for the cluster
+    Value: !Ref AWS::Region
 
   VpcId:
     Description: The VPC ID
