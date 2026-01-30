@@ -28,6 +28,9 @@ param(
   [string]$DbSecretArn,
   [string]$FsxUser,
   [string]$FsxPassword,
+  [string]$Route53HostedZoneId = "",
+  [string]$Route53RecordName = "",
+  [int]$Route53RecordTtl = 300,
   [string]$ExternalFqdn,
   [string]$WebAppName,
   [string]$AdminAccount,
@@ -85,6 +88,9 @@ Write-Host "Running post-deploy config..."
   -DbSecretArn $DbSecretArn `
   -FsxUser $FsxUser `
   -FsxPassword $FsxPassword `
+  -Route53HostedZoneId $Route53HostedZoneId `
+  -Route53RecordName $Route53RecordName `
+  -Route53RecordTtl $Route53RecordTtl `
   -ExternalFqdn $ExternalFqdn `
   -WebAppName $WebAppName `
   -AdminAccount $AdminAccount `

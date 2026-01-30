@@ -33,6 +33,7 @@
 | `JumpboxKeyName` | (empty) | Optional EC2 key pair. If empty, SSM-only access is used. |
 | `AdditionalSecretsArn` | (empty) | Customer-supplied Secrets Manager ARN/prefix for extra secrets (TLS certs, etc.). If empty, no extra access is granted. |
 | `LicenseSecretArn` | (empty) | Pre-uploaded license secret ARN (customer-created). If empty, license must be provided via `-LicenseBase64`. |
+| `Route53HostedZoneId` | (empty) | Optional Route53 hosted zone ID. If provided, the jumpbox role is allowed to create DNS records in that zone. |
 | `NatMode` | `Single` | `Single`, `HA`, or `None` NAT mode. |
 | `ClusterName` | `ProfiseeEKSCluster` | EKS cluster name. |
 | `EKSVersion` | (empty) | EKS version. If empty, AWS default is used. |
@@ -250,6 +251,7 @@ $LicenseSecretArn = "arn:aws:secretsmanager:REGION:ACCOUNT:secret:profisee-licen
 ```
 
 ## Notes
+- DNS automation: pass `-Route53HostedZoneId` (and optionally `-Route53RecordName`) to `deployprofisee-aws.ps1` to UPSERT a CNAME to the Traefik NLB. The CFN parameter `Route53HostedZoneId` grants the jumpbox role permission to change records.
 - CloudFront requires ACM certificates in **us-east-1**.
 - For FSx SMB, install the SMB CSI driver and apply the storage class + PVC files.
 - For public ingress, use `traefik-values-public.yaml`. For private, use `traefik-values.yaml`.

@@ -82,6 +82,11 @@ Parameters:
     Default: ''
     Description: Optional pre-uploaded license Secrets Manager ARN (customer-created)
 
+  Route53HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Optional Route53 hosted zone ID for automated DNS record updates
+
   NatMode:
     Type: String
     Default: Single
@@ -867,6 +872,24 @@ Resources:
                     - secretsmanager:GetSecretValue
                   Resource: !Ref LicenseSecretArn
                 - !Ref AWS::NoValue
+        - !If
+          - HasRoute53HostedZoneId
+          - PolicyName: JumpboxRoute53
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - route53:ChangeResourceRecordSets
+                  Resource: !Sub 'arn:aws:route53:::hostedzone/${Route53HostedZoneId}'
+                - Effect: Allow
+                  Action:
+                    - route53:GetHostedZone
+                    - route53:ListHostedZones
+                    - route53:ListHostedZonesByName
+                    - route53:ListResourceRecordSets
+                  Resource: "*"
+          - !Ref AWS::NoValue
 
   JumpboxInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -1197,6 +1220,7 @@ Conditions:
   UseNatHA: !Equals [ !Ref NatMode, "HA" ]
   HasAdditionalSecretsArn: !Not [ !Equals [ !Ref AdditionalSecretsArn, "" ] ]
   HasLicenseSecretArn: !Not [ !Equals [ !Ref LicenseSecretArn, "" ] ]
+  HasRoute53HostedZoneId: !Not [ !Equals [ !Ref Route53HostedZoneId, "" ] ]
   HasEKSVersion: !Not [ !Equals [ !Ref EKSVersion, "" ] ]
 
 Outputs:

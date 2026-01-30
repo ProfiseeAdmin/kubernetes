@@ -32,6 +32,9 @@ param(
   [string]$FsxPvcSize = "20Gi",
   [string]$EbsVolumeId = "",
   [string]$ExternalFqdn,
+  [string]$Route53HostedZoneId = "",
+  [string]$Route53RecordName = "",
+  [int]$Route53RecordTtl = 300,
   [string]$WebAppName,
   [string]$AdminAccount,
   [string]$InfraAdminAccount,
@@ -551,6 +554,49 @@ spec:
   helm repo add traefik https://traefik.github.io/charts
   helm repo update
   helm upgrade --install traefik traefik/traefik -n $Namespace -f $TraefikValuesFile
+
+  if (-not [string]::IsNullOrWhiteSpace($Route53HostedZoneId)) {
+    if ([string]::IsNullOrWhiteSpace($Route53RecordName)) { $Route53RecordName = $ExternalFqdn }
+    if ([string]::IsNullOrWhiteSpace($Route53RecordName)) {
+      throw "Route53RecordName is required when Route53HostedZoneId is set."
+    }
+    if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+      throw "aws CLI not found in PATH; required to create Route53 records."
+    }
+
+    $lbHost = $null
+    $deadline = (Get-Date).AddMinutes(15)
+    do {
+      $lbHost = kubectl -n $Namespace get svc $TraefikServiceName -o "jsonpath={.status.loadBalancer.ingress[0].hostname}"
+      if ([string]::IsNullOrWhiteSpace($lbHost)) {
+        Start-Sleep -Seconds 15
+      }
+    } while ([string]::IsNullOrWhiteSpace($lbHost) -and (Get-Date) -lt $deadline)
+
+    if ([string]::IsNullOrWhiteSpace($lbHost)) {
+      throw "Unable to determine Traefik load balancer hostname for Route53 record creation."
+    }
+
+    $change = @{
+      Comment = "Profisee DNS"
+      Changes = @(
+        @{
+          Action = "UPSERT"
+          ResourceRecordSet = @{
+            Name = $Route53RecordName
+            Type = "CNAME"
+            TTL = $Route53RecordTtl
+            ResourceRecords = @(@{ Value = $lbHost })
+          }
+        }
+      )
+    } | ConvertTo-Json -Depth 6
+
+    $changeFile = Write-TempFile -Content $change -Suffix ".json"
+    aws @awsArgs route53 change-resource-record-sets --hosted-zone-id $Route53HostedZoneId --change-batch file://$changeFile | Out-Null
+    Remove-Item -Force $changeFile
+    Write-Host "Created/updated Route53 CNAME $Route53RecordName -> $lbHost in zone $Route53HostedZoneId."
+  }
 
   helm repo add profisee https://profisee.github.io/kubernetes
   helm repo update
