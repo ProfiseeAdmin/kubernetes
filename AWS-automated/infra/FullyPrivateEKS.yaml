@@ -325,6 +325,8 @@ Resources:
         Value: !Sub "${NamePrefix}-${EnvType}-public-subnet-01"
       - Key: kubernetes.io/role/elb
         Value: 1
+      - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+        Value: shared
 
   PublicSubnet02:
     Type: AWS::EC2::Subnet
@@ -341,6 +343,10 @@ Resources:
       Tags:
       - Key: Name
         Value: !Sub "${NamePrefix}-${EnvType}-public-subnet-02"
+      - Key: kubernetes.io/role/elb
+        Value: 1
+      - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+        Value: shared
       - Key: kubernetes.io/role/elb
         Value: 1
 
