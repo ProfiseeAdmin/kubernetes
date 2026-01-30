@@ -29,6 +29,7 @@ param(
   [string]$FsxDnsName,
   [string]$FsxUser,
   [string]$FsxPassword,
+  [string]$FsxPvcSize = "20Gi",
   [string]$EbsVolumeId = "",
   [string]$ExternalFqdn,
   [string]$WebAppName,
@@ -55,11 +56,55 @@ param(
   [string]$OidcFirstNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname",
   [string]$OidcLastNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
   [string]$OidcEmailClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+  [string]$TraefikValuesFile = "traefik-values.yaml",
+  [string]$ClusterName = "",
+  [switch]$UpdateKubeconfig,
+  [switch]$DownloadFiles,
+  [string]$RepoRawBase = "",
+  [switch]$Install,
+  [switch]$InstallCertManager,
   [string]$Namespace = "profisee"
 )
 
-if (-not (Test-Path $SettingsTemplate)) {
-  throw "Settings template not found: $SettingsTemplate"
+$doDownload = $DownloadFiles.IsPresent
+$doInstall = $Install.IsPresent
+$doKubeconfig = $UpdateKubeconfig.IsPresent -or $doInstall
+if ($doDownload -and [string]::IsNullOrWhiteSpace($RepoRawBase)) {
+  throw "RepoRawBase is required when -DownloadFiles is set."
+}
+if (-not [string]::IsNullOrWhiteSpace($RepoRawBase)) {
+  $RepoRawBase = $RepoRawBase.TrimEnd("/")
+}
+
+function Ensure-Directory {
+  param([string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) { return }
+  if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
+}
+
+function Ensure-File {
+  param(
+    [string]$LocalPath,
+    [string]$RemotePath,
+    [string]$Label
+  )
+  if (Test-Path $LocalPath) { return }
+  if (-not $doDownload) {
+    throw "$Label not found: $LocalPath. Provide the file or run with -DownloadFiles -RepoRawBase."
+  }
+  if ([string]::IsNullOrWhiteSpace($RepoRawBase)) {
+    throw "RepoRawBase is required when downloading $Label."
+  }
+  $dir = Split-Path -Parent $LocalPath
+  if ($dir) { Ensure-Directory -Path $dir }
+  $uri = "$RepoRawBase/$RemotePath"
+  Write-Host "Downloading $Label from $uri"
+  Invoke-WebRequest -Uri $uri -OutFile $LocalPath
+}
+
+$settingsLeaf = [System.IO.Path]::GetFileName($SettingsTemplate)
+$settingsRemote = "values/$settingsLeaf"
+Ensure-File -LocalPath $SettingsTemplate -RemotePath $settingsRemote -Label "Settings template"
 }
 
 $awsArgs = @()
@@ -73,11 +118,16 @@ if (-not [string]::IsNullOrWhiteSpace($StackName)) {
   foreach ($o in $stackJson.Stacks[0].Outputs) {
     $outputs[$o.OutputKey] = $o.OutputValue
   }
+  $params = @{}
+  foreach ($p in $stackJson.Stacks[0].Parameters) {
+    $params[$p.ParameterKey] = $p.ParameterValue
+  }
 
   if (-not $RdsEndpoint) { $RdsEndpoint = $outputs["RDSInstanceEndpoint"] }
   if (-not $FsxDnsName) { $FsxDnsName = $outputs["FSxDnsName"] }
   if (-not $EbsVolumeId) { $EbsVolumeId = $outputs["EBSVolumeId"] }
   if (-not $DbSecretArn) { $DbSecretArn = $outputs["RDSMasterSecretArn"] }
+  if (-not $ClusterName) { $ClusterName = $params["ClusterName"] }
 }
 
 if ([string]::IsNullOrWhiteSpace($RdsEndpoint)) { throw "RdsEndpoint is required (or provide StackName with RDSInstanceEndpoint output)." }
@@ -97,6 +147,9 @@ if ($StorageMode -eq "FSx") {
   if ([string]::IsNullOrWhiteSpace($FsxDnsName)) { throw "FsxDnsName is required for FSx." }
   if ([string]::IsNullOrWhiteSpace($FsxUser)) { throw "FsxUser is required for FSx." }
   if ([string]::IsNullOrWhiteSpace($FsxPassword)) { throw "FsxPassword is required for FSx." }
+}
+if ($StorageMode -eq "EBS" -and [string]::IsNullOrWhiteSpace($EbsVolumeId)) {
+  throw "EbsVolumeId is required for EBS."
 }
 
 if ($TraefikTlsMode -eq "SecretsManager" -and [string]::IsNullOrWhiteSpace($TraefikTlsSecretArn)) {
@@ -200,6 +253,21 @@ if ($StorageMode -eq "FSx") {
 Set-Content -Path $SettingsOut -Value $settings
 
 Write-Host "Rendered settings written to $SettingsOut"
+
+if ($doKubeconfig) {
+  if ([string]::IsNullOrWhiteSpace($ClusterName)) {
+    Write-Host "ClusterName not set; skipping aws eks update-kubeconfig."
+  } else {
+    if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+      throw "aws CLI not found in PATH; required to run aws eks update-kubeconfig."
+    }
+    $kcArgs = @("eks", "update-kubeconfig", "--name", $ClusterName)
+    if (-not [string]::IsNullOrWhiteSpace($AwsRegion)) { $kcArgs += @("--region", $AwsRegion) }
+    if (-not [string]::IsNullOrWhiteSpace($AwsProfile)) { $kcArgs += @("--profile", $AwsProfile) }
+    aws @kcArgs | Out-Null
+    Write-Host "Kubeconfig updated for cluster $ClusterName."
+  }
+}
 
 if ($TraefikTlsMode -eq "SecretsManager") {
   if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
@@ -400,6 +468,96 @@ if ($CloudFrontEnabled -eq "true") {
       Write-Host "Created Route53 alias records for $CloudFrontAlias."
     }
   }
+}
+
+if ($doInstall) {
+  if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+    throw "kubectl not found in PATH; required for installation."
+  }
+  if (-not (Get-Command helm -ErrorAction SilentlyContinue)) {
+    throw "helm not found in PATH; required for installation."
+  }
+
+  kubectl get namespace $Namespace 1>$null 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    kubectl create namespace $Namespace | Out-Null
+  }
+
+  if ($StorageMode -eq "FSx") {
+    $smbValuesFile = "smb-csi-values.yaml"
+    Ensure-File -LocalPath $smbValuesFile -RemotePath "values/smb-csi-values.yaml" -Label "SMB CSI values"
+
+    helm repo add csi-driver-smb https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+    helm repo update
+    helm upgrade --install smb-csi csi-driver-smb/csi-driver-smb -n kube-system -f $smbValuesFile
+
+    kubectl -n $Namespace create secret generic smbcreds `
+      --from-literal=username=$FsxUser `
+      --from-literal=password=$FsxPassword `
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    $scYaml = @"
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smb-fsx
+provisioner: smb.csi.k8s.io
+parameters:
+  source: "\\\\$FsxDnsName\\share"
+  csi.storage.k8s.io/node-stage-secret-name: smbcreds
+  csi.storage.k8s.io/node-stage-secret-namespace: $Namespace
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+mountOptions:
+  - dir_mode=0777
+  - file_mode=0777
+  - vers=3.0
+"@
+    $scYaml | kubectl apply -f -
+
+    $pvcYaml = @"
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: profisee-fileshare
+  namespace: $Namespace
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: smb-fsx
+  resources:
+    requests:
+      storage: $FsxPvcSize
+"@
+    $pvcYaml | kubectl apply -f -
+  }
+
+  if ($InstallCertManager) {
+    Ensure-File -LocalPath "route53-credentials-secret.yaml" -RemotePath "manifests/route53-credentials-secret.yaml" -Label "Route53 credentials secret"
+    Ensure-File -LocalPath "cert-manager-route53-issuer.yaml" -RemotePath "manifests/cert-manager-route53-issuer.yaml" -Label "cert-manager Route53 issuer"
+    Ensure-File -LocalPath "cert-manager-certificate.yaml" -RemotePath "manifests/cert-manager-certificate.yaml" -Label "cert-manager certificate"
+
+    helm repo add jetstack https://charts.jetstack.io
+    helm repo update
+    helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set installCRDs=true
+
+    kubectl apply -f route53-credentials-secret.yaml
+    kubectl apply -f cert-manager-route53-issuer.yaml
+    kubectl apply -f cert-manager-certificate.yaml
+  }
+
+  $traefikLeaf = [System.IO.Path]::GetFileName($TraefikValuesFile)
+  Ensure-File -LocalPath $TraefikValuesFile -RemotePath "values/$traefikLeaf" -Label "Traefik values"
+  helm repo add traefik https://traefik.github.io/charts
+  helm repo update
+  helm upgrade --install traefik traefik/traefik -n $Namespace -f $TraefikValuesFile
+
+  helm repo add profisee https://profisee.github.io/kubernetes
+  helm repo update
+  helm upgrade --install profiseeplatform profisee/profisee-platform -n $Namespace -f $SettingsOut
+
+  Write-Host "Profisee deployment complete."
+  return
 }
 
 Write-Host "Next steps (run from a shell with kubectl/helm configured):"

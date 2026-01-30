@@ -1,10 +1,10 @@
 param(
   [string]$StackName,
-  [string]$TemplateFile = "FullyPrivateEKS.yaml",
+  [string]$TemplateFile = "infra/FullyPrivateEKS.yaml",
   [string]$ParametersFile = "",
   [string]$AwsProfile = "",
   [string]$AwsRegion = "us-east-1",
-  [string]$SettingsTemplate = "Settings-aws.yaml",
+  [string]$SettingsTemplate = "values/Settings-aws.yaml",
   [string]$SettingsOut = "Settings-aws.rendered.yaml",
   [ValidateSet("FSx","EBS")]
   [string]$StorageMode = "FSx",

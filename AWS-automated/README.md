@@ -121,6 +121,13 @@ If the instance doesn’t appear in Session Manager:
 - Ensure VPC endpoints exist: `ssm`, `ssmmessages`, `ec2messages`
 
 ## 5) Download files and edit placeholders
+**Quick path (script-only):** download just the deploy script and let it pull the rest.
+```
+$RepoRaw = "https://raw.githubusercontent.com/<ORG>/<REPO>/<BRANCH>/kubernetes/AWS-automated"
+Invoke-WebRequest -Uri "$RepoRaw/scripts/deployprofisee-aws.ps1" -OutFile "deployprofisee-aws.ps1"
+.\deployprofisee-aws.ps1 -DownloadFiles -RepoRawBase $RepoRaw -Install <other required args>
+```
+
 Set repo variables (PowerShell):
 ```
 $RepoOwner = "<GITHUB_ORG>"
