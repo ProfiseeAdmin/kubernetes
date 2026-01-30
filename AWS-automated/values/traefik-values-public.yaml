@@ -11,9 +11,11 @@ service:
 
 ports:
   web:
-    expose: true
+    expose:
+      default: true
   websecure:
-    expose: true
+    expose:
+      default: true
 
 nodeSelector:
   kubernetes.io/os: linux
