@@ -718,6 +718,16 @@ Resources:
       - Key: Name
         Value: !Sub '${NamePrefix}-${EnvType}-jumpbox-sg'
 
+  JumpboxToControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: UseJumpbox
+    Properties:
+      GroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref JumpboxSecurityGroup
+
   NodeToControlPlaneIngress:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
