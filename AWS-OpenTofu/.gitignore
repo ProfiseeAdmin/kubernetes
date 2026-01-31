@@ -1,0 +1,16 @@
+# OpenTofu / Terraform dirs
+**/.terraform/**
+**/.tofu/**
+
+# State files
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Customer deployment folders (customer-specific + secrets)
+customer-deployments/**
+**/secrets/**
+*.lic
+
+# kube / helm
+kubeconfig
