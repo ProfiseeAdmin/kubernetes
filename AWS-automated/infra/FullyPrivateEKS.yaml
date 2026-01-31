@@ -87,6 +87,14 @@ Parameters:
     Default: ''
     Description: Optional Route53 hosted zone ID for automated DNS record updates
 
+  EnableAlbController:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Install AWS Load Balancer Controller on the cluster
+
   NatMode:
     Type: String
     Default: Single
@@ -805,6 +813,199 @@ Resources:
         SubnetIds: [ !Ref PrivateEKSSubnet01, !Ref PrivateEKSSubnet02 ]
         EndpointPrivateAccess: true
         EndpointPublicAccess: false
+
+  AlbControllerOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: UseAlbController
+    Properties:
+      Url: !GetAtt ProfiseeEKSCluster.OidcIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 9e99a48a9960b14926bb7f3b02e22da0afd40a7c
+
+  AlbControllerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: UseAlbController
+    Properties:
+      ManagedPolicyName: !Sub '${NamePrefix}-${EnvType}-AWSLoadBalancerControllerPolicy'
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - iam:CreateServiceLinkedRole
+            Resource: "*"
+            Condition:
+              StringEquals:
+                iam:AWSServiceName: elasticloadbalancing.amazonaws.com
+          - Effect: Allow
+            Action:
+              - ec2:DescribeAccountAttributes
+              - ec2:DescribeAddresses
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeInternetGateways
+              - ec2:DescribeVpcs
+              - ec2:DescribeVpcPeeringConnections
+              - ec2:DescribeSubnets
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeInstances
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeTags
+              - ec2:GetCoipPoolUsage
+              - ec2:DescribeCoipPools
+              - elasticloadbalancing:DescribeLoadBalancers
+              - elasticloadbalancing:DescribeLoadBalancerAttributes
+              - elasticloadbalancing:DescribeListeners
+              - elasticloadbalancing:DescribeListenerCertificates
+              - elasticloadbalancing:DescribeSSLPolicies
+              - elasticloadbalancing:DescribeRules
+              - elasticloadbalancing:DescribeTargetGroups
+              - elasticloadbalancing:DescribeTargetGroupAttributes
+              - elasticloadbalancing:DescribeTargetHealth
+              - elasticloadbalancing:DescribeTags
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - cognito-idp:DescribeUserPoolClient
+              - acm:ListCertificates
+              - acm:DescribeCertificate
+              - iam:ListServerCertificates
+              - iam:GetServerCertificate
+              - waf-regional:GetWebACL
+              - waf-regional:GetWebACLForResource
+              - waf-regional:AssociateWebACL
+              - waf-regional:DisassociateWebACL
+              - wafv2:GetWebACL
+              - wafv2:GetWebACLForResource
+              - wafv2:AssociateWebACL
+              - wafv2:DisassociateWebACL
+              - shield:GetSubscriptionState
+              - shield:DescribeProtection
+              - shield:CreateProtection
+              - shield:DeleteProtection
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupIngress
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:CreateSecurityGroup
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+            Resource: !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+            Condition:
+              StringEquals:
+                ec2:CreateAction: CreateSecurityGroup
+              "Null":
+                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - ec2:CreateTags
+              - ec2:DeleteTags
+            Resource: !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*'
+            Condition:
+              "Null":
+                aws:RequestTag/elbv2.k8s.aws/cluster: "true"
+                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:DeleteSecurityGroup
+            Resource: "*"
+            Condition:
+              "Null":
+                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:CreateLoadBalancer
+              - elasticloadbalancing:CreateTargetGroup
+            Resource: "*"
+            Condition:
+              "Null":
+                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:CreateListener
+              - elasticloadbalancing:DeleteListener
+              - elasticloadbalancing:CreateRule
+              - elasticloadbalancing:DeleteRule
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:AddTags
+              - elasticloadbalancing:RemoveTags
+            Resource:
+              - !Sub 'arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*/*'
+              - !Sub 'arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/net/*/*'
+              - !Sub 'arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/*/*'
+            Condition:
+              "Null":
+                aws:RequestTag/elbv2.k8s.aws/cluster: "false"
+                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:ModifyLoadBalancerAttributes
+              - elasticloadbalancing:SetIpAddressType
+              - elasticloadbalancing:SetSecurityGroups
+              - elasticloadbalancing:SetSubnets
+              - elasticloadbalancing:DeleteLoadBalancer
+              - elasticloadbalancing:ModifyTargetGroup
+              - elasticloadbalancing:ModifyTargetGroupAttributes
+              - elasticloadbalancing:DeleteTargetGroup
+            Resource: "*"
+            Condition:
+              "Null":
+                aws:ResourceTag/elbv2.k8s.aws/cluster: "false"
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:RegisterTargets
+              - elasticloadbalancing:DeregisterTargets
+            Resource: !Sub 'arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:targetgroup/*/*'
+          - Effect: Allow
+            Action:
+              - elasticloadbalancing:SetWebAcl
+              - elasticloadbalancing:ModifyListener
+              - elasticloadbalancing:AddListenerCertificates
+              - elasticloadbalancing:RemoveListenerCertificates
+              - elasticloadbalancing:ModifyRule
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeInstanceStatus
+              - ec2:DescribeTags
+            Resource: "*"
+
+  AlbControllerRole:
+    Type: AWS::IAM::Role
+    Condition: UseAlbController
+    Properties:
+      RoleName: !Sub '${NamePrefix}-${EnvType}-AlbControllerRole'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref AlbControllerOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                ? !Sub
+                  - "${OidcProvider}:aud"
+                  - OidcProvider: !Select [1, !Split ["https://", !GetAtt ProfiseeEKSCluster.OidcIssuerUrl]]
+                : "sts.amazonaws.com"
+                ? !Sub
+                  - "${OidcProvider}:sub"
+                  - OidcProvider: !Select [1, !Split ["https://", !GetAtt ProfiseeEKSCluster.OidcIssuerUrl]]
+                : "system:serviceaccount:kube-system:aws-load-balancer-controller"
+      ManagedPolicyArns:
+        - !Ref AlbControllerPolicy
   
   #Node role
   EKSNodeRole:
@@ -995,7 +1196,8 @@ Resources:
         - !Ref AWS::NoValue
       UserData:
         Fn::Base64:
-          Fn::Sub: |
+          Fn::Sub:
+            - |
             <powershell>
             $ProgressPreference = 'SilentlyContinue'
             # Give IAM/SSM/EKS time to settle and permissions to propagate
@@ -1035,7 +1237,41 @@ Resources:
                 aws eks associate-access-policy --cluster-name $clusterName --region $region --principal-arn $roleArn --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster
               }
             }
+
+            if ("${EnableAlbController}" -eq "true") {
+              $clusterName = "${ClusterName}"
+              $region = "${AWS::Region}"
+              $albRoleArn = "${AlbControllerRoleArn}"
+
+              aws eks update-kubeconfig --name $clusterName --region $region | Out-Null
+
+              $vpcId = aws eks describe-cluster --name $clusterName --region $region --query "cluster.resourcesVpcConfig.vpcId" --output text
+              $existing = kubectl get deployment -n kube-system aws-load-balancer-controller --ignore-not-found
+              if ([string]::IsNullOrWhiteSpace($existing)) {
+                $sa = @"
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aws-load-balancer-controller
+  namespace: kube-system
+  annotations:
+    eks.amazonaws.com/role-arn: $albRoleArn
+"@
+                $sa | kubectl apply -f -
+
+                helm repo add eks https://aws.github.io/eks-charts
+                helm repo update
+                helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller `
+                  -n kube-system `
+                  --set clusterName=$clusterName `
+                  --set serviceAccount.create=false `
+                  --set serviceAccount.name=aws-load-balancer-controller `
+                  --set region=$region `
+                  --set vpcId=$vpcId
+              }
+            }
             </powershell>
+            - AlbControllerRoleArn: !If [UseAlbController, !GetAtt AlbControllerRole.Arn, ""]
       Tags:
         - Key: Name
           Value: !Sub '${NamePrefix}-${EnvType}-jumpbox'
@@ -1244,6 +1480,7 @@ Conditions:
   HasLicenseSecretArn: !Not [ !Equals [ !Ref LicenseSecretArn, "" ] ]
   HasRoute53HostedZoneId: !Not [ !Equals [ !Ref Route53HostedZoneId, "" ] ]
   HasEKSVersion: !Not [ !Equals [ !Ref EKSVersion, "" ] ]
+  UseAlbController: !Equals [ !Ref EnableAlbController, "true" ]
 
 Outputs:
 
