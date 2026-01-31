@@ -1,2 +1,4 @@
-// TODO: provider pins for outputs_contract
+terraform {
+  required_version = ">= 1.11.0"
+}
 

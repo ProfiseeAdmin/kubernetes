@@ -137,13 +137,13 @@ variable "cloudfront" {
   type = object({
     enabled                = optional(bool, true)
     aliases                = optional(list(string), [])
-    origin_domain_name     = string
+    origin_domain_name     = optional(string)
     origin_id              = optional(string, "origin")
     origin_protocol_policy = optional(string, "https-only")
     origin_ssl_protocols   = optional(list(string), ["TLSv1.2"])
     origin_read_timeout    = optional(number, 60)
     origin_keepalive_timeout = optional(number, 60)
-    origin_custom_header_name = optional(string, "X-Origin-Verify")
+    origin_custom_headers  = optional(map(string), {})
     price_class            = optional(string, "PriceClass_100")
     web_acl_id             = optional(string)
     enable_logging         = optional(bool, false)
@@ -151,22 +151,34 @@ variable "cloudfront" {
     tags                   = optional(map(string), {})
   })
   description = "CloudFront distribution configuration."
-}
 
-variable "cloudfront_origin_custom_header_value" {
-  type        = string
-  default     = null
-  sensitive   = true
-  description = "Custom origin header value for CloudFront (use with care; ends up in state)."
+  validation {
+    condition = !var.cloudfront.enabled || (
+      var.cloudfront.origin_domain_name != null &&
+      var.cloudfront.origin_domain_name != ""
+    )
+    error_message = "cloudfront.origin_domain_name is required when cloudfront.enabled is true."
+  }
 }
 
 variable "route53" {
   type = object({
-    hosted_zone_id         = string
-    record_name            = string
+    enabled                = optional(bool, true)
+    hosted_zone_id         = optional(string)
+    record_name            = optional(string)
     record_type            = optional(string, "A")
     evaluate_target_health = optional(bool, false)
   })
   description = "Route53 record configuration for CloudFront."
+
+  validation {
+    condition = !var.route53.enabled || (
+      var.route53.hosted_zone_id != null &&
+      var.route53.hosted_zone_id != "" &&
+      var.route53.record_name != null &&
+      var.route53.record_name != ""
+    )
+    error_message = "route53.hosted_zone_id and route53.record_name are required when route53.enabled is true."
+  }
 }
 

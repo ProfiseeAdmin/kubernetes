@@ -50,17 +50,10 @@ variable "origin_keepalive_timeout" {
   description = "Origin keepalive timeout in seconds."
 }
 
-variable "origin_custom_header_name" {
-  type        = string
-  default     = "X-Origin-Verify"
-  description = "Custom header name sent to the origin."
-}
-
-variable "origin_custom_header_value" {
-  type        = string
-  default     = null
-  sensitive   = true
-  description = "Custom header value sent to the origin."
+variable "origin_custom_headers" {
+  type        = map(string)
+  default     = {}
+  description = "Custom headers sent to the origin. Values are stored in state; do not use secrets."
 }
 
 variable "price_class" {
@@ -85,6 +78,11 @@ variable "logging_bucket" {
   type        = string
   default     = null
   description = "S3 bucket for access logs (required if enable_logging is true)."
+
+  validation {
+    condition     = !var.enable_logging || (var.logging_bucket != null && var.logging_bucket != "")
+    error_message = "logging_bucket must be set when enable_logging is true."
+  }
 }
 
 variable "tags" {

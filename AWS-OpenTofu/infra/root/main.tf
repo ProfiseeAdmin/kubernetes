@@ -86,6 +86,7 @@ module "acm_use1" {
 }
 
 module "cloudfront" {
+  count  = var.cloudfront.enabled ? 1 : 0
   source = "../modules/cloudfront"
 
   enabled                   = var.cloudfront.enabled
@@ -97,8 +98,7 @@ module "cloudfront" {
   origin_ssl_protocols      = var.cloudfront.origin_ssl_protocols
   origin_read_timeout       = var.cloudfront.origin_read_timeout
   origin_keepalive_timeout  = var.cloudfront.origin_keepalive_timeout
-  origin_custom_header_name = var.cloudfront.origin_custom_header_name
-  origin_custom_header_value = var.cloudfront_origin_custom_header_value
+  origin_custom_headers      = var.cloudfront.origin_custom_headers
   price_class               = var.cloudfront.price_class
   web_acl_id                = var.cloudfront.web_acl_id
   enable_logging            = var.cloudfront.enable_logging
@@ -107,13 +107,14 @@ module "cloudfront" {
 }
 
 module "route53" {
+  count  = var.cloudfront.enabled && var.route53.enabled ? 1 : 0
   source = "../modules/route53"
 
   hosted_zone_id         = var.route53.hosted_zone_id
   record_name            = var.route53.record_name
   record_type            = var.route53.record_type
-  alias_name             = module.cloudfront.distribution_domain_name
-  alias_zone_id          = module.cloudfront.hosted_zone_id
+  alias_name             = module.cloudfront[0].distribution_domain_name
+  alias_zone_id          = module.cloudfront[0].hosted_zone_id
   evaluate_target_health = var.route53.evaluate_target_health
 }
 
@@ -132,10 +133,10 @@ module "outputs_contract" {
     rds_endpoint               = module.rds_sqlserver.endpoint
     rds_port                   = module.rds_sqlserver.port
     rds_master_user_secret_arn = module.rds_sqlserver.master_user_secret_arn
-    cloudfront_id              = module.cloudfront.distribution_id
-    cloudfront_domain_name     = module.cloudfront.distribution_domain_name
-    cloudfront_hosted_zone_id  = module.cloudfront.hosted_zone_id
-    route53_record_fqdn        = module.route53.record_fqdn
+    cloudfront_id              = var.cloudfront.enabled ? module.cloudfront[0].distribution_id : null
+    cloudfront_domain_name     = var.cloudfront.enabled ? module.cloudfront[0].distribution_domain_name : null
+    cloudfront_hosted_zone_id  = var.cloudfront.enabled ? module.cloudfront[0].hosted_zone_id : null
+    route53_record_fqdn        = var.cloudfront.enabled && var.route53.enabled ? module.route53[0].record_fqdn : null
     acm_certificate_arn        = module.acm_use1.certificate_arn
   }
 }

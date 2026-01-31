@@ -63,6 +63,11 @@ variable "manage_master_user_password" {
   type        = bool
   default     = true
   description = "Use AWS-managed Secrets Manager password."
+
+  validation {
+    condition     = var.manage_master_user_password
+    error_message = "manage_master_user_password must be true to avoid storing secrets in state."
+  }
 }
 
 variable "master_user_secret_kms_key_id" {

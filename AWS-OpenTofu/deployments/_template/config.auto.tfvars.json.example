@@ -1,4 +1,78 @@
 {
-  // TODO
+  "region": "us-west-2",
+  "use1_region": "us-east-1",
+  "tags": {
+    "Project": "my-product",
+    "Environment": "dev"
+  },
+  "vpc": {
+    "name": "my-product",
+    "cidr_block": "10.20.0.0/16",
+    "azs": [
+      "us-west-2a",
+      "us-west-2b",
+      "us-west-2c"
+    ],
+    "public_subnet_cidrs": [
+      "10.20.0.0/20",
+      "10.20.16.0/20",
+      "10.20.32.0/20"
+    ],
+    "private_subnet_cidrs": [
+      "10.20.64.0/20",
+      "10.20.80.0/20",
+      "10.20.96.0/20"
+    ]
+  },
+  "eks": {
+    "cluster_name": "my-product-eks",
+    "cluster_version": "1.29",
+    "linux_node_group": {
+      "instance_types": [
+        "m6i.large"
+      ],
+      "min_size": 2,
+      "max_size": 4,
+      "desired_size": 2
+    },
+    "windows_node_group": {
+      "instance_types": [
+        "m6i.large"
+      ],
+      "min_size": 1,
+      "max_size": 2,
+      "desired_size": 1
+    }
+  },
+  "rds_sqlserver": {
+    "identifier": "my-product-sql",
+    "engine_version": "<sqlserver-version>",
+    "instance_class": "db.m6i.large",
+    "allocated_storage": 200,
+    "master_username": "dbadmin"
+  },
+  "kms": {
+    "keys": {}
+  },
+  "secrets": {
+    "secrets": {}
+  },
+  "acm": {
+    "domain_name": "app.example.com",
+    "hosted_zone_id": "Z1234567890ABC"
+  },
+  "cloudfront": {
+    "enabled": false,
+    "aliases": [
+      "app.example.com"
+    ],
+    "origin_domain_name": "nlb-abc123.us-west-2.elb.amazonaws.com",
+    "origin_custom_headers": {}
+  },
+  "route53": {
+    "enabled": false,
+    "hosted_zone_id": "Z1234567890ABC",
+    "record_name": "app.example.com"
+  }
 }
 
