@@ -38,7 +38,7 @@ variable "eks" {
   type = object({
     cluster_name            = string
     cluster_version         = string
-    endpoint_public_access  = optional(bool, true)
+    endpoint_public_access  = optional(bool, false)
     endpoint_private_access = optional(bool, true)
     enabled_cluster_log_types = optional(
       list(string),
@@ -180,5 +180,26 @@ variable "route53" {
     )
     error_message = "route53.hosted_zone_id and route53.record_name are required when route53.enabled is true."
   }
+}
+
+variable "jumpbox" {
+  type = object({
+    enabled              = optional(bool, false)
+    name                 = optional(string, "jumpbox")
+    subnet_id            = optional(string)
+    instance_type        = optional(string, "m6i.large")
+    ami_id               = optional(string)
+    key_name             = optional(string)
+    iam_policy_arns      = optional(list(string), [])
+    assume_role_arn      = optional(string)
+    associate_public_ip  = optional(bool, false)
+    root_volume_size_gb  = optional(number, 80)
+    enable_rdp_ingress   = optional(bool, false)
+    allowed_rdp_cidrs    = optional(list(string), [])
+    user_data            = optional(string)
+    tags                 = optional(map(string), {})
+  })
+  default     = {}
+  description = "Windows jumpbox configuration."
 }
 

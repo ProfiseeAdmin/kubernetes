@@ -27,6 +27,8 @@
   "eks": {
     "cluster_name": "my-product-eks",
     "cluster_version": "1.29",
+    "endpoint_public_access": false,
+    "endpoint_private_access": true,
     "linux_node_group": {
       "instance_types": [
         "m6i.large"
@@ -49,7 +51,8 @@
     "engine_version": "<sqlserver-version>",
     "instance_class": "db.m6i.large",
     "allocated_storage": 200,
-    "master_username": "dbadmin"
+    "master_username": "dbadmin",
+    "publicly_accessible": false
   },
   "kms": {
     "keys": {}
@@ -73,6 +76,15 @@
     "enabled": false,
     "hosted_zone_id": "Z1234567890ABC",
     "record_name": "app.example.com"
+  },
+  "jumpbox": {
+    "enabled": false,
+    "instance_type": "m6i.large",
+    "associate_public_ip": false,
+    "enable_rdp_ingress": false,
+    "allowed_rdp_cidrs": [],
+    "iam_policy_arns": [],
+    "assume_role_arn": ""
   }
 }
 

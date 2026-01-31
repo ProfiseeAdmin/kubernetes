@@ -11,6 +11,41 @@ account. It keeps secrets out of Git and out of OpenTofu state.
 
 ## Stage A - Bootstrap state backend
 
+### Step 1 - Authenticate as a deploy role
+
+Create a dedicated IAM role in the customer account (example name:
+`opentofu-deploy`) and attach the permissions needed for bootstrap and infra.
+
+For initial proof/testing, attach `AdministratorAccess`. Later, replace it with
+least‑privilege policies.
+
+Suggested steps in IAM:
+1. IAM → Roles → Create role
+2. Trusted entity: AWS account (this account)
+3. Add a trust relationship for your IAM user or SSO role that will run OpenTofu
+4. Attach `AdministratorAccess` (for proof/testing)
+5. Name the role `opentofu-deploy`
+
+Then configure your CLI to assume the role:
+
+```ini
+# ~/.aws/config
+[profile opentofu-deploy]
+role_arn = arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy
+source_profile = default
+region = us-west-2
+```
+
+Run subsequent commands with:
+
+```powershell
+$env:AWS_PROFILE = "opentofu-deploy"
+```
+
+Note: `scripts/bootstrap.ps1` can optionally create a deploy role if you pass
+`-CreateDeployRole` and related inputs, but you still need initial credentials
+with permissions to create IAM roles.
+
 From repo root:
 
 ```powershell
@@ -74,6 +109,28 @@ tofu -chdir=infra/root apply -var-file=..\..\customer-deployments\acme-prod\conf
 
 Deploy the Kubernetes layer (Traefik/NLB, addons, app). This creates the public
 NLB DNS name that CloudFront needs as an origin.
+
+If the EKS API endpoint is private‑only (recommended), run kubectl/Helm from
+inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
+
+Optional: enable a Windows jumpbox (GUI) for management tasks. Example:
+
+```json
+"jumpbox": {
+  "enabled": true,
+  "instance_type": "m6i.large",
+  "associate_public_ip": false,
+  "enable_rdp_ingress": false,
+  "allowed_rdp_cidrs": [],
+  "iam_policy_arns": [
+    "arn:aws:iam::aws:policy/AdministratorAccess"
+  ]
+}
+```
+
+For private access, connect via SSM port forwarding (no inbound 3389). You can
+also use Fleet Manager Remote Desktop if enabled in your account.
+See docs/ssm-rdp.md for step-by-step instructions.
 
 Example (replace with your scripts when ready):
 

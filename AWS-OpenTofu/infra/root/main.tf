@@ -1,3 +1,10 @@
+locals {
+  jumpbox_enabled   = try(var.jumpbox.enabled, false)
+  jumpbox_name      = coalesce(try(var.jumpbox.name, null), "jumpbox")
+  jumpbox_subnet_id = coalesce(try(var.jumpbox.subnet_id, null), module.vpc.private_subnet_ids[0])
+  jumpbox_tags      = merge(var.tags, try(var.jumpbox.tags, {}))
+}
+
 module "vpc" {
   source = "../modules/vpc"
 
@@ -118,6 +125,38 @@ module "route53" {
   evaluate_target_health = var.route53.evaluate_target_health
 }
 
+module "jumpbox_windows" {
+  count  = local.jumpbox_enabled ? 1 : 0
+  source = "../modules/jumpbox_windows"
+
+  name                 = local.jumpbox_name
+  vpc_id               = module.vpc.vpc_id
+  subnet_id            = local.jumpbox_subnet_id
+  instance_type        = var.jumpbox.instance_type
+  ami_id               = var.jumpbox.ami_id
+  key_name             = var.jumpbox.key_name
+  iam_policy_arns      = var.jumpbox.iam_policy_arns
+  assume_role_arn      = var.jumpbox.assume_role_arn
+  associate_public_ip  = var.jumpbox.associate_public_ip
+  root_volume_size_gb  = var.jumpbox.root_volume_size_gb
+  enable_rdp_ingress   = var.jumpbox.enable_rdp_ingress
+  allowed_rdp_cidrs    = var.jumpbox.allowed_rdp_cidrs
+  user_data            = var.jumpbox.user_data
+  tags                 = local.jumpbox_tags
+}
+
+resource "aws_security_group_rule" "jumpbox_to_eks_api" {
+  count = local.jumpbox_enabled ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = module.jumpbox_windows[0].security_group_id
+  description              = "Allow jumpbox access to EKS API"
+}
+
 module "outputs_contract" {
   source = "../modules/outputs_contract"
 
@@ -138,6 +177,10 @@ module "outputs_contract" {
     cloudfront_hosted_zone_id  = var.cloudfront.enabled ? module.cloudfront[0].hosted_zone_id : null
     route53_record_fqdn        = var.cloudfront.enabled && var.route53.enabled ? module.route53[0].record_fqdn : null
     acm_certificate_arn        = module.acm_use1.certificate_arn
+    jumpbox_instance_id        = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
+    jumpbox_private_ip         = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null
+    jumpbox_public_ip          = local.jumpbox_enabled ? module.jumpbox_windows[0].public_ip : null
+    jumpbox_security_group_id  = local.jumpbox_enabled ? module.jumpbox_windows[0].security_group_id : null
   }
 }
 

@@ -15,6 +15,13 @@ account. It assumes a public DNS name fronted by CloudFront.
 - For testing, admin permissions are simplest. For production, use a dedicated
   deploy role with least privilege.
 
+### Recommended: Dedicated deploy role
+
+For customer‑run installs, create a dedicated IAM role (e.g., `opentofu-deploy`)
+and assume it when running the scripts. For initial proof/testing, attach
+`AdministratorAccess` to that role. Later, you can replace it with a least‑privilege
+policy once the required actions are finalized.
+
 ## DNS / domain
 
 - A public Route53 hosted zone (or delegated subdomain) for the hostname you
@@ -26,10 +33,16 @@ account. It assumes a public DNS name fronted by CloudFront.
 - OpenTofu (Terraform-compatible) on PATH as `tofu`
 - AWS CLI authenticated to your target account
 - kubectl and Helm (for the platform layer)
+- Session Manager plugin (optional, for SSM RDP port forwarding)
 
 ## Notes
 
 - CloudFront requires certificates in `us-east-1`, even if your cluster is in a
   different region.
 - CloudFront origin headers are stored in state. Do not place secrets there.
+- If you set the EKS API endpoint to private‑only, you must run kubectl/Helm from
+  inside the VPC (jumpbox/bastion) or through VPN/Direct Connect.
+- A Windows jumpbox can be used for GUI access. You can connect via RDP over:
+  - VPN/Direct Connect, or
+  - SSM port forwarding (no inbound RDP required)
 
