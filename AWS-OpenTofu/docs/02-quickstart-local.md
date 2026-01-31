@@ -105,6 +105,37 @@ tofu -chdir=infra/root init -backend-config=..\..\customer-deployments\acme-prod
 tofu -chdir=infra/root apply -var-file=..\..\customer-deployments\acme-prod\config.auto.tfvars.json
 ```
 
+## Stage C.1 - Jumpbox (optional, GUI access)
+
+If you want a Windows jumpbox for GUI management (SSMS, kubectl, Helm), enable
+it before or during Stage C and re-apply infra.
+
+Example config:
+
+```json
+"jumpbox": {
+  "enabled": true,
+  "instance_type": "m6i.large",
+  "associate_public_ip": false,
+  "enable_rdp_ingress": false,
+  "allowed_rdp_cidrs": [],
+  "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
+}
+```
+
+Apply (if not already):
+
+```powershell
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod
+```
+
+Auto‑add the jumpbox role to the deploy role trust policy (runs automatically
+after `tofu-apply.ps1` if the jumpbox is enabled):
+
+```powershell
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
+```
+
 ## Stage D - Platform (Kubernetes)
 
 Deploy the Kubernetes layer (Traefik/NLB, addons, app). This creates the public
@@ -122,9 +153,7 @@ Optional: enable a Windows jumpbox (GUI) for management tasks. Example:
   "associate_public_ip": false,
   "enable_rdp_ingress": false,
   "allowed_rdp_cidrs": [],
-  "iam_policy_arns": [
-    "arn:aws:iam::aws:policy/AdministratorAccess"
-  ]
+  "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
 }
 ```
 

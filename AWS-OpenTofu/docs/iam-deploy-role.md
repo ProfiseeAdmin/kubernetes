@@ -29,6 +29,30 @@ Replace `<ACCOUNT_ID>` and `<PRINCIPAL_ARN>` with your IAM user/role that will a
 }
 ```
 
+### Add the jumpbox role (recommended)
+
+If you enable the Windows jumpbox and want it to assume the deploy role, add the
+jumpbox role ARN (output by the module) to the trust policy. Example:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::<ACCOUNT_ID>:role/<JUMPBOX_ROLE_NAME>" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Automation helper:
+
+```powershell
+.\scripts\tofu-apply.ps1 -DeploymentName <name> -DeployRoleName opentofu-deploy
+```
+
 ## Bootstrap role policy (baseline)
 
 This is a practical baseline for the **state backend**. It is still scoped to the

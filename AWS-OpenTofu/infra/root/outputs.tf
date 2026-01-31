@@ -13,3 +13,8 @@ output "tags" {
   value       = var.tags
 }
 
+output "outputs_contract" {
+  description = "Standardized outputs map for external consumers."
+  value       = module.outputs_contract.outputs
+}
+

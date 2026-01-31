@@ -58,7 +58,10 @@ module "rds_sqlserver" {
   master_user_secret_kms_key_id = var.rds_sqlserver.master_user_secret_kms_key_id
   vpc_id                        = module.vpc.vpc_id
   subnet_ids                    = module.vpc.private_subnet_ids
-  allowed_security_group_ids    = var.rds_sqlserver.allowed_security_group_ids
+  allowed_security_group_ids    = concat(
+    var.rds_sqlserver.allowed_security_group_ids,
+    local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : []
+  )
   backup_retention_days         = var.rds_sqlserver.backup_retention_days
   multi_az                      = var.rds_sqlserver.multi_az
   publicly_accessible           = var.rds_sqlserver.publicly_accessible
@@ -181,6 +184,7 @@ module "outputs_contract" {
     jumpbox_private_ip         = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null
     jumpbox_public_ip          = local.jumpbox_enabled ? module.jumpbox_windows[0].public_ip : null
     jumpbox_security_group_id  = local.jumpbox_enabled ? module.jumpbox_windows[0].security_group_id : null
+    jumpbox_role_arn           = local.jumpbox_enabled ? module.jumpbox_windows[0].iam_role_arn : null
   }
 }
 

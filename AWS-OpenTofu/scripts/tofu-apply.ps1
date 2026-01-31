@@ -6,7 +6,9 @@ param(
   [string]$BackendConfigPath,
   [string]$VarFilePath,
   [string]$ExtraVarFile,
-  [switch]$AutoApprove
+  [switch]$AutoApprove,
+  [string]$DeployRoleName = "opentofu-deploy",
+  [string]$JumpboxRoleArn
 )
 
 Set-StrictMode -Version Latest
@@ -41,4 +43,36 @@ if ($AutoApprove) {
   $applyArgs += "-auto-approve"
 }
 tofu @applyArgs
+
+$trustScript = Join-Path $resolvedRepoRoot "scripts\add-jumpbox-trust.ps1"
+if (Test-Path -LiteralPath $trustScript) {
+  $shouldUpdateTrust = $false
+  if ($JumpboxRoleArn -and $JumpboxRoleArn -ne "") {
+    $shouldUpdateTrust = $true
+  } else {
+    try {
+      $outputs = tofu -chdir=$infraRoot output -json outputs_contract | ConvertFrom-Json
+      if ($outputs.jumpbox_role_arn -and $outputs.jumpbox_role_arn -ne "") {
+        $JumpboxRoleArn = $outputs.jumpbox_role_arn
+        $shouldUpdateTrust = $true
+      }
+    } catch {
+      $shouldUpdateTrust = $false
+    }
+  }
+
+  if ($shouldUpdateTrust) {
+    & $trustScript `
+      -DeploymentName $DeploymentName `
+      -DeployRoleName $DeployRoleName `
+      -RepoRoot $resolvedRepoRoot `
+      -BackendConfigPath $backendConfig `
+      -VarFilePath $varFile `
+      -JumpboxRoleArn $JumpboxRoleArn
+  } else {
+    Write-Host "Jumpbox trust update skipped (jumpbox role not found or jumpbox disabled)."
+  }
+} else {
+  Write-Host "Jumpbox trust update skipped (script not found: $trustScript)."
+}
 

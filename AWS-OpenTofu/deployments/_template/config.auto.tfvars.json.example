@@ -84,7 +84,7 @@
     "enable_rdp_ingress": false,
     "allowed_rdp_cidrs": [],
     "iam_policy_arns": [],
-    "assume_role_arn": ""
+    "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
   }
 }
 
