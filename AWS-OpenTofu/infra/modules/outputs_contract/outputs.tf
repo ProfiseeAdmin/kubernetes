@@ -1,2 +1,5 @@
-// TODO: outputs for outputs_contract
+output "outputs" {
+  description = "Pass-through outputs map."
+  value       = var.outputs
+}
 

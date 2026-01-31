@@ -1,2 +1,6 @@
-// TODO: variables for outputs_contract
+variable "outputs" {
+  type        = map(any)
+  default     = {}
+  description = "Map of standardized outputs for consumers."
+}
 

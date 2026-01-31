@@ -1,2 +1,5 @@
-// TODO: outputs for route53
+output "record_fqdn" {
+  description = "Route53 record FQDN."
+  value       = null
+}
 

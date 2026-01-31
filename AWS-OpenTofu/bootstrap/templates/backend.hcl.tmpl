@@ -1,5 +1,6 @@
-bucket         = "<STATE_BUCKET>"
-key            = "<STATE_KEY>"
-region         = "<REGION>"
-dynamodb_table = "<LOCK_TABLE>"
+bucket         = "${state_bucket}"
+key            = "${state_key}"
+region         = "${region}"
+dynamodb_table = "${lock_table}"
 encrypt        = true
+kms_key_id     = "${kms_key_id}"
