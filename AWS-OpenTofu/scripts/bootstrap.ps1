@@ -54,18 +54,28 @@ $vars = @{
 }
 
 $tempVarsPath = Join-Path $env:TEMP ("bootstrap-vars-{0}.tfvars.json" -f ([guid]::NewGuid()))
-$vars | ConvertTo-Json -Depth 6 | Set-Content -Path $tempVarsPath -Encoding UTF8
+$json = $vars | ConvertTo-Json -Depth 6
+[System.IO.File]::WriteAllText($tempVarsPath, $json, (New-Object System.Text.UTF8Encoding($false)))
 
 try {
-  tofu -chdir=$bootstrapDir init
-
-  $applyArgs = @("-chdir=$bootstrapDir", "apply", "-var-file=$tempVarsPath")
-  if ($AutoApprove) {
-    $applyArgs += "-auto-approve"
+  if (-not (Test-Path -LiteralPath $bootstrapDir)) {
+    throw "Bootstrap directory not found: $bootstrapDir"
   }
-  tofu @applyArgs
 
-  $backendHcl = tofu -chdir=$bootstrapDir output -raw backend_hcl
+  Push-Location $bootstrapDir
+  try {
+    tofu init
+
+    $applyArgs = @("apply", "-var-file=$tempVarsPath")
+    if ($AutoApprove) {
+      $applyArgs += "-auto-approve"
+    }
+    tofu @applyArgs
+
+    $backendHcl = tofu output -raw backend_hcl
+  } finally {
+    Pop-Location
+  }
 
   if ($BackendOutPath) {
     $outDir = Split-Path -Parent $BackendOutPath
