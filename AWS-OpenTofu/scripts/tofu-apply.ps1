@@ -31,6 +31,21 @@ if (-not (Test-Path -LiteralPath $varFile)) {
   throw "config.auto.tfvars.json not found: $varFile"
 }
 
+# If the user changed the deploy role name, derive it from config when possible.
+try {
+  $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
+  $cfgAssumeArn = $cfg.jumpbox.assume_role_arn
+  if ($cfgAssumeArn -and $DeployRoleName -eq "opentofu-deploy") {
+    $derivedRoleName = ($cfgAssumeArn -split "/")[-1]
+    if ($derivedRoleName -and $derivedRoleName -ne $DeployRoleName) {
+      Write-Host ("Using deploy role name from config: {0}" -f $derivedRoleName)
+      $DeployRoleName = $derivedRoleName
+    }
+  }
+} catch {
+  # Non-fatal; keep DeployRoleName as-is.
+}
+
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
 
 if (-not (Test-Path -LiteralPath $infraRoot)) {
