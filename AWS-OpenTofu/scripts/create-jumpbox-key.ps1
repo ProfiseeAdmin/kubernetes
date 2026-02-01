@@ -26,8 +26,15 @@ if (-not (Test-Path -LiteralPath $varFile)) {
 
 $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
 
+function Get-PropValue($obj, [string]$name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties[$name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
 if (-not $KeyName -or $KeyName -eq "") {
-  $KeyName = $cfg.jumpbox.key_name
+  $KeyName = Get-PropValue (Get-PropValue $cfg "jumpbox") "key_name"
 }
 if (-not $KeyName -or $KeyName -eq "") {
   $KeyName = "$DeploymentName-jumpbox-key"
@@ -58,11 +65,15 @@ if ($LASTEXITCODE -ne 0) {
 
 [System.IO.File]::WriteAllText($KeyPath, $keyMaterial, [System.Text.Encoding]::ASCII)
 
-if (-not $cfg.jumpbox) {
-  $cfg | Add-Member -MemberType NoteProperty -Name jumpbox -Value (@{})
+$jumpbox = Get-PropValue $cfg "jumpbox"
+if ($null -eq $jumpbox) {
+  $jumpbox = [ordered]@{}
+  $cfg | Add-Member -MemberType NoteProperty -Name jumpbox -Value $jumpbox
 }
-if (-not $cfg.jumpbox.key_name -or $cfg.jumpbox.key_name -ne $KeyName) {
-  $cfg.jumpbox.key_name = $KeyName
+
+$existingKey = Get-PropValue $jumpbox "key_name"
+if (-not $existingKey -or $existingKey -ne $KeyName) {
+  $jumpbox | Add-Member -MemberType NoteProperty -Name key_name -Value $KeyName -Force
   $jsonOut = $cfg | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($varFile, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
 }
