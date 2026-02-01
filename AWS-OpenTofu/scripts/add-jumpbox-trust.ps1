@@ -35,6 +35,16 @@ if (-not (Test-Path -LiteralPath $varFile)) {
   throw "config.auto.tfvars.json not found: $varFile"
 }
 
+# Safe property access under StrictMode
+function Get-PropValue($obj, [string]$name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties[$name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
+$cfg = $null
+
 # If the user changed the deploy role name, derive it from config when possible.
 try {
   $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
@@ -80,18 +90,30 @@ if (-not $JumpboxRoleArn) {
   $JumpboxRoleArn = $outputs.jumpbox_role_arn
 }
 
+$JumpboxRoleArn = ([string]$JumpboxRoleArn).Trim()
+
 $jumpboxRoleResolved = $JumpboxRoleArn
 if ($jumpboxRoleResolved -and $jumpboxRoleResolved -notmatch "^arn:aws:iam::") {
-  # Try role-name lookup first, then role-id lookup.
-  $lookupArn = aws iam get-role --role-name $jumpboxRoleResolved --query Role.Arn --output text
+  # Try to derive the jumpbox role name from config (default: "jumpbox-ssm-role").
+  $jumpboxCfg = Get-PropValue $cfg "jumpbox"
+  $jumpboxName = Get-PropValue $jumpboxCfg "name"
+  if (-not $jumpboxName -or $jumpboxName -eq "") { $jumpboxName = "jumpbox" }
+  $jumpboxRoleName = "{0}-ssm-role" -f $jumpboxName
+  $lookupArn = aws iam get-role --role-name $jumpboxRoleName --query Role.Arn --output text
   if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
     $jumpboxRoleResolved = $lookupArn
   } else {
-    $lookupArn = aws iam list-roles --query "Roles[?RoleId=='$jumpboxRoleResolved'].Arn | [0]" --output text
+    # Try role-name lookup first, then role-id lookup.
+    $lookupArn = aws iam get-role --role-name $jumpboxRoleResolved --query Role.Arn --output text
     if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
       $jumpboxRoleResolved = $lookupArn
     } else {
-      throw "Jumpbox role ARN could not be resolved (value: $JumpboxRoleArn)."
+      $lookupArn = aws iam list-roles --query "Roles[?RoleId=='$jumpboxRoleResolved'].Arn | [0]" --output text
+      if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
+        $jumpboxRoleResolved = $lookupArn
+      } else {
+        throw "Jumpbox role ARN could not be resolved (value: $JumpboxRoleArn)."
+      }
     }
   }
 }
