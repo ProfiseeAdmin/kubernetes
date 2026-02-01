@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath $infraRoot)) {
 
 Push-Location $infraRoot
 try {
-  tofu init -backend-config=$backendConfig
+  tofu init "-backend-config=$backendConfig"
 
   $applyArgs = @("apply", "-var-file=$varFile")
   if ($ExtraVarFile) {
