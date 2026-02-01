@@ -3,6 +3,12 @@
 This guide walks a customer through a staged, local deployment from a fresh AWS
 account. It keeps secrets out of Git and out of OpenTofu state.
 
+## Where to run each step
+
+- **AWS CloudShell**: create the deploy role (one‑liner) and capture its ARN.
+- **Customer Windows workstation**: run OpenTofu (bootstrap + infra).
+- **Jumpbox (optional)**: run kubectl/Helm if the EKS API is private‑only.
+
 ## Prereqs
 
 - AWS account with permissions to create VPC, EKS, RDS, ACM, CloudFront, Route53
@@ -11,7 +17,7 @@ account. It keeps secrets out of Git and out of OpenTofu state.
 
 ## Stage A - Bootstrap state backend
 
-### Step 1 - Authenticate as a deploy role
+### Step 1 - Create the deploy role (CloudShell)
 
 Create a dedicated IAM role in the customer account (example name:
 `opentofu-deploy`) and attach the permissions needed for bootstrap and infra.
@@ -35,6 +41,12 @@ ROLE_NAME=opentofu-deploy; ACCOUNT_ID=$(aws sts get-caller-identity --query Acco
 For production, replace the root principal with the specific IAM user/role that
 will run OpenTofu.
 
+Get the role ARN:
+
+```bash
+aws iam get-role --role-name opentofu-deploy --query Role.Arn --output text
+```
+
 Then configure your CLI to assume the role:
 
 ```ini
@@ -49,6 +61,87 @@ Run subsequent commands with:
 
 ```powershell
 $env:AWS_PROFILE = "opentofu-deploy"
+```
+
+### Step 1a - Assume the role (Windows CMD)
+
+Option A (recommended): configure a profile and set `AWS_PROFILE`.
+
+```cmd
+aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
+aws configure set source_profile default --profile opentofu-deploy
+aws configure set region us-east-1 --profile opentofu-deploy
+set AWS_PROFILE=opentofu-deploy
+```
+
+Option B: assume role and export temporary credentials (CMD).
+
+```cmd
+for /f "tokens=1,2,3" %a in ('aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text') do (set AWS_ACCESS_KEY_ID=%a & set AWS_SECRET_ACCESS_KEY=%b & set AWS_SESSION_TOKEN=%c)
+```
+
+Note: in a `.bat` file, double the percent signs (`%%a`, `%%b`, `%%c`).
+
+### Shell shortcuts
+
+- If you are using **CMD**, click here: [Assume role (CMD)](#assume-role-cmd).
+- If you are using **PowerShell**, click here: [Assume role (PowerShell)](#assume-role-powershell).
+- If you are using **Git Bash**, click here: [Assume role (Git Bash)](#assume-role-git-bash).
+
+### Assume role (CMD)
+
+Profile + `AWS_PROFILE` (recommended):
+
+```cmd
+aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
+aws configure set source_profile default --profile opentofu-deploy
+aws configure set region us-east-1 --profile opentofu-deploy
+set AWS_PROFILE=opentofu-deploy
+```
+
+Temporary creds (one‑liner):
+
+```cmd
+for /f "tokens=1,2,3" %a in ('aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text') do (set AWS_ACCESS_KEY_ID=%a & set AWS_SECRET_ACCESS_KEY=%b & set AWS_SESSION_TOKEN=%c)
+```
+
+### Assume role (PowerShell)
+
+Profile + `AWS_PROFILE` (recommended):
+
+```powershell
+aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
+aws configure set source_profile default --profile opentofu-deploy
+aws configure set region us-east-1 --profile opentofu-deploy
+$env:AWS_PROFILE = "opentofu-deploy"
+```
+
+Temporary creds:
+
+```powershell
+$creds = aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text
+$parts = $creds -split "\s+"
+$env:AWS_ACCESS_KEY_ID = $parts[0]
+$env:AWS_SECRET_ACCESS_KEY = $parts[1]
+$env:AWS_SESSION_TOKEN = $parts[2]
+```
+
+### Assume role (Git Bash)
+
+Profile + `AWS_PROFILE` (recommended):
+
+```bash
+aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
+aws configure set source_profile default --profile opentofu-deploy
+aws configure set region us-east-1 --profile opentofu-deploy
+export AWS_PROFILE=opentofu-deploy
+```
+
+Temporary creds (one‑liner):
+
+```bash
+read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text)
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
 
 Note: `scripts/bootstrap.ps1` can optionally create a deploy role if you pass

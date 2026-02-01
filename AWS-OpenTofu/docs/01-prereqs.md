@@ -35,6 +35,23 @@ policy once the required actions are finalized.
 - kubectl and Helm (for the platform layer)
 - Session Manager plugin (optional, for SSM RDP port forwarding)
 
+### AWS CLI (Windows)
+
+Install the AWS CLI v2 from the official AWS documentation:
+`https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html`
+
+From **Command Prompt**:
+
+```cmd
+msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
+```
+
+Complete the installer, then reopen Command Prompt and confirm:
+
+```cmd
+aws --version
+```
+
 ## Notes
 
 - CloudFront requires certificates in `us-east-1`, even if your cluster is in a

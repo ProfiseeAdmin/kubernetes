@@ -10,8 +10,9 @@ they can enable GitHub Actions in their **own fork**.
    - `.github/workflows-disabled/*.example`
    into:
    - `.github/workflows/`
-3. Use GitHub OIDC to assume the deploy role (no static AWS keys).
-4. Use environment approvals for apply steps.
+3. Create a GitHub secret named `AWS_ROLE_ARN` with the deploy role ARN.
+4. Use GitHub OIDC to assume the deploy role (no static AWS keys).
+5. Use environment approvals for apply steps.
 
 ## Notes
 
@@ -19,4 +20,5 @@ they can enable GitHub Actions in their **own fork**.
 - OpenTofu can be installed via `opentofu/setup-opentofu`.
 - Follow the same staged flow as local quickstart:
   Stage A/B/C → Platform → CloudFront/DNS.
+- For private EKS, the deploy workflow requires a self‑hosted runner with VPC access.
 

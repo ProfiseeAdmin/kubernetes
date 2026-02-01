@@ -1,2 +1,49 @@
-# TODO
+name: tofu-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: "Deployment folder name under customer-deployments"
+        required: true
+        default: "acme-prod"
+      environment:
+        description: "GitHub environment name for approvals"
+        required: true
+        default: "prod"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tofu-apply-${{ inputs.deployment }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AWS_REGION: us-east-1
+      DEPLOYMENT: ${{ inputs.deployment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: tofu-apply-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: OpenTofu init
+        run: tofu -chdir=infra/root init -backend-config=../../customer-deployments/${{ env.DEPLOYMENT }}/backend.hcl
+
+      - name: OpenTofu apply
+        run: tofu -chdir=infra/root apply -auto-approve -var-file=../../customer-deployments/${{ env.DEPLOYMENT }}/config.auto.tfvars.json
 
