@@ -274,8 +274,11 @@ Then:
 
 ## Stage C.1 - Jumpbox (optional, GUI access)
 
-If you want a Windows jumpbox for GUI management (SSMS, kubectl, Helm), enable
-it before or during Stage C and re-apply infra.
+This stage creates an optional **Windows jumpbox** inside the VPC so you can
+manage a **private‑only EKS API** and private RDS from a GUI (SSMS, kubectl,
+Helm, etc.). It also creates a **jumpbox IAM role**, and can update your **deploy
+role trust policy** so the jumpbox can assume that role when you run AWS CLI
+commands from the jumpbox.
 
 Example config:
 
@@ -293,6 +296,7 @@ Example config:
 Apply (if not already):
 
 ```powershell
+# IMPORTANT: Replace 'opentofu-deploy' with your actual deploy role name.
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
@@ -300,7 +304,15 @@ Auto‑add the jumpbox role to the deploy role trust policy (runs automatically
 after `tofu-apply.ps1` if the jumpbox is enabled):
 
 ```powershell
+# IMPORTANT: Replace 'opentofu-deploy' with your actual deploy role name.
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
+```
+
+If you want to run the trust update manually:
+
+```powershell
+# IMPORTANT: Replace 'opentofu-deploy' with your actual deploy role name.
+.\scripts\add-jumpbox-trust.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
 ## Stage D - Platform (Kubernetes)
