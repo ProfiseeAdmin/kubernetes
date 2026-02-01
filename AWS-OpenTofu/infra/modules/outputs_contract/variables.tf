@@ -1,6 +1,6 @@
 variable "outputs" {
-  type        = map(any)
+  type        = any
   default     = {}
-  description = "Map of standardized outputs for consumers."
+  description = "Arbitrary object of standardized outputs for consumers."
 }
 

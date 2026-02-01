@@ -7,6 +7,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+Write-Host "Note: RDS identifier must be lowercase letters, numbers, and hyphens, and start with a letter."
+Write-Host "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
+Write-Host "      This script will normalize identifiers and coerce lists before writing the config."
+
 function Read-Value([string]$Label, $Current) {
   $display = if ($null -eq $Current -or $Current -eq "") { "" } else { " [$Current]" }
   $input = Read-Host ("{0}{1}" -f $Label, $display)
@@ -15,10 +19,11 @@ function Read-Value([string]$Label, $Current) {
 }
 
 function Read-List([string]$Label, $Current) {
-  $currentText = if ($null -eq $Current) { "" } else { ($Current -join ",") }
+  $currentText = if ($null -eq $Current) { "" } elseif ($Current -is [string]) { $Current } else { ($Current -join ",") }
   $input = Read-Host ("{0} [{1}]" -f $Label, $currentText)
   if ($input -eq "") { return $Current }
-  return @($input -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+  $list = @($input -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+  return ,$list
 }
 
 function Read-Number([string]$Label, $Current) {
@@ -45,20 +50,24 @@ function Normalize-RdsIdentifier([string]$Value) {
   return $v
 }
 
-function Coerce-List($Value) {
-  if ($null -eq $Value) { return @() }
+function Coerce-List([string]$Label, $Value) {
+  if ($null -eq $Value) { return ,@() }
   if ($Value -is [string]) {
     $s = $Value.Trim()
-    if ($s -eq "") { return @() }
+    if ($s -eq "") { return ,@() }
     if ($s.Contains(",")) {
-      return @($s -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+      $list = @($s -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
+      Write-Host ("Adjusted {0} to list: {1}" -f $Label, ($list -join ", "))
+      return ,$list
     }
-    return @($s)
+    Write-Host ("Adjusted {0} to list: {1}" -f $Label, $s)
+    return ,@($s)
   }
   if ($Value -is [System.Collections.IEnumerable]) {
-    return @($Value)
+    $list = @($Value)
+    return ,$list
   }
-  return @($Value)
+  return ,@($Value)
 }
 
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
@@ -119,8 +128,8 @@ if (-not $NoPrompt) {
   $json.eks.endpoint_private_access = Read-Bool "EKS private endpoint" $json.eks.endpoint_private_access
 }
 
-$json.eks.linux_node_group.instance_types = Coerce-List $json.eks.linux_node_group.instance_types
-$json.eks.windows_node_group.instance_types = Coerce-List $json.eks.windows_node_group.instance_types
+$json.eks.linux_node_group.instance_types = Coerce-List "EKS linux instance types" $json.eks.linux_node_group.instance_types
+$json.eks.windows_node_group.instance_types = Coerce-List "EKS windows instance types" $json.eks.windows_node_group.instance_types
 if (-not $NoPrompt) {
   $json.eks.linux_node_group.instance_types = Read-List "Linux node instance types" $json.eks.linux_node_group.instance_types
   $json.eks.linux_node_group.min_size = Read-Number "Linux node min size" $json.eks.linux_node_group.min_size
@@ -173,13 +182,13 @@ if (-not $NoPrompt) {
   }
 }
 
-$json.vpc.azs = Coerce-List $json.vpc.azs
-$json.vpc.public_subnet_cidrs = Coerce-List $json.vpc.public_subnet_cidrs
-$json.vpc.private_subnet_cidrs = Coerce-List $json.vpc.private_subnet_cidrs
-$json.eks.linux_node_group.instance_types = Coerce-List $json.eks.linux_node_group.instance_types
-$json.eks.windows_node_group.instance_types = Coerce-List $json.eks.windows_node_group.instance_types
-$json.cloudfront.aliases = Coerce-List $json.cloudfront.aliases
-$json.jumpbox.allowed_rdp_cidrs = Coerce-List $json.jumpbox.allowed_rdp_cidrs
+$json.vpc.azs = Coerce-List "VPC AZs" $json.vpc.azs
+$json.vpc.public_subnet_cidrs = Coerce-List "Public subnet CIDRs" $json.vpc.public_subnet_cidrs
+$json.vpc.private_subnet_cidrs = Coerce-List "Private subnet CIDRs" $json.vpc.private_subnet_cidrs
+$json.eks.linux_node_group.instance_types = Coerce-List "EKS linux instance types" $json.eks.linux_node_group.instance_types
+$json.eks.windows_node_group.instance_types = Coerce-List "EKS windows instance types" $json.eks.windows_node_group.instance_types
+$json.cloudfront.aliases = Coerce-List "CloudFront aliases" $json.cloudfront.aliases
+$json.jumpbox.allowed_rdp_cidrs = Coerce-List "Jumpbox RDP CIDRs" $json.jumpbox.allowed_rdp_cidrs
 
 $jsonOut = $json | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
