@@ -37,17 +37,46 @@ if (-not (Test-Path -LiteralPath $varFile)) {
 
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
 
-tofu -chdir=$infraRoot init -backend-config=$backendConfig | Out-Null
+if (-not (Test-Path -LiteralPath $infraRoot)) {
+  throw "Infra root not found: $infraRoot"
+}
+
+Push-Location $infraRoot
+try {
+  tofu init "-backend-config=$backendConfig" | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "OpenTofu init failed (exit code $LASTEXITCODE)."
+  }
+} finally {
+  Pop-Location
+}
 
 if (-not $JumpboxRoleArn) {
-  $outputs = tofu -chdir=$infraRoot output -json outputs_contract | ConvertFrom-Json
+  Push-Location $infraRoot
+  try {
+    $outputs = tofu output -json outputs_contract | ConvertFrom-Json
+  } finally {
+    Pop-Location
+  }
   if (-not $outputs.jumpbox_role_arn -or $outputs.jumpbox_role_arn -eq "") {
-    throw "jumpbox_role_arn not found in outputs. Ensure jumpbox.enabled=true and apply infra first."
+    Write-Host "Jumpbox role not found in outputs; skipping trust update."
+    return
   }
   $JumpboxRoleArn = $outputs.jumpbox_role_arn
 }
 
-$roleInfo = aws iam get-role --role-name $DeployRoleName --output json | ConvertFrom-Json
+$roleJson = aws iam get-role --role-name $DeployRoleName --output json
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "Deploy role not found ($DeployRoleName); skipping trust update."
+  return
+}
+
+$roleInfo = $roleJson | ConvertFrom-Json
+if (-not $roleInfo.Role) {
+  Write-Host "Deploy role response missing Role object; skipping trust update."
+  return
+}
+
 $assumeDoc = $roleInfo.Role.AssumeRolePolicyDocument
 
 if ($assumeDoc -is [string]) {
