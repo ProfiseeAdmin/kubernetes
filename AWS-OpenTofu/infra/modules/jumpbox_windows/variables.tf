@@ -75,7 +75,7 @@ variable "tags" {
 
 variable "user_data" {
   type        = string
-  default     = <<EOF
+  default     = <<-EOF
     <powershell>
     $ProgressPreference = 'SilentlyContinue'
     # Give IAM/SSM/EKS time to settle and permissions to propagate

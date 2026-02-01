@@ -80,6 +80,23 @@ if (-not $JumpboxRoleArn) {
   $JumpboxRoleArn = $outputs.jumpbox_role_arn
 }
 
+$jumpboxRoleResolved = $JumpboxRoleArn
+if ($jumpboxRoleResolved -and $jumpboxRoleResolved -notmatch "^arn:aws:iam::") {
+  # Try role-name lookup first, then role-id lookup.
+  $lookupArn = aws iam get-role --role-name $jumpboxRoleResolved --query Role.Arn --output text
+  if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
+    $jumpboxRoleResolved = $lookupArn
+  } else {
+    $lookupArn = aws iam list-roles --query "Roles[?RoleId=='$jumpboxRoleResolved'].Arn | [0]" --output text
+    if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
+      $jumpboxRoleResolved = $lookupArn
+    } else {
+      throw "Jumpbox role ARN could not be resolved (value: $JumpboxRoleArn)."
+    }
+  }
+}
+$JumpboxRoleArn = $jumpboxRoleResolved
+
 $roleJson = aws iam get-role --role-name $DeployRoleName --output json
 if ($LASTEXITCODE -ne 0) {
   Write-Host "Deploy role not found ($DeployRoleName); skipping trust update."
