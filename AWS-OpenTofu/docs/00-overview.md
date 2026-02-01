@@ -21,34 +21,34 @@ It is safe‑by‑default: no secrets in Git, no vendor‑owned pipelines requir
 ## Architecture (high level)
 
 ```mermaid
-flowchart LR
-  user[Customer Admin]
-  cf[CloudFront]
-  nlb[Traefik NLB (public)]
-  eks[EKS (private API)]
-  app[App Pods]
-  rds[RDS SQL Server (private)]
-  sm[Secrets Manager]
-  jb[Windows Jumpbox (private)]
+flowchart LR;
+  user[Customer Admin];
+  cf[CloudFront];
+  nlb[Traefik NLB (public)];
+  eks[EKS (private API)];
+  app[App Pods];
+  rds[RDS SQL Server (private)];
+  sm[Secrets Manager];
+  jb[Windows Jumpbox (private)];
 
-  user --> cf
-  cf --> nlb
-  nlb --> app
-  app --> rds
-  app --> sm
-  jb --> eks
-  jb --> rds
+  user --> cf;
+  cf --> nlb;
+  nlb --> app;
+  app --> rds;
+  app --> sm;
+  jb --> eks;
+  jb --> rds;
 ```
 
 ## Deployment stages
 
 ```mermaid
-flowchart TD
-  A[Stage A: Bootstrap] --> B[Stage B: Deployment folder]
-  B --> C[Stage C: Core infra]
-  C --> C1[Stage C.1: Jumpbox (optional)]
-  C1 --> D[Stage D: Platform]
-  D --> E[Stage E: Edge (CF + DNS)]
+flowchart TD;
+  A[Stage A: Bootstrap] --> B[Stage B: Deployment folder];
+  B --> C[Stage C: Core infra];
+  C --> C1[Stage C.1: Jumpbox (optional)];
+  C1 --> D[Stage D: Platform];
+  D --> E[Stage E: Edge (CF + DNS)];
 ```
 
 ## Staged flow (recommended)
