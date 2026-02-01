@@ -19,6 +19,6 @@ they can enable GitHub Actions in their **own fork**.
 - The workflows are intentionally disabled in the public repo.
 - OpenTofu can be installed via `opentofu/setup-opentofu`.
 - Follow the same staged flow as local quickstart:
-  Stage A/B/C → Platform → CloudFront/DNS.
+  Stage A (deployment folder) → Stage B (bootstrap) → Stage C (core infra) → Platform → CloudFront/DNS.
 - For private EKS, the deploy workflow requires a self‑hosted runner with VPC access.
 

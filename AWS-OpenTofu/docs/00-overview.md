@@ -44,7 +44,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Stage A: Bootstrap"] --> B["Stage B: Deployment folder"]
+  A["Stage A: Deployment folder"] --> B["Stage B: Bootstrap"]
   B --> C["Stage C: Core infra"]
   C --> C1["Stage C.1: Jumpbox optional"]
   C1 --> D["Stage D: Platform"]
@@ -53,8 +53,8 @@ flowchart TD
 
 ## Staged flow (recommended)
 
-1. **Stage A** – Bootstrap state backend  
-2. **Stage B** – Create deployment folder  
+1. **Stage A** – Create deployment folder  
+2. **Stage B** – Bootstrap state backend  
 3. **Stage C** – Core infra (VPC + EKS + RDS + ACM)  
 4. **Stage C.1** – Jumpbox (optional)  
 5. **Stage D** – Platform (Traefik/NLB + app)  

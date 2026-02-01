@@ -15,7 +15,30 @@ account. It keeps secrets out of Git and out of OpenTofu state.
 - A public Route53 hosted zone (or delegated subdomain) for your hostname
 - OpenTofu, AWS CLI, kubectl, and Helm installed
 
-## Stage A - Bootstrap state backend
+## Stage A - Create a deployment folder
+
+Copy the template folder locally (do not commit):
+
+```powershell
+New-Item -ItemType Directory -Path .\customer-deployments\acme-prod
+Copy-Item -Recurse -Force .\deployments\_template\* .\customer-deployments\acme-prod\
+```
+
+After Stage B, `backend.hcl` will be written here. Example content:
+
+```hcl
+bucket         = "my-state-bucket"
+key            = "infra/acme-prod.tfstate"
+region         = "us-east-1"
+dynamodb_table = "opentofu-state-locks"
+encrypt        = true
+kms_key_id     = "arn:aws:kms:us-east-1:123456789012:key/..."
+```
+
+Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
+`deployments/_template/config.auto.tfvars.json.example` as a baseline.
+
+## Stage B - Bootstrap state backend
 
 ### Step 1 - Create the deploy role (CloudShell)
 
@@ -172,34 +195,11 @@ Then (recommended):
 Or run OpenTofu directly:
 
 ```powershell
-tofu -chdir=bootstrap init
-tofu -chdir=bootstrap apply
+Push-Location .\bootstrap
+tofu init
+tofu apply
+Pop-Location
 ```
-
-Copy the `backend_hcl` output into your deployment folder later.
-
-## Stage B - Create a deployment folder
-
-Copy the template folder locally (do not commit):
-
-```powershell
-New-Item -ItemType Directory -Path .\customer-deployments\acme-prod
-Copy-Item -Recurse -Force .\deployments\_template\* .\customer-deployments\acme-prod\
-```
-
-Create `backend.hcl` from the bootstrap outputs (example):
-
-```hcl
-bucket         = "my-state-bucket"
-key            = "infra/acme-prod.tfstate"
-region         = "us-east-1"
-dynamodb_table = "opentofu-state-locks"
-encrypt        = true
-kms_key_id     = "arn:aws:kms:us-east-1:123456789012:key/..."
-```
-
-Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
-`deployments/_template/config.auto.tfvars.json.example` as a baseline.
 
 ## Stage C - Core infra (VPC + EKS + RDS + ACM)
 
