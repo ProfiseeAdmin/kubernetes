@@ -36,6 +36,49 @@ To skip prompts and only copy the template:
 .\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
 ```
 
+### Prompt reference (new-deployment.ps1)
+
+Press **Enter** to accept the default value shown in brackets. Lists are
+comma‑separated.
+
+- **Primary region**: `us-east-1`
+- **us-east-1 region (ACM/CloudFront)**: `us-east-1`
+- **Tag: Project**: `my-product`
+- **Tag: Environment**: `dev` / `test` / `prod`
+- **VPC name**: `my-product`
+- **VPC CIDR block**: `10.20.0.0/16`
+- **VPC AZs** (comma‑separated): `us-east-1a,us-east-1b,us-east-1c`
+- **Public subnet CIDRs**: `10.20.0.0/20,10.20.16.0/20,10.20.32.0/20`
+- **Private subnet CIDRs**: `10.20.64.0/20,10.20.80.0/20,10.20.96.0/20`
+- **EKS cluster name**: `my-product-eks`
+- **EKS cluster version**: `1.29`
+- **EKS public endpoint**: `n` (recommended)
+- **EKS private endpoint**: `y` (recommended)
+- **Linux node instance types**: `m6i.large`
+- **Linux node min/max/desired**: `2 / 4 / 2`
+- **Windows node instance types**: `m6i.large`
+- **Windows node min/max/desired**: `1 / 2 / 1`
+- **RDS identifier**: `my-product-sql`
+- **RDS SQL Server engine version**: use a valid RDS engine version string (see AWS CLI in docs)
+- **RDS instance class**: `db.m6i.large`
+- **RDS allocated storage (GB)**: `200`
+- **RDS master username**: `dbadmin`
+- **RDS publicly accessible**: `n` (recommended)
+- **ACM domain name**: `app.example.com`
+- **ACM hosted zone ID**: `Z1234567890ABC`
+- **Route53 hosted zone ID**: `Z1234567890ABC` (same as ACM)
+- **Route53 record name**: `app.example.com`
+- **CloudFront enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
+- **Route53 enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
+- **CloudFront aliases** (when enabled): `app.example.com`
+- **CloudFront origin domain (NLB DNS)** (when enabled): `nlb-abc123.us-east-1.elb.amazonaws.com`
+- **Jumpbox enabled**: `y`/`n`
+- **Jumpbox instance type**: `m6i.large`
+- **Jumpbox public IP**: `n` (recommended)
+- **Jumpbox inbound RDP**: `n` (recommended)
+- **Jumpbox RDP CIDRs**: `203.0.113.10/32`
+- **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy`
+
 After Stage B, `backend.hcl` will be written here. Example content:
 
 ```hcl

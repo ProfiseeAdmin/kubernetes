@@ -30,11 +30,20 @@ if (-not (Test-Path -LiteralPath $varFile)) {
 
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
 
-tofu -chdir=$infraRoot init -backend-config=$backendConfig
-
-$planArgs = @("-chdir=$infraRoot", "plan", "-var-file=$varFile")
-if ($ExtraVarFile) {
-  $planArgs += "-var-file=$ExtraVarFile"
+if (-not (Test-Path -LiteralPath $infraRoot)) {
+  throw "Infra root not found: $infraRoot"
 }
-tofu @planArgs
+
+Push-Location $infraRoot
+try {
+  tofu init -backend-config=$backendConfig
+
+  $planArgs = @("plan", "-var-file=$varFile")
+  if ($ExtraVarFile) {
+    $planArgs += "-var-file=$ExtraVarFile"
+  }
+  tofu @planArgs
+} finally {
+  Pop-Location
+}
 

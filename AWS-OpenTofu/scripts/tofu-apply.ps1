@@ -33,16 +33,25 @@ if (-not (Test-Path -LiteralPath $varFile)) {
 
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
 
-tofu -chdir=$infraRoot init -backend-config=$backendConfig
+if (-not (Test-Path -LiteralPath $infraRoot)) {
+  throw "Infra root not found: $infraRoot"
+}
 
-$applyArgs = @("-chdir=$infraRoot", "apply", "-var-file=$varFile")
-if ($ExtraVarFile) {
-  $applyArgs += "-var-file=$ExtraVarFile"
+Push-Location $infraRoot
+try {
+  tofu init -backend-config=$backendConfig
+
+  $applyArgs = @("apply", "-var-file=$varFile")
+  if ($ExtraVarFile) {
+    $applyArgs += "-var-file=$ExtraVarFile"
+  }
+  if ($AutoApprove) {
+    $applyArgs += "-auto-approve"
+  }
+  tofu @applyArgs
+} finally {
+  Pop-Location
 }
-if ($AutoApprove) {
-  $applyArgs += "-auto-approve"
-}
-tofu @applyArgs
 
 $trustScript = Join-Path $resolvedRepoRoot "scripts\add-jumpbox-trust.ps1"
 if (Test-Path -LiteralPath $trustScript) {
