@@ -32,9 +32,10 @@ localhost:13389
 Create a key pair (only if you plan to use classic RDP):
 
 ```powershell
-New-Item -ItemType Directory -Path C:\keys -Force | Out-Null
+$secretsDir = ".\\customer-deployments\\acme-prod\\secrets"
+New-Item -ItemType Directory -Path $secretsDir -Force | Out-Null
 aws ec2 create-key-pair --region us-east-1 --key-name profisee-jumpbox-key `
-  --query "KeyMaterial" --output text | Out-File -FilePath C:\keys\profisee-jumpbox-key.pem -Encoding ascii
+  --query "KeyMaterial" --output text | Out-File -FilePath "$secretsDir\\profisee-jumpbox-key.pem" -Encoding ascii
 ```
 
 To get the Windows Administrator password (if using a key pair):

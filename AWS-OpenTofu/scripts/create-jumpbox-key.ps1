@@ -46,7 +46,8 @@ if (-not $region -or $region -eq "") {
 }
 
 if (-not $KeyPath -or $KeyPath -eq "") {
-  $KeyPath = Join-Path "C:\keys" ("{0}.pem" -f $KeyName)
+  $secretsDir = Join-Path $deploymentPath "secrets"
+  $KeyPath = Join-Path $secretsDir ("{0}.pem" -f $KeyName)
 }
 
 $keyDir = Split-Path -Parent $KeyPath

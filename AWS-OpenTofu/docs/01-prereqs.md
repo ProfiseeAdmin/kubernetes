@@ -60,14 +60,15 @@ forwarding**, you do not need a key pair.
 Create a key pair and save the PEM locally (AWS only lets you download it once):
 
 ```powershell
-New-Item -ItemType Directory -Path C:\keys -Force | Out-Null
+$secretsDir = ".\\customer-deployments\\acme-prod\\secrets"
+New-Item -ItemType Directory -Path $secretsDir -Force | Out-Null
 aws ec2 create-key-pair --region us-east-1 --key-name profisee-jumpbox-key `
-  --query "KeyMaterial" --output text | Out-File -FilePath C:\keys\profisee-jumpbox-key.pem -Encoding ascii
+  --query "KeyMaterial" --output text | Out-File -FilePath "$secretsDir\\profisee-jumpbox-key.pem" -Encoding ascii
 ```
 
 Then set `jumpbox.key_name` to `profisee-jumpbox-key` in your config.
 
-Optional helper (creates the key and updates your deployment config):
+Optional helper (creates the key under `customer-deployments/<name>/secrets` and updates your config):
 
 ```powershell
 .\scripts\create-jumpbox-key.ps1 -DeploymentName acme-prod
