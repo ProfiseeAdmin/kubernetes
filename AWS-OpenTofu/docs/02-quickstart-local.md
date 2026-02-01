@@ -57,7 +57,17 @@ Edit or provide values for:
 - `state_bucket_name` (globally unique)
 - `state_lock_table_name` (optional override)
 
-Then:
+Then (recommended):
+
+```powershell
+.\scripts\bootstrap.ps1 `
+  -Region us-west-2 `
+  -StateBucketName my-unique-state-bucket `
+  -BackendOutPath .\customer-deployments\acme-prod\backend.hcl `
+  -AutoApprove
+```
+
+Or run OpenTofu directly:
 
 ```powershell
 tofu -chdir=bootstrap init
@@ -101,8 +111,8 @@ Disable CloudFront and Route53 for this stage:
 Then:
 
 ```powershell
-tofu -chdir=infra/root init -backend-config=..\..\customer-deployments\acme-prod\backend.hcl
-tofu -chdir=infra/root apply -var-file=..\..\customer-deployments\acme-prod\config.auto.tfvars.json
+.\scripts\tofu-plan.ps1 -DeploymentName acme-prod
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
 ## Stage C.1 - Jumpbox (optional, GUI access)
@@ -126,7 +136,7 @@ Example config:
 Apply (if not already):
 
 ```powershell
-.\scripts\tofu-apply.ps1 -DeploymentName acme-prod
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
 Auto‑add the jumpbox role to the deploy role trust policy (runs automatically
@@ -191,7 +201,7 @@ Enable CloudFront and Route53, then set the origin domain name and alias:
 Re-apply infra:
 
 ```powershell
-tofu -chdir=infra/root apply -var-file=..\..\customer-deployments\acme-prod\config.auto.tfvars.json
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
 ## Validate
