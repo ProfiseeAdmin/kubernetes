@@ -1,6 +1,11 @@
 variable "identifier" {
   type        = string
   description = "RDS instance identifier."
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]*$", var.identifier))
+    error_message = "identifier must start with a letter and contain only lowercase letters, numbers, and hyphens."
+  }
 }
 
 variable "engine_version" {

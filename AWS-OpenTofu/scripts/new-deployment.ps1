@@ -34,6 +34,17 @@ function Read-Bool([string]$Label, $Current) {
   return ($input.ToLower() -in @("y", "yes", "true", "1"))
 }
 
+function Normalize-RdsIdentifier([string]$Value) {
+  if (-not $Value) { return $Value }
+  $v = $Value.ToLower()
+  $v = $v -replace "[^a-z0-9-]", "-"
+  $v = $v -replace "-{2,}", "-"
+  $v = $v.Trim("-")
+  if ($v -eq "") { return $Value }
+  if ($v -notmatch "^[a-z]") { $v = "db-$v" }
+  return $v
+}
+
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
 $templateDir = Join-Path $resolvedRepoRoot "deployments\_template"
 
@@ -113,6 +124,11 @@ $json.eks.windows_node_group.max_size = Read-Number "Windows node max size" $jso
 $json.eks.windows_node_group.desired_size = Read-Number "Windows node desired size" $json.eks.windows_node_group.desired_size
 
 $json.rds_sqlserver.identifier = Read-Value "RDS identifier" $json.rds_sqlserver.identifier
+$normalizedIdentifier = Normalize-RdsIdentifier $json.rds_sqlserver.identifier
+if ($normalizedIdentifier -ne $json.rds_sqlserver.identifier) {
+  Write-Host ("Adjusted RDS identifier to a valid value: {0}" -f $normalizedIdentifier)
+  $json.rds_sqlserver.identifier = $normalizedIdentifier
+}
 $json.rds_sqlserver.engine_version = Read-Value "RDS SQL Server engine version" $json.rds_sqlserver.engine_version
 $json.rds_sqlserver.instance_class = Read-Value "RDS instance class" $json.rds_sqlserver.instance_class
 $json.rds_sqlserver.allocated_storage = Read-Number "RDS allocated storage (GB)" $json.rds_sqlserver.allocated_storage
@@ -141,6 +157,9 @@ if ($json.jumpbox.enabled) {
   $json.jumpbox.allowed_rdp_cidrs = Read-List "Jumpbox RDP CIDRs (comma-separated)" $json.jumpbox.allowed_rdp_cidrs
   $json.jumpbox.assume_role_arn = Read-Value "Jumpbox assume role ARN" $json.jumpbox.assume_role_arn
 }
+
+$json.eks.linux_node_group.instance_types = @($json.eks.linux_node_group.instance_types)
+$json.eks.windows_node_group.instance_types = @($json.eks.windows_node_group.instance_types)
 
 $jsonOut = $json | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
