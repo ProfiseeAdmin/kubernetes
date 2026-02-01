@@ -1,11 +1,9 @@
 locals {
-  ingress_sg_map = {
-    for sg_id in var.allowed_security_group_ids : sg_id => sg_id
-  }
+  subnet_group_name = regexreplace(lower(var.identifier), "[^a-z0-9._-]", "-")
 }
 
 resource "aws_db_subnet_group" "this" {
-  name       = "${var.identifier}-subnet-group"
+  name       = "${local.subnet_group_name}-subnet-group"
   subnet_ids = var.subnet_ids
 
   tags = var.tags
@@ -27,14 +25,14 @@ resource "aws_security_group" "this" {
 }
 
 resource "aws_security_group_rule" "ingress" {
-  for_each = local.ingress_sg_map
+  count = length(var.allowed_security_group_ids)
 
   type                     = "ingress"
   from_port                = 1433
   to_port                  = 1433
   protocol                 = "tcp"
   security_group_id        = aws_security_group.this.id
-  source_security_group_id = each.value
+  source_security_group_id = var.allowed_security_group_ids[count.index]
   description              = "SQL Server access from allowed security groups"
 }
 

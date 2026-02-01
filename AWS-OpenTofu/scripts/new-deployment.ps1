@@ -96,6 +96,12 @@ $json.eks.cluster_version = Read-Value "EKS cluster version" $json.eks.cluster_v
 $json.eks.endpoint_public_access = Read-Bool "EKS public endpoint" $json.eks.endpoint_public_access
 $json.eks.endpoint_private_access = Read-Bool "EKS private endpoint" $json.eks.endpoint_private_access
 
+if ($json.eks.linux_node_group.instance_types -is [string]) {
+  $json.eks.linux_node_group.instance_types = @($json.eks.linux_node_group.instance_types)
+}
+if ($json.eks.windows_node_group.instance_types -is [string]) {
+  $json.eks.windows_node_group.instance_types = @($json.eks.windows_node_group.instance_types)
+}
 $json.eks.linux_node_group.instance_types = Read-List "Linux node instance types" $json.eks.linux_node_group.instance_types
 $json.eks.linux_node_group.min_size = Read-Number "Linux node min size" $json.eks.linux_node_group.min_size
 $json.eks.linux_node_group.max_size = Read-Number "Linux node max size" $json.eks.linux_node_group.max_size
