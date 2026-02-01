@@ -5,8 +5,8 @@ See `deployments/_template/config.auto.tfvars.json.example` for a full example.
 
 ## Top‑level keys
 
-- `region`: primary AWS region
-- `use1_region`: us‑east‑1 (ACM for CloudFront)
+- `region`: primary AWS region (use `us-east-1`)
+- `use1_region`: `us-east-1` (ACM for CloudFront)
 - `tags`: default tags applied to resources
 
 ## VPC

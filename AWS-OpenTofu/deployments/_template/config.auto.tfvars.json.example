@@ -1,5 +1,5 @@
 {
-  "region": "us-west-2",
+  "region": "us-east-1",
   "use1_region": "us-east-1",
   "tags": {
     "Project": "my-product",
@@ -9,9 +9,9 @@
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",
     "azs": [
-      "us-west-2a",
-      "us-west-2b",
-      "us-west-2c"
+      "us-east-1a",
+      "us-east-1b",
+      "us-east-1c"
     ],
     "public_subnet_cidrs": [
       "10.20.0.0/20",
@@ -69,7 +69,7 @@
     "aliases": [
       "app.example.com"
     ],
-    "origin_domain_name": "nlb-abc123.us-west-2.elb.amazonaws.com",
+    "origin_domain_name": "nlb-abc123.us-east-1.elb.amazonaws.com",
     "origin_custom_headers": {}
   },
   "route53": {

@@ -26,6 +26,15 @@ Suggested steps in IAM:
 4. Attach `AdministratorAccess` (for proof/testing)
 5. Name the role `opentofu-deploy`
 
+CloudShell one‑liner (admin user/role):
+
+```bash
+ROLE_NAME=opentofu-deploy; ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text); aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1 || aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${ACCOUNT_ID}:root\"},\"Action\":\"sts:AssumeRole\"}]}"; aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+```
+
+For production, replace the root principal with the specific IAM user/role that
+will run OpenTofu.
+
 Then configure your CLI to assume the role:
 
 ```ini
@@ -33,7 +42,7 @@ Then configure your CLI to assume the role:
 [profile opentofu-deploy]
 role_arn = arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy
 source_profile = default
-region = us-west-2
+region = us-east-1
 ```
 
 Run subsequent commands with:
@@ -61,7 +70,7 @@ Then (recommended):
 
 ```powershell
 .\scripts\bootstrap.ps1 `
-  -Region us-west-2 `
+  -Region us-east-1 `
   -StateBucketName my-unique-state-bucket `
   -BackendOutPath .\customer-deployments\acme-prod\backend.hcl `
   -AutoApprove
@@ -90,10 +99,10 @@ Create `backend.hcl` from the bootstrap outputs (example):
 ```hcl
 bucket         = "my-state-bucket"
 key            = "infra/acme-prod.tfstate"
-region         = "us-west-2"
+region         = "us-east-1"
 dynamodb_table = "opentofu-state-locks"
 encrypt        = true
-kms_key_id     = "arn:aws:kms:us-west-2:123456789012:key/..."
+kms_key_id     = "arn:aws:kms:us-east-1:123456789012:key/..."
 ```
 
 Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
@@ -187,7 +196,7 @@ Enable CloudFront and Route53, then set the origin domain name and alias:
 ```json
 "cloudfront": {
   "enabled": true,
-  "origin_domain_name": "nlb-abc123.us-west-2.elb.amazonaws.com",
+  "origin_domain_name": "nlb-abc123.us-east-1.elb.amazonaws.com",
   "aliases": ["app.example.com"],
   "origin_custom_headers": {}
 },

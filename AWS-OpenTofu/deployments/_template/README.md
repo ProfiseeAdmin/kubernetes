@@ -34,7 +34,7 @@ Enable CloudFront + Route53 and set the origin domain name:
 ```json
 "cloudfront": {
   "enabled": true,
-  "origin_domain_name": "nlb-abc123.us-west-2.elb.amazonaws.com",
+  "origin_domain_name": "nlb-abc123.us-east-1.elb.amazonaws.com",
   "aliases": ["app.example.com"],
   "origin_custom_headers": {}
 },
