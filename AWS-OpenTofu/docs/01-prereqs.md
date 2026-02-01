@@ -39,7 +39,7 @@ Install these using Choco or manually using their respective pages:
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu -y
+choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli awscli-session-manager opentofu -y
 ```
 
 Verify installs (CMD or PowerShell):
