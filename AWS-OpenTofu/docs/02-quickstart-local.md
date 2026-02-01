@@ -24,6 +24,18 @@ New-Item -ItemType Directory -Path .\customer-deployments\acme-prod
 Copy-Item -Recurse -Force .\deployments\_template\* .\customer-deployments\acme-prod\
 ```
 
+Or use the helper (prompts for key values and writes `config.auto.tfvars.json`):
+
+```powershell
+.\scripts\new-deployment.ps1 -DeploymentName acme-prod
+```
+
+To skip prompts and only copy the template:
+
+```powershell
+.\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
+```
+
 After Stage B, `backend.hcl` will be written here. Example content:
 
 ```hcl
