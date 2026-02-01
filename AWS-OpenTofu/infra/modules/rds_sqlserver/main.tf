@@ -1,5 +1,5 @@
 locals {
-  subnet_group_name = regexreplace(lower(var.identifier), "[^a-z0-9._-]", "-")
+  subnet_group_name = replace(lower(var.identifier), "/[^a-z0-9._-]/", "-")
 }
 
 resource "aws_db_subnet_group" "this" {
