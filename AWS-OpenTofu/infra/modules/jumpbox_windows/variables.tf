@@ -75,25 +75,16 @@ variable "tags" {
 
 variable "user_data" {
   type        = string
-  default     = <<-EOT
+  default     = <<EOF
     <powershell>
     $ProgressPreference = 'SilentlyContinue'
     # Give IAM/SSM/EKS time to settle and permissions to propagate
     Start-Sleep -Seconds 300
 
-    Set-ExecutionPolicy Bypass -Scope Process -Force
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    $env:ChocolateyUsePowerShellHttpClient = 'true'
-    $scriptDir = "C:\\chocolateyscript"
-    New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
-    $scriptPath = Join-Path $scriptDir "install-tools.ps1"
-    @'
-    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:ChocolateyUsePowerShellHttpClient = 'true'; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    choco upgrade chocolatey kubernetes-cli kubernetes-helm awscli notepadplusplus.install sql-server-management-studio dotnet-8.0-desktopruntime vscode -y --no-progress
-    '@ | Set-Content -Path $scriptPath -Encoding UTF8
-    & $scriptPath
+    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    choco upgrade chocolatey kubernetes-cli ekscli kubernetes-helm awscli opentofu awscli-session-manager -y
     Import-Module C:\\ProgramData\\chocolatey\\helpers\\chocolateyProfile.psm1
     refreshenv
-  EOT
-  description = "Windows user data script."
+    </powershell>
+  EOF
 }
