@@ -328,8 +328,8 @@ For a jumpbox with no inbound RDP, use SSM port forwarding:
 Example (replace with your scripts when ready):
 
 ```powershell
-.\scripts\kubeconfig.ps1 acme-prod
-.\scripts\deploy-platform.ps1 acme-prod
+.\scripts\kubeconfig.ps1 -DeploymentName acme-prod
+.\scripts\deploy-platform.ps1 -DeploymentName acme-prod
 ```
 
 Capture the NLB DNS name.
@@ -371,4 +371,3 @@ Re-apply infra:
   variables or state. Use AWS Secrets Manager and mount secrets in the cluster.
 - If you need an origin guard header, set it out-of-band and do not store it in
   Terraform/OpenTofu state.
-
