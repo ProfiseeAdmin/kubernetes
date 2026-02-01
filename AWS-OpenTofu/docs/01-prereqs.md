@@ -42,6 +42,16 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManage
 choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu -y
 ```
 
+Verify installs (CMD or PowerShell):
+
+```cmd
+helm version
+aws --version
+eksctl version
+kubectl version
+tofu --version
+```
+
 ## Notes
 
 - CloudFront requires certificates in `us-east-1`, even if your cluster is in a
