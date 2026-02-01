@@ -1,7 +1,7 @@
 locals {
   cluster_subnet_ids = concat(var.private_subnet_ids, var.public_subnet_ids)
   cluster_minor      = try(tonumber(element(split(".", var.cluster_version), 1)), 0)
-  default_linux_ami  = local.cluster_minor >= 33 ? "AL2023_x86_64" : "AL2_x86_64"
+  default_linux_ami  = local.cluster_minor >= 33 ? "AL2023_x86_64_STANDARD" : "AL2_x86_64"
   linux_ami_type     = coalesce(try(var.linux_node_group.ami_type, null), local.default_linux_ami)
   windows_ami_type   = coalesce(try(var.windows_node_group.ami_type, null), "WINDOWS_CORE_2022_x86_64")
 }
