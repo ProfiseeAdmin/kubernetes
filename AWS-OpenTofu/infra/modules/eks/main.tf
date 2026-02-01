@@ -142,7 +142,7 @@ resource "aws_eks_node_group" "windows" {
   node_group_name = "${var.cluster_name}-windows"
   node_role_arn   = aws_iam_role.windows_nodes.arn
   subnet_ids      = var.private_subnet_ids
-  ami_type        = "WINDOWS_CORE_2022_X86_64"
+  ami_type        = "WINDOWS_CORE_2022_x86_64"
   capacity_type   = var.windows_node_group.capacity_type
   disk_size       = var.windows_node_group.disk_size
   instance_types  = var.windows_node_group.instance_types
