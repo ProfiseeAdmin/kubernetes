@@ -35,21 +35,11 @@ policy once the required actions are finalized.
 - kubectl and Helm (for the platform layer)
 - Session Manager plugin (optional, for SSM RDP port forwarding)
 
-### AWS CLI (Windows)
+Install these using Choco or manually using their respective pages:
 
-Install the AWS CLI v2 from the official AWS documentation:
-`https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html`
-
-From **Command Prompt**:
-
-```cmd
-msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
-```
-
-Complete the installer, then reopen Command Prompt and confirm:
-
-```cmd
-aws --version
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu -y
 ```
 
 ## Notes
