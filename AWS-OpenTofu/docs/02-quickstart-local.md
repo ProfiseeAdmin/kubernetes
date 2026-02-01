@@ -320,25 +320,15 @@ If you want to run the trust update manually:
 Deploy the Kubernetes layer (Traefik/NLB, addons, app). This creates the public
 NLB DNS name that CloudFront needs as an origin.
 
+**Private access is the default** (EKS API private‑only). Run kubectl/Helm from
+inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
+For a jumpbox with no inbound RDP, use SSM port forwarding:
+[SSM RDP via port forwarding](./ssm-rdp.md).
+
 If the EKS API endpoint is private‑only (recommended), run kubectl/Helm from
 inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
-
-Optional: enable a Windows jumpbox (GUI) for management tasks. Example:
-
-```json
-"jumpbox": {
-  "enabled": true,
-  "instance_type": "m6i.large",
-  "associate_public_ip": false,
-  "enable_rdp_ingress": false,
-  "allowed_rdp_cidrs": [],
-  "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
-}
-```
-
-For private access, connect via SSM port forwarding (no inbound 3389). You can
-also use Fleet Manager Remote Desktop if enabled in your account.
-See docs/ssm-rdp.md for step-by-step instructions.
+For a jumpbox without inbound 3389, use SSM port forwarding:
+[SSM RDP via port forwarding](./ssm-rdp.md).
 
 Example (replace with your scripts when ready):
 
