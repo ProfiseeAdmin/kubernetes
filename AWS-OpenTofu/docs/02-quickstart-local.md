@@ -74,6 +74,7 @@ comma‑separated.
 - **CloudFront origin domain (NLB DNS)** (when enabled): `nlb-abc123.us-east-1.elb.amazonaws.com`
 - **Jumpbox enabled**: `y`/`n`
 - **Jumpbox instance type**: `m6i.large`
+- **Jumpbox key pair name (optional, for RDP)**: `profisee-jumpbox-key`
 - **Jumpbox public IP**: `n` (recommended)
 - **Jumpbox inbound RDP**: `n` (recommended)
 - **Jumpbox RDP CIDRs**: `203.0.113.10/32`
@@ -298,6 +299,12 @@ Notes:
 - If you **use RDP**, you must supply `key_name` and keep the **PEM file locally**
   (AWS only lets you download it once when you create the key pair).
 - If you **use SSM port forwarding**, you can omit `key_name` entirely.
+
+Create the key pair on‑the‑fly (updates your config automatically):
+
+```powershell
+.\scripts\create-jumpbox-key.ps1 -DeploymentName acme-prod
+```
 
 Create a key pair (only if you plan to use classic RDP):
 

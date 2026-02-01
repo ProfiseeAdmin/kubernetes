@@ -52,6 +52,27 @@ kubectl version
 tofu --version
 ```
 
+## Optional: EC2 key pair for jumpbox RDP
+
+Only required if you plan to use **classic RDP**. If you use **SSM port
+forwarding**, you do not need a key pair.
+
+Create a key pair and save the PEM locally (AWS only lets you download it once):
+
+```powershell
+New-Item -ItemType Directory -Path C:\keys -Force | Out-Null
+aws ec2 create-key-pair --region us-east-1 --key-name profisee-jumpbox-key `
+  --query "KeyMaterial" --output text | Out-File -FilePath C:\keys\profisee-jumpbox-key.pem -Encoding ascii
+```
+
+Then set `jumpbox.key_name` to `profisee-jumpbox-key` in your config.
+
+Optional helper (creates the key and updates your deployment config):
+
+```powershell
+.\scripts\create-jumpbox-key.ps1 -DeploymentName acme-prod
+```
+
 ## Notes
 
 - CloudFront requires certificates in `us-east-1`, even if your cluster is in a

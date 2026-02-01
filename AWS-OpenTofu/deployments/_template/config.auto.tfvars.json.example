@@ -80,6 +80,7 @@
   "jumpbox": {
     "enabled": false,
     "instance_type": "m6i.large",
+    "key_name": null,
     "associate_public_ip": false,
     "enable_rdp_ingress": false,
     "allowed_rdp_cidrs": [],

@@ -175,6 +175,7 @@ if (-not $NoPrompt) {
   $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
   if ($json.jumpbox.enabled) {
     $json.jumpbox.instance_type = Read-Value "Jumpbox instance type" $json.jumpbox.instance_type
+    $json.jumpbox.key_name = Read-Value "Jumpbox key pair name (optional, for RDP)" $json.jumpbox.key_name
     $json.jumpbox.associate_public_ip = Read-Bool "Jumpbox public IP" $json.jumpbox.associate_public_ip
     $json.jumpbox.enable_rdp_ingress = Read-Bool "Jumpbox inbound RDP" $json.jumpbox.enable_rdp_ingress
     $json.jumpbox.allowed_rdp_cidrs = Read-List "Jumpbox RDP CIDRs (comma-separated)" $json.jumpbox.allowed_rdp_cidrs

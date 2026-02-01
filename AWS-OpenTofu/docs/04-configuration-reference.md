@@ -65,6 +65,7 @@ Key fields:
 
 `jumpbox` enables a Windows GUI management box:
 - `enabled`
+- `key_name` (required for classic RDP; omit if using SSM port forwarding)
 - `assume_role_arn` (recommended)
 - `associate_public_ip` (default false)
 
