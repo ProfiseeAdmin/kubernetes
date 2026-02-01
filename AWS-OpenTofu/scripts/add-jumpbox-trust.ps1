@@ -128,14 +128,18 @@ if (-not $exists) {
     Action    = "sts:AssumeRole"
     Principal = @{ AWS = $JumpboxRoleArn }
   }
-  $assumeDoc.Statement = @($assumeDoc.Statement + $newStmt)
+  $assumeDoc.Statement = @($statements + $newStmt)
 }
 
 $tempPolicyPath = Join-Path $env:TEMP ("assume-role-{0}.json" -f ([guid]::NewGuid()))
-$assumeDoc | ConvertTo-Json -Depth 10 | Set-Content -Path $tempPolicyPath -Encoding UTF8
+$jsonOut = $assumeDoc | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($tempPolicyPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
 
 try {
   aws iam update-assume-role-policy --role-name $DeployRoleName --policy-document file://$tempPolicyPath | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to update assume role policy (exit code $LASTEXITCODE)."
+  }
   Write-Host "Updated trust policy for role: $DeployRoleName"
 } finally {
   if (Test-Path -LiteralPath $tempPolicyPath) {
