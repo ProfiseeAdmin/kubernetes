@@ -56,6 +56,7 @@ variable "linux_node_group" {
     desired_size   = number
     disk_size      = optional(number, 50)
     capacity_type  = optional(string, "ON_DEMAND")
+    ami_type       = optional(string)
   })
   description = "Linux node group configuration."
 }
@@ -68,6 +69,7 @@ variable "windows_node_group" {
     desired_size   = number
     disk_size      = optional(number, 50)
     capacity_type  = optional(string, "ON_DEMAND")
+    ami_type       = optional(string)
   })
   description = "Windows node group configuration."
 }

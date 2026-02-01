@@ -49,6 +49,9 @@ try {
     $applyArgs += "-auto-approve"
   }
   tofu @applyArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "OpenTofu apply failed (exit code $LASTEXITCODE)."
+  }
 } finally {
   Pop-Location
 }
@@ -60,7 +63,12 @@ if (Test-Path -LiteralPath $trustScript) {
     $shouldUpdateTrust = $true
   } else {
     try {
-      $outputs = tofu -chdir=$infraRoot output -json outputs_contract | ConvertFrom-Json
+      Push-Location $infraRoot
+      try {
+        $outputs = tofu output -json outputs_contract | ConvertFrom-Json
+      } finally {
+        Pop-Location
+      }
       if ($outputs.jumpbox_role_arn -and $outputs.jumpbox_role_arn -ne "") {
         $JumpboxRoleArn = $outputs.jumpbox_role_arn
         $shouldUpdateTrust = $true

@@ -1,5 +1,9 @@
 locals {
   cluster_subnet_ids = concat(var.private_subnet_ids, var.public_subnet_ids)
+  cluster_minor      = try(tonumber(element(split(".", var.cluster_version), 1)), 0)
+  default_linux_ami  = local.cluster_minor >= 33 ? "AL2023_x86_64" : "AL2_x86_64"
+  linux_ami_type     = coalesce(try(var.linux_node_group.ami_type, null), local.default_linux_ami)
+  windows_ami_type   = coalesce(try(var.windows_node_group.ami_type, null), "WINDOWS_CORE_2022_x86_64")
 }
 
 data "aws_iam_policy_document" "cluster_assume" {
@@ -121,7 +125,7 @@ resource "aws_eks_node_group" "linux" {
   node_group_name = "${var.cluster_name}-linux"
   node_role_arn   = aws_iam_role.linux_nodes.arn
   subnet_ids      = var.private_subnet_ids
-  ami_type        = "AL2_x86_64"
+  ami_type        = local.linux_ami_type
   capacity_type   = var.linux_node_group.capacity_type
   disk_size       = var.linux_node_group.disk_size
   instance_types  = var.linux_node_group.instance_types
@@ -142,7 +146,7 @@ resource "aws_eks_node_group" "windows" {
   node_group_name = "${var.cluster_name}-windows"
   node_role_arn   = aws_iam_role.windows_nodes.arn
   subnet_ids      = var.private_subnet_ids
-  ami_type        = "WINDOWS_CORE_2022_x86_64"
+  ami_type        = local.windows_ami_type
   capacity_type   = var.windows_node_group.capacity_type
   disk_size       = var.windows_node_group.disk_size
   instance_types  = var.windows_node_group.instance_types
