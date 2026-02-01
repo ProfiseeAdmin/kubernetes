@@ -286,11 +286,31 @@ Example config:
 "jumpbox": {
   "enabled": true,
   "instance_type": "m6i.large",
+  "key_name": "<your-ec2-keypair-name>",
   "associate_public_ip": false,
   "enable_rdp_ingress": false,
   "allowed_rdp_cidrs": [],
   "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
 }
+```
+
+Notes:
+- If you **use RDP**, you must supply `key_name` and keep the **PEM file locally**
+  (AWS only lets you download it once when you create the key pair).
+- If you **use SSM port forwarding**, you can omit `key_name` entirely.
+
+Create a key pair (only if you plan to use classic RDP):
+
+```powershell
+New-Item -ItemType Directory -Path C:\keys -Force | Out-Null
+aws ec2 create-key-pair --region us-east-1 --key-name profisee-jumpbox-key `
+  --query "KeyMaterial" --output text | Out-File -FilePath C:\keys\profisee-jumpbox-key.pem -Encoding ascii
+```
+
+Then set:
+
+```json
+"key_name": "profisee-jumpbox-key"
 ```
 
 Apply (if not already):
