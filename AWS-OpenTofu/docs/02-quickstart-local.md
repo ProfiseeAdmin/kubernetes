@@ -325,11 +325,6 @@ inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
 For a jumpbox with no inbound RDP, use SSM port forwarding:
 [SSM RDP via port forwarding](./ssm-rdp.md).
 
-If the EKS API endpoint is private‑only (recommended), run kubectl/Helm from
-inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
-For a jumpbox without inbound 3389, use SSM port forwarding:
-[SSM RDP via port forwarding](./ssm-rdp.md).
-
 Example (replace with your scripts when ready):
 
 ```powershell
