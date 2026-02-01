@@ -58,7 +58,7 @@ with permissions to create IAM roles.
 From repo root:
 
 ```powershell
-cd C:\GitRepoPaaS\ProfiseeAdmin\kubernetes\AWS-OpenTofu
+cd <path-to-repo>
 ```
 
 Edit or provide values for:
