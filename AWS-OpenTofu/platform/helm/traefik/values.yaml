@@ -1,2 +1,6 @@
-# TODO
+providers:
+  kubernetesIngress:
+    enabled: false
+  kubernetesIngressNginx:
+    enabled: true
 

@@ -50,6 +50,7 @@ jumpbox role ARN (output by the module) to the trust policy. Example:
 Automation helper:
 
 ```powershell
+# Replace 'opentofu-deploy' if you used a custom deploy role name.
 .\scripts\tofu-apply.ps1 -DeploymentName <name> -DeployRoleName opentofu-deploy
 ```
 
@@ -62,6 +63,7 @@ Replace placeholders:
 - `<STATE_BUCKET>`: S3 bucket name for state
 - `<LOCK_TABLE>`: DynamoDB lock table
 - `<KMS_ALIAS>`: e.g., `alias/opentofu-state`
+- If you use a custom deploy role name, replace `opentofu-deploy` in the policy below.
 
 ```json
 {

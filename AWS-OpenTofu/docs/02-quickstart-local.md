@@ -15,7 +15,14 @@ account. It keeps secrets out of Git and out of OpenTofu state.
 - A public Route53 hosted zone (or delegated subdomain) for your hostname
 - OpenTofu, AWS CLI, kubectl, and Helm installed
 
-## Stage A - Create a deployment folder
+## Stage A - Clone repo + create a deployment folder
+
+Clone the repo locally:
+
+```powershell
+git clone <repo-url>
+cd <repo-folder>
+```
 
 Copy the template folder locally (do not commit):
 
@@ -36,11 +43,20 @@ To skip prompts and only copy the template:
 .\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
 ```
 
+License file:
+- Place your license at `customer-deployments/<name>/secrets/license.txt`.
+- `new-deployment.ps1` will read it **raw** and replace `$LICENSEDATA` in
+  `Settings.yaml`. If the file is missing, the placeholder remains.
+
 `new-deployment.ps1` also downloads `Settings.yaml` from the Azure-ARM base and
 fills most app settings. It **does not** ask for the SQL password (keep it in
 Secrets Manager), and it leaves any unresolved placeholders intact. After
 `tofu-apply`, the script will update `Settings.yaml` with the RDS endpoint and
 the app EBS volume ID if one is provided in outputs.
+
+Stage A collects **two categories** of input:
+- **Infra** (VPC/EKS/RDS/ACM/Route53/CloudFront/jumpbox)
+- **Profisee app config** (OIDC, admin email, ACR creds, TLS choice, etc.)
 
 ### Prompt reference (new-deployment.ps1)
 
@@ -84,7 +100,7 @@ comma‑separated.
 - **Jumpbox public IP**: `n` (recommended)
 - **Jumpbox inbound RDP**: `n` (recommended)
 - **Jumpbox RDP CIDRs**: `203.0.113.10/32`
-- **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy`
+- **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy` (replace with your role name if different)
 
 After the infra prompts, the script will also ask for **app settings**
 (OIDC provider, ACR credentials, admin account, etc.) to populate
@@ -110,21 +126,25 @@ Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
 ### Step 1 - Create the deploy role (CloudShell)
 
 Create a dedicated IAM role in the customer account (example name:
-`opentofu-deploy`) and attach the permissions needed for bootstrap and infra.
+`opentofu-deploy`, or your custom role name) and attach the permissions needed for bootstrap and infra.
 
 For initial proof/testing, attach `AdministratorAccess`. Later, replace it with
 least‑privilege policies.
+
+If you use a **custom role name**, replace `opentofu-deploy` everywhere below
+and pass `-DeployRoleName <your-role-name>` when running scripts.
 
 Suggested steps in IAM:
 1. IAM → Roles → Create role
 2. Trusted entity: AWS account (this account)
 3. Add a trust relationship for your IAM user or SSO role that will run OpenTofu
 4. Attach `AdministratorAccess` (for proof/testing)
-5. Name the role `opentofu-deploy`
+5. Name the role `opentofu-deploy` (or your custom role name)
 
 CloudShell one‑liner (admin user/role):
 
 ```bash
+# Replace ROLE_NAME if you used a custom role name.
 ROLE_NAME=opentofu-deploy; ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text); aws iam get-role --role-name $ROLE_NAME >/dev/null 2>&1 || aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${ACCOUNT_ID}:root\"},\"Action\":\"sts:AssumeRole\"}]}"; aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
 ```
 
@@ -134,12 +154,14 @@ will run OpenTofu.
 Get the role ARN:
 
 ```bash
+# Replace opentofu-deploy if you used a custom role name.
 aws iam get-role --role-name opentofu-deploy --query Role.Arn --output text
 ```
 
 Then configure your CLI to assume the role:
 
 ```ini
+# Replace opentofu-deploy if you used a custom role name.
 # ~/.aws/config
 [profile opentofu-deploy]
 role_arn = arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy
@@ -150,6 +172,7 @@ region = us-east-1
 Run subsequent commands with:
 
 ```powershell
+# Replace opentofu-deploy if you used a custom role name.
 $env:AWS_PROFILE = "opentofu-deploy"
 ```
 
@@ -158,6 +181,7 @@ $env:AWS_PROFILE = "opentofu-deploy"
 Option A (recommended): configure a profile and set `AWS_PROFILE`.
 
 ```cmd
+REM Replace opentofu-deploy if you used a custom role name.
 aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
 aws configure set source_profile default --profile opentofu-deploy
 aws configure set region us-east-1 --profile opentofu-deploy
@@ -167,6 +191,7 @@ set AWS_PROFILE=opentofu-deploy
 Option B: assume role and export temporary credentials (CMD).
 
 ```cmd
+REM Replace opentofu-deploy if you used a custom role name.
 for /f "tokens=1,2,3" %a in ('aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text') do (set AWS_ACCESS_KEY_ID=%a & set AWS_SECRET_ACCESS_KEY=%b & set AWS_SESSION_TOKEN=%c)
 ```
 
@@ -183,6 +208,7 @@ Note: in a `.bat` file, double the percent signs (`%%a`, `%%b`, `%%c`).
 Profile + `AWS_PROFILE` (recommended):
 
 ```cmd
+REM Replace opentofu-deploy if you used a custom role name.
 aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
 aws configure set source_profile default --profile opentofu-deploy
 aws configure set region us-east-1 --profile opentofu-deploy
@@ -192,6 +218,7 @@ set AWS_PROFILE=opentofu-deploy
 Temporary creds (one‑liner):
 
 ```cmd
+REM Replace opentofu-deploy if you used a custom role name.
 for /f "tokens=1,2,3" %a in ('aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text') do (set AWS_ACCESS_KEY_ID=%a & set AWS_SECRET_ACCESS_KEY=%b & set AWS_SESSION_TOKEN=%c)
 ```
 
@@ -200,6 +227,7 @@ for /f "tokens=1,2,3" %a in ('aws sts assume-role --role-arn arn:aws:iam::<ACCOU
 Profile + `AWS_PROFILE` (recommended):
 
 ```powershell
+# Replace opentofu-deploy if you used a custom role name.
 aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
 aws configure set source_profile default --profile opentofu-deploy
 aws configure set region us-east-1 --profile opentofu-deploy
@@ -209,6 +237,7 @@ $env:AWS_PROFILE = "opentofu-deploy"
 Temporary creds:
 
 ```powershell
+# Replace opentofu-deploy if you used a custom role name.
 $creds = aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text
 $parts = $creds -split "\s+"
 $env:AWS_ACCESS_KEY_ID = $parts[0]
@@ -221,6 +250,7 @@ $env:AWS_SESSION_TOKEN = $parts[2]
 Profile + `AWS_PROFILE` (recommended):
 
 ```bash
+# Replace opentofu-deploy if you used a custom role name.
 aws configure set role_arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --profile opentofu-deploy
 aws configure set source_profile default --profile opentofu-deploy
 aws configure set region us-east-1 --profile opentofu-deploy
@@ -230,6 +260,7 @@ export AWS_PROFILE=opentofu-deploy
 Temporary creds (one‑liner):
 
 ```bash
+# Replace opentofu-deploy if you used a custom role name.
 read AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN < <(aws sts assume-role --role-arn arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy --role-session-name opentofu-cli --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" --output text)
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ```
@@ -281,6 +312,7 @@ Then:
 
 ```powershell
 .\scripts\tofu-plan.ps1 -DeploymentName acme-prod
+# Replace 'opentofu-deploy' if you used a custom deploy role name.
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
@@ -308,6 +340,8 @@ Example config:
   "assume_role_arn": "arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy"
 }
 ```
+
+If you used a custom deploy role name, update `assume_role_arn` accordingly.
 
 Notes:
 - If you **use classic RDP**, you must supply `key_name` and keep the **PEM file locally**
@@ -359,10 +393,11 @@ If you want to run the trust update manually:
 .\scripts\add-jumpbox-trust.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
-## Stage D - Platform (Kubernetes)
+## Stage D - Platform foundation (Kubernetes)
 
-Deploy the Kubernetes layer (Traefik/NLB, addons, app). This creates the public
-NLB DNS name that CloudFront needs as an origin.
+Deploy the Kubernetes foundation (Traefik/NLB + addons only). This creates the
+public NLB DNS name that CloudFront needs as an origin. **Do not deploy the app
+yet** — we deploy the app in Stage E.
 
 **Private access is the default** (EKS API private‑only). Run kubectl/Helm from
 inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
@@ -378,7 +413,17 @@ Example (replace with your scripts when ready):
 
 Capture the NLB DNS name.
 
-## Stage E - Edge (CloudFront + Route53)
+Note: Traefik is configured to use the **NGINX compatibility provider** and
+the standard `kubernetesIngress` provider is disabled. This allows existing
+NGINX‑style Ingress manifests to work without installing ingress‑nginx. When
+you migrate your manifests to `ingressClassName: traefik`, you can switch
+Traefik back to the standard provider.
+
+## Stage E - App + Edge (CloudFront + Route53)
+
+Deploy the app in this stage **regardless of whether CloudFront is enabled**.
+If you are not using CloudFront, you can skip the CloudFront/Route53 toggles
+below and deploy the app once the NLB DNS name is available.
 
 Enable CloudFront and Route53, then set the origin domain name and alias:
 
@@ -399,8 +444,12 @@ Enable CloudFront and Route53, then set the origin domain name and alias:
 Re-apply infra:
 
 ```powershell
+# Replace 'opentofu-deploy' if you used a custom deploy role name.
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
+
+Deploy the Profisee app **now** (Stage E). If your platform script installs the
+app, run it here instead of Stage D, using the completed `Settings.yaml`.
 
 ## Validate
 

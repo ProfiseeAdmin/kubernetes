@@ -1,2 +1,8 @@
+providers:
+  kubernetesIngress:
+    enabled: false
+  kubernetesIngressNginx:
+    enabled: true
+
 # TODO: NLB public + CloudFront lock-down annotations
 

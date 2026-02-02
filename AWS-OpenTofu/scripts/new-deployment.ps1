@@ -96,10 +96,9 @@ function Replace-TokenBlock([string]$Content, [string]$Token, [string]$Value) {
   })
 }
 
-function Read-FileBase64([string]$Path) {
+function Read-FileRaw([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return $null }
-  $bytes = [System.IO.File]::ReadAllBytes($Path)
-  return [System.Convert]::ToBase64String($bytes)
+  return Get-Content -Raw -Path $Path
 }
 
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
@@ -348,8 +347,8 @@ if (-not $NoPrompt) {
   }
 }
 
-$licenseB64 = Read-FileBase64 $licensePath
-if (-not $licenseB64) {
+$licenseRaw = Read-FileRaw $licensePath
+if (-not $licenseRaw) {
   Write-Host ("Note: license file not found at {0}. Place your license file there as license.txt." -f $licensePath)
 }
 
@@ -391,8 +390,8 @@ $settingsContent = Replace-Token $settingsContent "ACRPASSWORD" $acrPassword
 $settingsContent = Replace-Token $settingsContent "ACREMAIL" $acrEmail
 $settingsContent = Replace-Token $settingsContent "ACRAUTH" $acrAuth
 
-if ($licenseB64) {
-  $settingsContent = Replace-Token $settingsContent "LICENSEDATA" $licenseB64
+if ($licenseRaw) {
+  $settingsContent = Replace-Token $settingsContent "LICENSEDATA" $licenseRaw
 }
 
 $settingsContent = Replace-Token $settingsContent "preInitScriptData" "Cg=="

@@ -17,10 +17,15 @@ account. It assumes a public DNS name fronted by CloudFront.
 
 ### Recommended: Dedicated deploy role
 
-For customer‑run installs, create a dedicated IAM role (e.g., `opentofu-deploy`)
+For customer‑run installs, create a dedicated IAM role (e.g., `opentofu-deploy`,
+or your custom role name)
 and assume it when running the scripts. For initial proof/testing, attach
 `AdministratorAccess` to that role. Later, you can replace it with a least‑privilege
 policy once the required actions are finalized.
+
+If you choose a **custom role name**, replace `opentofu-deploy` everywhere in
+the docs/commands and pass `-DeployRoleName <your-role-name>` to scripts that
+accept it.
 
 ## DNS / domain
 

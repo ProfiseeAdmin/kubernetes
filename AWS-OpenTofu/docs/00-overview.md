@@ -7,7 +7,8 @@ It is safe‑by‑default: no secrets in Git, no vendor‑owned pipelines requir
 ## Core principles
 
 - **Customer‑owned execution**: run locally or in customer CI.
-- **No secrets in state or Git**: license and origin secrets live in Secrets Manager.
+- **No secrets in state or Git**: keep secrets out of OpenTofu state and out of Git
+  (customer-deployments/ or Secrets Manager).
 - **Staged deployment**: core infra → platform → edge (CloudFront/DNS).
 - **Private by default**: EKS API and RDS are private; ingress is via CloudFront → public NLB.
 
@@ -47,8 +48,8 @@ flowchart TD
   A["Stage A: Deployment folder"] --> B["Stage B: Bootstrap"]
   B --> C["Stage C: Core infra"]
   C --> C1["Stage C.1: Jumpbox optional"]
-  C1 --> D["Stage D: Platform"]
-  D --> E["Stage E: Edge (CF + DNS)"]
+  C1 --> D["Stage D: Platform foundation"]
+  D --> E["Stage E: App + Edge"]
 ```
 
 ## Staged flow (recommended)
@@ -57,8 +58,8 @@ flowchart TD
 2. **Stage B** – Bootstrap state backend  
 3. **Stage C** – Core infra (VPC + EKS + RDS + ACM)  
 4. **Stage C.1** – Jumpbox (optional)  
-5. **Stage D** – Platform (Traefik/NLB + app)  
-6. **Stage E** – Edge (CloudFront + Route53)
+5. **Stage D** – Platform foundation (Traefik/NLB + addons)  
+6. **Stage E** – App deploy + optional Edge (CloudFront + Route53)
 
 ## Key design choices
 
