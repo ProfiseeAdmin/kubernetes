@@ -353,7 +353,7 @@ NLB DNS name that CloudFront needs as an origin.
 **Private access is the default** (EKS API private‑only). Run kubectl/Helm from
 inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
 For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
-(recommended). See: [SSM RDP (Fleet Manager)](./ssm-rdp.md).
+(recommended). See: [Fleet Manager Remote Desktop](./ssm-rdp.md).
 
 Example (replace with your scripts when ready):
 
