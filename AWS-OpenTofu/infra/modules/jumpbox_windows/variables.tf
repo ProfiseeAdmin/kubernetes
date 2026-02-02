@@ -75,16 +75,6 @@ variable "tags" {
 
 variable "user_data" {
   type        = string
-  default     = <<-EOF
-    <powershell>
-    $ProgressPreference = 'SilentlyContinue'
-    # Give IAM/SSM/EKS time to settle and permissions to propagate
-    Start-Sleep -Seconds 300
-
-    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    choco upgrade chocolatey kubernetes-cli ekscli kubernetes-helm awscli opentofu awscli-session-manager -y
-    Import-Module C:\\ProgramData\\chocolatey\\helpers\\chocolateyProfile.psm1
-    refreshenv
-    </powershell>
-  EOF
+  default     = null
+  description = "Windows user data script (optional). If null/empty, a default bootstrap script is used."
 }

@@ -1,29 +1,18 @@
 # RDP via AWS Systems Manager (SSM)
 
 You can get full GUI access to the Windows jumpbox without opening inbound RDP.
-This uses SSM port forwarding or Fleet Manager Remote Desktop.
+Use **Fleet Manager Remote Desktop** (recommended).
 
-## Option A - Port forwarding (recommended)
+## Fleet Manager Remote Desktop (recommended)
 
-Prereqs:
-- Session Manager plugin installed
-- The instance has the SSM agent (default on Windows AMIs)
-- The jumpbox role includes `AmazonSSMManagedInstanceCore`
-- No EC2 key pair is required for port forwarding
+This avoids CredSSP/NTLM issues on your local machine. It uses the
+browser-based RDP client inside AWS Systems Manager.
 
-Start a port‑forwarding session to the instance:
-
-```powershell
-aws ssm start-session `
-  --target i-xxxxxxxxxxxxxxxxx `
-  --document-name AWS-StartPortForwardingSession `
-  --parameters "portNumber=3389,localPortNumber=13389"
-```
-
-Then RDP to:
-```
-localhost:13389
-```
+Steps:
+1. AWS Console → Systems Manager → Fleet Manager
+2. Select the jumpbox instance
+3. Click **Remote Desktop**
+4. Log in as `Administrator` with the instance password (decrypted using your PEM)
 
 > If you prefer **classic RDP**, you must supply `jumpbox.key_name` in your
 > config and keep the `.pem` file locally. AWS only lets you download the PEM
@@ -45,10 +34,3 @@ aws ec2 get-password-data `
   --instance-id i-xxxxxxxxxxxxxxxxx `
   --priv-launch-key C:\path\to\key.pem
 ```
-
-## Option B - Fleet Manager Remote Desktop
-
-In AWS Console:
-Systems Manager → Fleet Manager → select instance → Remote Desktop.
-
-This also uses SSM and does not require inbound 3389.

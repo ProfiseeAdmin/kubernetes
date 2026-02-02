@@ -90,19 +90,40 @@ if (-not $JumpboxRoleArn) {
   $JumpboxRoleArn = $outputs.jumpbox_role_arn
 }
 
+$jumpboxInstanceId = $null
+if ($outputs -and (Get-PropValue $outputs "jumpbox_instance_id")) {
+  $jumpboxInstanceId = $outputs.jumpbox_instance_id
+}
+
 $JumpboxRoleArn = ([string]$JumpboxRoleArn).Trim()
 
 $jumpboxRoleResolved = $JumpboxRoleArn
 if ($jumpboxRoleResolved -and $jumpboxRoleResolved -notmatch "^arn:aws:iam::") {
+  # If we have the instance ID, resolve the role via instance profile.
+  if ($jumpboxInstanceId) {
+    $profileArn = aws ec2 describe-instances --instance-ids $jumpboxInstanceId --query "Reservations[0].Instances[0].IamInstanceProfile.Arn" --output text
+    if ($LASTEXITCODE -eq 0 -and $profileArn -and $profileArn -ne "None") {
+      $profileName = ($profileArn -split "/")[-1]
+      $roleArn = aws iam get-instance-profile --instance-profile-name $profileName --query "InstanceProfile.Roles[0].Arn" --output text
+      if ($LASTEXITCODE -eq 0 -and $roleArn -and $roleArn -ne "None") {
+        $jumpboxRoleResolved = $roleArn
+      }
+    }
+  }
+
   # Try to derive the jumpbox role name from config (default: "jumpbox-ssm-role").
   $jumpboxCfg = Get-PropValue $cfg "jumpbox"
   $jumpboxName = Get-PropValue $jumpboxCfg "name"
   if (-not $jumpboxName -or $jumpboxName -eq "") { $jumpboxName = "jumpbox" }
   $jumpboxRoleName = "{0}-ssm-role" -f $jumpboxName
-  $lookupArn = aws iam get-role --role-name $jumpboxRoleName --query Role.Arn --output text
-  if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
-    $jumpboxRoleResolved = $lookupArn
-  } else {
+  if ($jumpboxRoleResolved -notmatch "^arn:aws:iam::") {
+    $lookupArn = aws iam get-role --role-name $jumpboxRoleName --query Role.Arn --output text
+    if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
+      $jumpboxRoleResolved = $lookupArn
+    }
+  }
+
+  if ($jumpboxRoleResolved -notmatch "^arn:aws:iam::") {
     # Try role-name lookup first, then role-id lookup.
     $lookupArn = aws iam get-role --role-name $jumpboxRoleResolved --query Role.Arn --output text
     if ($LASTEXITCODE -eq 0 -and $lookupArn -and $lookupArn -ne "None") {
@@ -145,6 +166,43 @@ if (-not $assumeDoc.Statement) {
 }
 
 $statements = @($assumeDoc.Statement)
+$removedInvalid = $false
+
+function Is-ValidAwsPrincipal([string]$value) {
+  if (-not $value) { return $false }
+  if ($value -match "^arn:aws:iam::") { return $true }
+  if ($value -match "^[0-9]{12}$") { return $true }
+  return $false
+}
+
+$cleanStatements = @()
+foreach ($stmt in $statements) {
+  if ($stmt.Principal -and (Get-PropValue $stmt.Principal "AWS")) {
+    $awsPrincipal = $stmt.Principal.AWS
+    if ($awsPrincipal -is [string]) {
+      if (-not (Is-ValidAwsPrincipal $awsPrincipal)) {
+        $removedInvalid = $true
+        continue
+      }
+    } elseif ($awsPrincipal -is [System.Collections.IEnumerable]) {
+      $validList = @($awsPrincipal | Where-Object { Is-ValidAwsPrincipal $_ })
+      if ($validList.Count -eq 0) {
+        $removedInvalid = $true
+        continue
+      }
+      $stmt.Principal.AWS = $validList
+      if ($validList.Count -ne @($awsPrincipal).Count) { $removedInvalid = $true }
+    }
+  }
+  $cleanStatements += $stmt
+}
+
+if ($removedInvalid) {
+  Write-Host "Removed invalid AWS principal entries from deploy role trust policy."
+}
+
+$statements = $cleanStatements
+$assumeDoc.Statement = $statements
 $exists = $false
 
 foreach ($stmt in $statements) {

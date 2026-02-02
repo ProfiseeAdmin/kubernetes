@@ -296,9 +296,8 @@ Example config:
 ```
 
 Notes:
-- If you **use RDP**, you must supply `key_name` and keep the **PEM file locally**
+- If you **use classic RDP**, you must supply `key_name` and keep the **PEM file locally**
   (AWS only lets you download it once when you create the key pair).
-- If you **use SSM port forwarding**, you can omit `key_name` entirely.
 
 Create the key pair on‑the‑fly (updates your config automatically):
 
@@ -328,6 +327,9 @@ Apply (if not already):
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
+By default, this now also **ensures a jumpbox key exists** (for classic RDP).
+If you want to skip key creation, pass `-EnsureJumpboxKey $false`.
+
 Auto‑add the jumpbox role to the deploy role trust policy (runs automatically
 after `tofu-apply.ps1` if the jumpbox is enabled):
 
@@ -350,8 +352,8 @@ NLB DNS name that CloudFront needs as an origin.
 
 **Private access is the default** (EKS API private‑only). Run kubectl/Helm from
 inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
-For a jumpbox with no inbound RDP, use SSM port forwarding:
-[SSM RDP via port forwarding](./ssm-rdp.md).
+For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
+(recommended). See: [SSM RDP (Fleet Manager)](./ssm-rdp.md).
 
 Example (replace with your scripts when ready):
 

@@ -21,6 +21,19 @@ data "aws_ami" "windows" {
 
 locals {
   ami_id = var.ami_id != null ? var.ami_id : data.aws_ami.windows[0].id
+  default_user_data = <<-EOF
+    <powershell>
+    $ProgressPreference = 'SilentlyContinue'
+    # Give IAM/SSM/EKS time to settle and permissions to propagate
+    Start-Sleep -Seconds 300
+
+    Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu awscli-session-manager -y
+    Import-Module C:\\ProgramData\\chocolatey\\helpers\\chocolateyProfile.psm1
+    refreshenv
+    </powershell>
+  EOF
+  user_data = (var.user_data != null && trim(var.user_data) != "") ? var.user_data : local.default_user_data
 }
 
 data "aws_iam_policy_document" "ec2_assume" {
@@ -111,7 +124,7 @@ resource "aws_instance" "this" {
   associate_public_ip_address = var.associate_public_ip
   key_name                    = var.key_name
   iam_instance_profile        = aws_iam_instance_profile.ssm.name
-  user_data                   = var.user_data
+  user_data                   = local.user_data
 
   root_block_device {
     volume_size           = var.root_volume_size_gb

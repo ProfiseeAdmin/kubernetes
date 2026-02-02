@@ -33,7 +33,7 @@ policy once the required actions are finalized.
 - OpenTofu (Terraform-compatible) on PATH as `tofu`
 - AWS CLI authenticated to your target account
 - kubectl and Helm (for the platform layer)
-- Session Manager plugin (optional, for SSM RDP port forwarding)
+- Session Manager plugin (optional, for Fleet Manager Remote Desktop)
 
 Install these using Choco or manually using their respective pages:
 
@@ -81,7 +81,6 @@ Optional helper (creates the key under `customer-deployments/<name>/secrets` and
 - CloudFront origin headers are stored in state. Do not place secrets there.
 - If you set the EKS API endpoint to private‑only, you must run kubectl/Helm from
   inside the VPC (jumpbox/bastion) or through VPN/Direct Connect.
-- A Windows jumpbox can be used for GUI access. You can connect via RDP over:
-  - VPN/Direct Connect, or
-  - SSM port forwarding (no inbound RDP required)
+- A Windows jumpbox can be used for GUI access. Recommended access method:
+  - Fleet Manager Remote Desktop (no inbound RDP required)
 

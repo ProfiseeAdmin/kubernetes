@@ -8,7 +8,8 @@ param(
   [string]$ExtraVarFile,
   [switch]$AutoApprove,
   [string]$DeployRoleName = "opentofu-deploy",
-  [string]$JumpboxRoleArn
+  [string]$JumpboxRoleArn,
+  [bool]$EnsureJumpboxKey = $true
 )
 
 Set-StrictMode -Version Latest
@@ -31,6 +32,14 @@ if (-not (Test-Path -LiteralPath $varFile)) {
   throw "config.auto.tfvars.json not found: $varFile"
 }
 
+# Safe property access under StrictMode
+function Get-PropValue($obj, [string]$name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties[$name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
 # If the user changed the deploy role name, derive it from config when possible.
 try {
   $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
@@ -44,6 +53,47 @@ try {
   }
 } catch {
   # Non-fatal; keep DeployRoleName as-is.
+}
+
+if ($EnsureJumpboxKey) {
+  if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+    throw "AWS CLI (aws) is not on PATH. Install AWS CLI and try again."
+  }
+
+  $jumpboxCfg = Get-PropValue $cfg "jumpbox"
+  $jumpboxEnabled = Get-PropValue $jumpboxCfg "enabled"
+  if ($jumpboxEnabled -eq $true) {
+    $region = Get-PropValue $cfg "region"
+    if (-not $region -or $region -eq "") { $region = "us-east-1" }
+
+    $keyName = Get-PropValue $jumpboxCfg "key_name"
+    if (-not $keyName -or $keyName -eq "") {
+      $createKeyScript = Join-Path $resolvedRepoRoot "scripts\create-jumpbox-key.ps1"
+      if (-not (Test-Path -LiteralPath $createKeyScript)) {
+        throw "create-jumpbox-key.ps1 not found: $createKeyScript"
+      }
+      & $createKeyScript -DeploymentName $DeploymentName -RepoRoot $resolvedRepoRoot
+    } else {
+      $keyExists = $true
+      aws ec2 describe-key-pairs --region $region --key-names $keyName | Out-Null
+      if ($LASTEXITCODE -ne 0) { $keyExists = $false }
+
+      if (-not $keyExists) {
+        $createKeyScript = Join-Path $resolvedRepoRoot "scripts\create-jumpbox-key.ps1"
+        if (-not (Test-Path -LiteralPath $createKeyScript)) {
+          throw "create-jumpbox-key.ps1 not found: $createKeyScript"
+        }
+        & $createKeyScript -DeploymentName $DeploymentName -KeyName $keyName -RepoRoot $resolvedRepoRoot
+      } else {
+        $secretsDir = Join-Path $deploymentPath "secrets"
+        $keyPath = Join-Path $secretsDir ("{0}.pem" -f $keyName)
+        if (-not (Test-Path -LiteralPath $keyPath)) {
+          Write-Host "Warning: Key pair '$keyName' exists in AWS but PEM not found at $keyPath."
+          Write-Host "         AWS does not allow re-downloading an existing key. Create a new key name if needed."
+        }
+      }
+    }
+  }
 }
 
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
