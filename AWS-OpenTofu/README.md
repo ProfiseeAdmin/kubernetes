@@ -14,4 +14,4 @@ Other docs:
 - Ops/upgrade/rollback: `docs/06-operations-upgrade-rollback.md`
 - Uninstall: `docs/07-uninstall.md`
 - IAM role plan: `docs/iam-deploy-role.md`
-- RDP via SSM: `docs/ssm-rdp.md`
+- RDP via Fleet Manager: `docs/fleet-manager-rdp.md`
