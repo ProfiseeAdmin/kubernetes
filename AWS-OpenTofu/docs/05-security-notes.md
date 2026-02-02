@@ -4,8 +4,14 @@
 
 - Do **not** put license files, DB passwords, or origin header secrets in OpenTofu variables.
 - License files live in `customer-deployments/<name>/secrets/license.txt` and
-  are injected into `Settings.yaml` (raw). Keep the entire
-  `customer-deployments/` tree out of Git.
+  are **not** injected into `Settings.yaml`. Instead, seed Secrets Manager and
+  keep the entire `customer-deployments/` tree out of Git.
+- `Settings.yaml` may contain sensitive values. Store it in the dedicated S3
+  settings bucket with encryption enabled and restrict access to the deployer
+  role only.
+- `secrets/seed-secrets.json` contains sensitive values (ACR creds, OIDC client
+  secret, TLS key). Keep it out of Git and delete it after seeding Secrets
+  Manager.
 - Use AWS Secrets Manager + CSI to mount secrets into pods.
 
 ## Private by default

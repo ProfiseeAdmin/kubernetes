@@ -145,6 +145,8 @@ the policy.
         "rds:*",
         "kms:*",
         "acm:*",
+        "s3:*",
+        "ecs:*",
         "cloudfront:*",
         "route53:*",
         "logs:*",

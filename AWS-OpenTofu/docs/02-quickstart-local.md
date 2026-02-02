@@ -45,14 +45,15 @@ To skip prompts and only copy the template:
 
 License file:
 - Place your license at `customer-deployments/<name>/secrets/license.txt`.
-- `new-deployment.ps1` will read it **raw** and replace `$LICENSEDATA` in
-  `Settings.yaml`. If the file is missing, the placeholder remains.
+- `new-deployment.ps1` will **not** inject it into `Settings.yaml`. It keeps
+  placeholders and writes a `secrets/seed-secrets.json` file so you can seed
+  Secrets Manager later.
 
 `new-deployment.ps1` also downloads `Settings.yaml` from the Azure-ARM base and
-fills most app settings. It **does not** ask for the SQL password (keep it in
-Secrets Manager), and it leaves any unresolved placeholders intact. After
-`tofu-apply`, the script will update `Settings.yaml` with the RDS endpoint and
-the app EBS volume ID if one is provided in outputs.
+fills **non‑secret** app settings. It keeps placeholders for secrets
+(license, ACR creds, OIDC client details, TLS cert/key, app SQL creds), and
+writes them to `secrets/seed-secrets.json`. After `tofu-apply`, the script will
+update `Settings.yaml` with the RDS endpoint and the app EBS volume ID.
 
 Stage A collects **two categories** of input:
 - **Infra** (VPC/EKS/RDS/ACM/Route53/CloudFront/jumpbox)
@@ -67,6 +68,10 @@ comma‑separated.
 - **us-east-1 region (ACM/CloudFront)**: `us-east-1`
 - **Tag: Project**: `my-product`
 - **Tag: Environment**: `dev` / `test` / `prod`
+- **Settings S3 bucket enabled**: `y` (recommended)
+- **Settings S3 bucket name**: `my-unique-settings-bucket`
+- **Settings bucket force destroy**: `n` (recommended)
+- **Settings bucket KMS key ARN (optional)**: leave blank to use SSE-S3
 - **VPC name**: `my-product`
 - **VPC CIDR block**: `10.20.0.0/16`
 - **VPC AZs** (comma‑separated): `us-east-1a,us-east-1b,us-east-1c`
@@ -103,9 +108,24 @@ comma‑separated.
 - **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy` (replace with your role name if different)
 
 After the infra prompts, the script will also ask for **app settings**
-(OIDC provider, ACR credentials, admin account, etc.) to populate
-`Settings.yaml`. The SQL password is **not** prompted and is expected to come
-from Secrets Manager during platform deployment.
+(OIDC provider, ACR credentials, admin account, app SQL creds, etc.). These
+values are written to `secrets/seed-secrets.json` and **not** injected into
+`Settings.yaml`.
+
+App settings prompts (stored in `secrets/seed-secrets.json`):
+- **SQL Server endpoint** (optional, filled after apply)
+- **SQL database name**
+- **App SQL username / password** (not the RDS master)
+- **Use Let’s Encrypt**
+- **SuperAdmin email / Infra admin email**
+- **Web app name (path)**
+- **OIDC provider** (Entra or Okta)
+- **Entra tenant ID** or **Okta authority URL**
+- **OIDC client ID / client secret**
+- **Cluster node count (app pods)**
+- **ACR repository name / image tag / registry**
+- **ACR username / password / auth / email**
+- **TLS cert/key paths** (manual TLS only)
 
 After Stage B, `backend.hcl` will be written here. Example content:
 
@@ -319,6 +339,44 @@ Then:
 After apply, `Settings.yaml` is updated with the RDS endpoint and (if provided)
 the app EBS volume ID.
 
+Upload `Settings.yaml` to the settings bucket:
+
+```powershell
+.\scripts\upload-settings.ps1 -DeploymentName acme-prod
+```
+
+Seed Secrets Manager for platform deployer (license, ACR, OIDC, TLS):
+
+```powershell
+.\scripts\seed-secrets.ps1 -DeploymentName acme-prod -UpdateConfig
+```
+
+Notes:
+- Store **app SQL** credentials (not the RDS master) when prompted.
+- The script writes secret ARNs into `platform_deployer.secret_arns` so the
+  Fargate task can retrieve them.
+ - If `secrets/seed-secrets.json` exists, the script will use it instead of
+   re‑prompting.
+
+### Stage C.2 - Create the app SQL login/user (one-time)
+
+OpenTofu creates the **RDS instance** and (if `rds_sqlserver.db_name` is set)
+the **initial database**, but it does **not** create the app SQL login/user.
+Create a dedicated app login and grant `db_owner` on the app database.
+
+From the jumpbox (or any host with network access to RDS) retrieve the **RDS
+master password** from Secrets Manager, then connect with SSMS and run:
+
+```sql
+-- Replace values with your app SQL username/password and DB name.
+CREATE LOGIN [<app_user>] WITH PASSWORD = '<app_password>';
+USE [<db_name>];
+CREATE USER [<app_user>] FOR LOGIN [<app_user>];
+ALTER ROLE db_owner ADD MEMBER [<app_user>];
+```
+
+Tip: the jumpbox role is allowed to read the RDS master secret when `manage_master_user_password = true`.
+
 ## Stage C.1 - Jumpbox (optional, GUI access)
 
 This stage creates an optional **Windows jumpbox** inside the VPC so you can
@@ -404,12 +462,16 @@ inside the VPC (jumpbox/bastion) or through a VPN/Direct Connect connection.
 For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
 (recommended). See: [Fleet Manager Remote Desktop](./fleet-manager-rdp.md).
 
-Example (replace with your scripts when ready):
+Ensure `platform_deployer.enabled` is `true` and `platform_deployer.image_uri`
+is set in your deployment config, then run the platform deployer (Fargate) to
+install Traefik + addons:
 
 ```powershell
-.\scripts\kubeconfig.ps1 -DeploymentName acme-prod
-.\scripts\deploy-platform.ps1 -DeploymentName acme-prod
+.\scripts\run-platform-deployer.ps1 -DeploymentName acme-prod
 ```
+
+The deployer container image must include `aws`, `kubectl`, and `helm`, and run
+your platform deployment script on startup.
 
 Capture the NLB DNS name.
 

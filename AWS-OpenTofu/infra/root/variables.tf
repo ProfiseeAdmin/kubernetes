@@ -15,6 +15,22 @@ variable "tags" {
   description = "Tags applied to all resources via provider default_tags."
 }
 
+variable "settings_bucket" {
+  type = object({
+    enabled       = optional(bool, true)
+    name          = optional(string)
+    force_destroy = optional(bool, false)
+    kms_key_arn   = optional(string)
+    tags          = optional(map(string), {})
+  })
+  description = "S3 bucket for Settings.yaml and deployment artifacts."
+
+  validation {
+    condition     = !try(var.settings_bucket.enabled, true) || (try(var.settings_bucket.name, "") != "")
+    error_message = "settings_bucket.name is required when settings_bucket.enabled is true."
+  }
+}
+
 variable "app_ebs" {
   type = object({
     enabled           = optional(bool, true)
@@ -35,6 +51,31 @@ variable "app_ebs_volume_id" {
   type        = string
   default     = null
   description = "Optional existing EBS volume ID for the app fileshare (used only when app_ebs.enabled is false)."
+}
+
+variable "platform_deployer" {
+  type = object({
+    enabled        = optional(bool, false)
+    image_uri      = optional(string)
+    cpu            = optional(number, 1024)
+    memory         = optional(number, 2048)
+    settings_key   = optional(string)
+    tags           = optional(map(string), {})
+    environment    = optional(map(string), {})
+    secret_arns    = optional(map(string), {})
+  })
+  default     = {}
+  description = "Fargate one-shot deployer for platform components (Traefik/addons)."
+
+  validation {
+    condition     = !try(var.platform_deployer.enabled, false) || (try(var.platform_deployer.image_uri, "") != "")
+    error_message = "platform_deployer.image_uri is required when platform_deployer.enabled is true."
+  }
+
+  validation {
+    condition     = !try(var.platform_deployer.enabled, false) || try(var.settings_bucket.enabled, true)
+    error_message = "settings_bucket.enabled must be true when platform_deployer.enabled is true."
+  }
 }
 
 variable "vpc" {

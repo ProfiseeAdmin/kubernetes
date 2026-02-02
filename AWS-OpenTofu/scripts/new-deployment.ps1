@@ -142,6 +142,12 @@ if (-not $NoPrompt) {
   $json.tags.Project = Read-Value "Tag: Project" $json.tags.Project
   $json.tags.Environment = Read-Value "Tag: Environment" $json.tags.Environment
 
+  if (-not $json.settings_bucket) { $json | Add-Member -NotePropertyName "settings_bucket" -NotePropertyValue @{} }
+  $json.settings_bucket.enabled = Read-Bool "Settings S3 bucket enabled" (if ($null -eq $json.settings_bucket.enabled) { $true } else { $json.settings_bucket.enabled })
+  $json.settings_bucket.name = Read-Value "Settings S3 bucket name" $json.settings_bucket.name
+  $json.settings_bucket.force_destroy = Read-Bool "Settings bucket force destroy" (if ($null -eq $json.settings_bucket.force_destroy) { $false } else { $json.settings_bucket.force_destroy })
+  $json.settings_bucket.kms_key_arn = Read-Value "Settings bucket KMS key ARN (optional)" $json.settings_bucket.kms_key_arn
+
   $json.vpc.name = Read-Value "VPC name" $json.vpc.name
   $json.vpc.cidr_block = Read-Value "VPC CIDR block" $json.vpc.cidr_block
   $json.vpc.azs = Read-List "VPC AZs (comma-separated)" $json.vpc.azs
@@ -255,7 +261,7 @@ $externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { ""
 
 $sqlName = $null
 $sqlDbName = "Profisee"
-$sqlUsername = $json.rds_sqlserver.master_username
+$sqlUsername = $null
 $sqlPassword = $null
 $useLetsEncrypt = $true
 $adminAccount = $null
@@ -264,6 +270,7 @@ $webAppName = "profisee"
 $oidcProvider = $null
 $oidcName = $null
 $oidcUrl = $null
+$oidcTenantId = $null
 $oidcClientId = $null
 $oidcClientSecret = $null
 $oidcUserNameClaim = $null
@@ -277,14 +284,19 @@ $acrRepoLabel = $null
 $acrUser = $null
 $acrPassword = $null
 $acrAuth = $null
-$acrEmail = "support@profisee.com"
+$acrEmail = $null
+$acrRegistry = "profisee.azurecr.io"
 $useOwnTls = $false
 $tlsCert = $null
 $tlsKey = $null
+$tlsCertPath = $null
+$tlsKeyPath = $null
 
 if (-not $NoPrompt) {
   $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
   $sqlDbName = Read-Value "SQL database name" $sqlDbName
+  $sqlUsername = Read-Value "App SQL username (not RDS master)" $sqlUsername
+  $sqlPassword = Read-Value "App SQL password" $sqlPassword
   $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
   $adminAccount = Read-Value "Profisee SuperAdmin email" $adminAccount
   $infraAdminAccount = Read-Value "Infra admin account email (default to SuperAdmin)" $adminAccount
@@ -294,8 +306,8 @@ if (-not $NoPrompt) {
   $oidcProvider = Read-Value "OIDC provider (Entra or Okta)" "Entra"
   if ($oidcProvider -match "entra|azure") {
     $oidcName = "Entra"
-    $tenantId = Read-Value "Entra tenant ID" ""
-    if ($tenantId) { $oidcUrl = "https://login.microsoftonline.com/$tenantId" }
+    $oidcTenantId = Read-Value "Entra tenant ID" ""
+    if ($oidcTenantId) { $oidcUrl = "https://login.microsoftonline.com/$oidcTenantId" }
     $oidcClientId = Read-Value "Entra app registration client ID" $oidcClientId
     $oidcClientSecret = Read-Value "Entra app registration client secret" $oidcClientSecret
     $oidcUserNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
@@ -326,6 +338,7 @@ if (-not $NoPrompt) {
 
   $acrRepoName = Read-Value "ACR repository name" $acrRepoName
   $acrRepoLabel = Read-Value "ACR image tag/label" $acrRepoLabel
+  $acrRegistry = Read-Value "ACR registry" $acrRegistry
   $acrUser = Read-Value "ACR username" $acrUser
   $acrPassword = Read-Value "ACR password" $acrPassword
   $acrAuth = Read-Value "ACR auth" $acrAuth
@@ -333,13 +346,13 @@ if (-not $NoPrompt) {
 
   $useOwnTls = Read-Bool "Use your own TLS cert (no internal CA certs)" $useOwnTls
   if ($useOwnTls) {
-    $certPath = Read-Value "Path to TLS cert PEM" ""
-    $keyPath = Read-Value "Path to TLS key PEM" ""
-    if ($certPath -and (Test-Path -LiteralPath $certPath)) {
-      $tlsCert = Get-Content -Raw -Path $certPath
+    $tlsCertPath = Read-Value "Path to TLS cert PEM" ""
+    $tlsKeyPath = Read-Value "Path to TLS key PEM" ""
+    if ($tlsCertPath -and (Test-Path -LiteralPath $tlsCertPath)) {
+      $tlsCert = Get-Content -Raw -Path $tlsCertPath
     }
-    if ($keyPath -and (Test-Path -LiteralPath $keyPath)) {
-      $tlsKey = Get-Content -Raw -Path $keyPath
+    if ($tlsKeyPath -and (Test-Path -LiteralPath $tlsKeyPath)) {
+      $tlsKey = Get-Content -Raw -Path $tlsKeyPath
     }
     if ($tlsCert -and $tlsKey) {
       $useLetsEncrypt = $false
@@ -352,11 +365,41 @@ if (-not $licenseRaw) {
   Write-Host ("Note: license file not found at {0}. Place your license file there as license.txt." -f $licensePath)
 }
 
+if (-not $NoPrompt) {
+  $seedPath = Join-Path $secretsDir "seed-secrets.json"
+  $seedPayload = @{
+    license_path = $licensePath
+    sql = @{
+      username = $sqlUsername
+      password = $sqlPassword
+    }
+    acr = @{
+      username = $acrUser
+      password = $acrPassword
+      auth     = $acrAuth
+      email    = $acrEmail
+      registry = $acrRegistry
+    }
+    oidc = @{
+      provider      = $oidcName
+      tenant_id     = $oidcTenantId
+      authority     = $oidcUrl
+      client_id     = $oidcClientId
+      client_secret = $oidcClientSecret
+    }
+    tls = @{
+      cert_path = $tlsCertPath
+      key_path  = $tlsKeyPath
+    }
+  }
+  $seedJson = $seedPayload | ConvertTo-Json -Depth 6
+  [System.IO.File]::WriteAllText($seedPath, $seedJson, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host ("Wrote secrets seed file: {0}" -f $seedPath)
+}
+
 # Replace core tokens
 $settingsContent = Replace-Token $settingsContent "SQLNAME" $sqlName
 $settingsContent = Replace-Token $settingsContent "SQLDBNAME" $sqlDbName
-$settingsContent = Replace-Token $settingsContent "SQLUSERNAME" $sqlUsername
-$settingsContent = Replace-Token $settingsContent "SQLUSERPASSWORD" $sqlPassword
 $settingsContent = Replace-Token $settingsContent "USELETSENCRYPT" ($useLetsEncrypt.ToString().ToLower())
 $settingsContent = Replace-Token $settingsContent "ADMINACCOUNTNAME" $adminAccount
 $settingsContent = Replace-Token $settingsContent "INFRAADMINACCOUNT" $infraAdminAccount
@@ -370,9 +413,6 @@ $settingsContent = Replace-Token $settingsContent "EXTERNALDNSNAME" $externalDns
 $settingsContent = Replace-Token $settingsContent "WEBAPPNAME" $webAppName
 
 $settingsContent = Replace-Token $settingsContent "OIDCNAME" $oidcName
-$settingsContent = Replace-Token $settingsContent "OIDCURL" $oidcUrl
-$settingsContent = Replace-Token $settingsContent "CLIENTID" $oidcClientId
-$settingsContent = Replace-Token $settingsContent "OIDCCLIENTSECRET" $oidcClientSecret
 $settingsContent = Replace-Token $settingsContent "OIDCCMUserName" $oidcUserNameClaim
 $settingsContent = Replace-Token $settingsContent "OIDCCMUserID" $oidcUserIdClaim
 $settingsContent = Replace-Token $settingsContent "OIDCCMFirstName" $oidcFirstNameClaim
@@ -385,25 +425,11 @@ $settingsContent = Replace-Token $settingsContent "MEMORYLIMITSVALUE" "10T"
 
 $settingsContent = Replace-Token $settingsContent "ACRREPONAME" $acrRepoName
 $settingsContent = Replace-Token $settingsContent "ACRREPOLABEL" $acrRepoLabel
-$settingsContent = Replace-Token $settingsContent "ACRUSER" $acrUser
-$settingsContent = Replace-Token $settingsContent "ACRPASSWORD" $acrPassword
-$settingsContent = Replace-Token $settingsContent "ACREMAIL" $acrEmail
-$settingsContent = Replace-Token $settingsContent "ACRAUTH" $acrAuth
-
-if ($licenseRaw) {
-  $settingsContent = Replace-Token $settingsContent "LICENSEDATA" $licenseRaw
-}
 
 $settingsContent = Replace-Token $settingsContent "preInitScriptData" "Cg=="
 $settingsContent = Replace-Token $settingsContent "postInitScriptData" "Cg=="
 $settingsContent = Replace-TokenBlock $settingsContent "OIDCFileData" "{`n    }"
 
-if ($useOwnTls -and $tlsCert) {
-  $settingsContent = Replace-TokenBlock $settingsContent "TLSCERT" $tlsCert.Trim()
-}
-if ($useOwnTls -and $tlsKey) {
-  $settingsContent = Replace-TokenBlock $settingsContent "TLSKEY" $tlsKey.Trim()
-}
 
 # Azure-specific fields (set to empty and disable)
 $settingsContent = Replace-Token $settingsContent "USEKEYVAULT" "false"

@@ -8,7 +8,9 @@ See `deployments/_template/config.auto.tfvars.json.example` for a full example.
 - `region`: primary AWS region (use `us-east-1`)
 - `use1_region`: `us-east-1` (ACM for CloudFront)
 - `tags`: default tags applied to resources
+- `settings_bucket`: S3 bucket for `Settings.yaml` and deployment artifacts
 - `app_ebs`: optional EBS volume configuration for the app fileshare (created by OpenTofu)
+- `platform_deployer`: optional Fargate one‑shot deployer configuration
 
 ## VPC
 
@@ -79,4 +81,25 @@ Key fields:
 - `size_gb`, `type` (default 5 GB, `gp3`)
 - `availability_zone` (defaults to first VPC AZ)
 - `encrypted`, `kms_key_id`
+
+## Settings bucket (S3)
+
+`settings_bucket` controls the S3 bucket used to store `Settings.yaml`.
+
+Key fields:
+- `name` (globally unique)
+- `force_destroy` (default false)
+- `kms_key_arn` (optional)
+
+## Platform deployer (Fargate)
+
+`platform_deployer` defines the one‑shot Fargate task used to deploy
+platform components (Traefik + addons) before the app.
+
+Key fields:
+- `enabled` (default false)
+- `image_uri` (container image that runs the deploy script)
+- `cpu`, `memory`
+- `settings_key` (S3 key for `Settings.yaml`)
+- `secret_arns` (map of secrets for the container to retrieve)
 

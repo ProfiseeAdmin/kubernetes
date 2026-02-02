@@ -5,6 +5,13 @@
     "Project": "my-product",
     "Environment": "dev"
   },
+  "settings_bucket": {
+    "enabled": true,
+    "name": "<unique-settings-bucket-name>",
+    "force_destroy": false,
+    "kms_key_arn": null,
+    "tags": {}
+  },
   "app_ebs": {
     "enabled": true,
     "availability_zone": null,
@@ -15,6 +22,15 @@
     "encrypted": true,
     "kms_key_id": null,
     "tags": {}
+  },
+  "platform_deployer": {
+    "enabled": false,
+    "image_uri": "<image-uri>",
+    "cpu": 1024,
+    "memory": 2048,
+    "settings_key": null,
+    "environment": {},
+    "secret_arns": {}
   },
   "vpc": {
     "name": "my-product",

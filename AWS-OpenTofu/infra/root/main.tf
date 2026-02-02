@@ -6,6 +6,12 @@ locals {
   app_ebs_enabled   = try(var.app_ebs.enabled, true)
   app_ebs_az        = coalesce(try(var.app_ebs.availability_zone, null), var.vpc.azs[0])
   app_ebs_tags      = merge(var.tags, try(var.app_ebs.tags, {}))
+  settings_bucket_enabled = try(var.settings_bucket.enabled, true)
+  settings_bucket_name    = try(var.settings_bucket.name, null)
+  settings_bucket_tags    = merge(var.tags, try(var.settings_bucket.tags, {}))
+  platform_deployer_enabled = try(var.platform_deployer.enabled, false)
+  platform_deployer_tags    = merge(var.tags, try(var.platform_deployer.tags, {}))
+  platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
 }
 
 module "vpc" {
@@ -26,6 +32,45 @@ module "vpc" {
   tags                 = var.vpc.tags
 }
 
+resource "aws_s3_bucket" "settings" {
+  count = local.settings_bucket_enabled ? 1 : 0
+
+  bucket        = local.settings_bucket_name
+  force_destroy = try(var.settings_bucket.force_destroy, false)
+  tags          = local.settings_bucket_tags
+}
+
+resource "aws_s3_bucket_public_access_block" "settings" {
+  count = local.settings_bucket_enabled ? 1 : 0
+
+  bucket                  = aws_s3_bucket.settings[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "settings" {
+  count = local.settings_bucket_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.settings[0].id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "settings" {
+  count = local.settings_bucket_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.settings[0].id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = try(var.settings_bucket.kms_key_arn, null) != null ? "aws:kms" : "AES256"
+      kms_master_key_id = try(var.settings_bucket.kms_key_arn, null)
+    }
+  }
+}
+
 module "eks" {
   source = "../modules/eks"
 
@@ -41,6 +86,192 @@ module "eks" {
   linux_node_group           = var.eks.linux_node_group
   windows_node_group         = var.eks.windows_node_group
   tags                       = var.eks.tags
+}
+
+resource "aws_ecs_cluster" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name = "${var.eks.cluster_name}-platform-deployer"
+  tags = local.platform_deployer_tags
+}
+
+resource "aws_cloudwatch_log_group" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name              = "/aws/ecs/${var.eks.cluster_name}-platform-deployer"
+  retention_in_days = 14
+  tags              = local.platform_deployer_tags
+}
+
+data "aws_iam_policy_document" "platform_deployer_task_assume" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "platform_deployer_task" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name               = "${var.eks.cluster_name}-platform-deployer-task"
+  assume_role_policy = data.aws_iam_policy_document.platform_deployer_task_assume[0].json
+  tags               = local.platform_deployer_tags
+}
+
+data "aws_iam_policy_document" "platform_deployer_task" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "eks:DescribeCluster",
+      "eks:ListClusters"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:ListBucket"
+    ]
+    resources = local.settings_bucket_enabled ? [
+      aws_s3_bucket.settings[0].arn,
+      "${aws_s3_bucket.settings[0].arn}/*"
+    ] : []
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue"
+    ]
+    resources = length(try(var.platform_deployer.secret_arns, {})) > 0 ? values(var.platform_deployer.secret_arns) : ["*"]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = ["kms:Decrypt"]
+    resources = try(var.settings_bucket.kms_key_arn, null) != null ? [var.settings_bucket.kms_key_arn] : ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "platform_deployer_task" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name   = "${var.eks.cluster_name}-platform-deployer-task"
+  role   = aws_iam_role.platform_deployer_task[0].id
+  policy = data.aws_iam_policy_document.platform_deployer_task[0].json
+}
+
+resource "aws_iam_role" "platform_deployer_execution" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name               = "${var.eks.cluster_name}-platform-deployer-exec"
+  assume_role_policy = data.aws_iam_policy_document.platform_deployer_task_assume[0].json
+  tags               = local.platform_deployer_tags
+}
+
+resource "aws_iam_role_policy_attachment" "platform_deployer_execution" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  role       = aws_iam_role.platform_deployer_execution[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_security_group" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  name        = "${var.eks.cluster_name}-platform-deployer-sg"
+  description = "Fargate platform deployer egress"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.platform_deployer_tags
+}
+
+locals {
+  platform_deployer_settings_uri = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_deployer_settings_key}" : ""
+  platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
+  platform_deployer_env = merge(
+    {
+      CLUSTER_NAME     = var.eks.cluster_name
+      AWS_REGION       = var.region
+      SETTINGS_S3_URI  = local.platform_deployer_settings_uri
+      SETTINGS_S3_BUCKET = local.settings_bucket_name
+      SETTINGS_S3_KEY  = local.platform_deployer_settings_key
+    },
+    try(var.platform_deployer.environment, {}),
+    local.platform_deployer_secret_env
+  )
+}
+
+resource "aws_ecs_task_definition" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  family                   = "${var.eks.cluster_name}-platform-deployer"
+  cpu                      = tostring(try(var.platform_deployer.cpu, 1024))
+  memory                   = tostring(try(var.platform_deployer.memory, 2048))
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  execution_role_arn       = aws_iam_role.platform_deployer_execution[0].arn
+  task_role_arn            = aws_iam_role.platform_deployer_task[0].arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "platform-deployer"
+      image     = var.platform_deployer.image_uri
+      essential = true
+      environment = [
+        for k, v in local.platform_deployer_env : {
+          name  = k
+          value = tostring(v)
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.platform_deployer[0].name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "platform"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_eks_access_entry" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.platform_deployer_task[0].arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "platform_deployer" {
+  count = local.platform_deployer_enabled ? 1 : 0
+
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.platform_deployer_task[0].arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
 }
 
 module "rds_sqlserver" {
@@ -131,6 +362,52 @@ module "route53" {
   evaluate_target_health = var.route53.evaluate_target_health
 }
 
+locals {
+  jumpbox_secret_arns = distinct([
+    for arn in concat(
+      length(try(var.platform_deployer.secret_arns, {})) > 0 ? values(var.platform_deployer.secret_arns) : [],
+      try(var.rds_sqlserver.manage_master_user_password, true) ? [module.rds_sqlserver.master_user_secret_arn] : []
+    ) : arn if arn != null && arn != ""
+  ])
+}
+
+data "aws_iam_policy_document" "jumpbox_secrets" {
+  count = local.jumpbox_enabled && length(local.jumpbox_secret_arns) > 0 ? 1 : 0
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue"
+    ]
+    resources = local.jumpbox_secret_arns
+  }
+
+  dynamic "statement" {
+    for_each = try(var.rds_sqlserver.master_user_secret_kms_key_id, null) != null ? [var.rds_sqlserver.master_user_secret_kms_key_id] : []
+    content {
+      effect = "Allow"
+      actions = ["kms:Decrypt"]
+      resources = [statement.value]
+    }
+  }
+}
+
+resource "aws_iam_policy" "jumpbox_secrets" {
+  count = length(data.aws_iam_policy_document.jumpbox_secrets) > 0 ? 1 : 0
+
+  name   = "${var.eks.cluster_name}-jumpbox-secrets"
+  policy = data.aws_iam_policy_document.jumpbox_secrets[0].json
+  tags   = local.jumpbox_tags
+}
+
+locals {
+  jumpbox_policy_arns = concat(
+    var.jumpbox.iam_policy_arns,
+    length(aws_iam_policy.jumpbox_secrets) > 0 ? [aws_iam_policy.jumpbox_secrets[0].arn] : []
+  )
+}
+
 module "jumpbox_windows" {
   count  = local.jumpbox_enabled ? 1 : 0
   source = "../modules/jumpbox_windows"
@@ -141,7 +418,7 @@ module "jumpbox_windows" {
   instance_type        = var.jumpbox.instance_type
   ami_id               = var.jumpbox.ami_id
   key_name             = var.jumpbox.key_name
-  iam_policy_arns      = var.jumpbox.iam_policy_arns
+  iam_policy_arns      = local.jumpbox_policy_arns
   assume_role_arn      = var.jumpbox.assume_role_arn
   associate_public_ip  = var.jumpbox.associate_public_ip
   root_volume_size_gb  = var.jumpbox.root_volume_size_gb
@@ -191,6 +468,14 @@ module "outputs_contract" {
     region                     = var.region
     use1_region                = var.use1_region
     app_ebs_volume_id          = local.app_ebs_volume_id
+    settings_bucket_name       = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].bucket : null
+    settings_bucket_arn        = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].arn : null
+    settings_s3_key            = local.platform_deployer_settings_key
+    settings_s3_uri            = local.platform_deployer_settings_uri
+    platform_deployer_cluster_arn         = local.platform_deployer_enabled ? aws_ecs_cluster.platform_deployer[0].arn : null
+    platform_deployer_task_definition_arn = local.platform_deployer_enabled ? aws_ecs_task_definition.platform_deployer[0].arn : null
+    platform_deployer_task_role_arn       = local.platform_deployer_enabled ? aws_iam_role.platform_deployer_task[0].arn : null
+    platform_deployer_security_group_id   = local.platform_deployer_enabled ? aws_security_group.platform_deployer[0].id : null
     vpc_id                     = module.vpc.vpc_id
     public_subnet_ids          = module.vpc.public_subnet_ids
     private_subnet_ids         = module.vpc.private_subnet_ids

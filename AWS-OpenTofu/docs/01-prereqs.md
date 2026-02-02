@@ -33,6 +33,10 @@ accept it.
   will use (e.g., `app.example.com`).
 - DNS validation is used for ACM certificates in us-east-1.
 
+## S3 settings bucket
+
+- Have a **globally unique S3 bucket name** ready for storing `Settings.yaml`.
+
 ## Local tools
 
 - OpenTofu (Terraform-compatible) on PATH as `tofu`
