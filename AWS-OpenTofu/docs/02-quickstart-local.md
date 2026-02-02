@@ -36,6 +36,12 @@ To skip prompts and only copy the template:
 .\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
 ```
 
+`new-deployment.ps1` also downloads `Settings.yaml` from the Azure-ARM base and
+fills most app settings. It **does not** ask for the SQL password (keep it in
+Secrets Manager), and it leaves any unresolved placeholders intact. After
+`tofu-apply`, the script will update `Settings.yaml` with the RDS endpoint and
+the app EBS volume ID if one is provided in outputs.
+
 ### Prompt reference (new-deployment.ps1)
 
 Press **Enter** to accept the default value shown in brackets. Lists are
@@ -79,6 +85,11 @@ comma‑separated.
 - **Jumpbox inbound RDP**: `n` (recommended)
 - **Jumpbox RDP CIDRs**: `203.0.113.10/32`
 - **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy`
+
+After the infra prompts, the script will also ask for **app settings**
+(OIDC provider, ACR credentials, admin account, etc.) to populate
+`Settings.yaml`. The SQL password is **not** prompted and is expected to come
+from Secrets Manager during platform deployment.
 
 After Stage B, `backend.hcl` will be written here. Example content:
 
@@ -272,6 +283,9 @@ Then:
 .\scripts\tofu-plan.ps1 -DeploymentName acme-prod
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
+
+After apply, `Settings.yaml` is updated with the RDS endpoint and (if provided)
+the app EBS volume ID.
 
 ## Stage C.1 - Jumpbox (optional, GUI access)
 

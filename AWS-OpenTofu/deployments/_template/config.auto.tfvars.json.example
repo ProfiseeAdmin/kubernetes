@@ -5,6 +5,17 @@
     "Project": "my-product",
     "Environment": "dev"
   },
+  "app_ebs": {
+    "enabled": true,
+    "availability_zone": null,
+    "size_gb": 5,
+    "type": "gp3",
+    "iops": null,
+    "throughput": null,
+    "encrypted": true,
+    "kms_key_id": null,
+    "tags": {}
+  },
   "vpc": {
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",

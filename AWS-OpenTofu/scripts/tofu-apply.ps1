@@ -158,3 +158,49 @@ if (Test-Path -LiteralPath $trustScript) {
   Write-Host "Jumpbox trust update skipped (script not found: $trustScript)."
 }
 
+# ---------------------------------------------------------------------------
+# Update Settings.yaml with post-apply outputs (SQL endpoint, EBS volume)
+# ---------------------------------------------------------------------------
+$settingsPath = Join-Path $deploymentPath "Settings.yaml"
+if (Test-Path -LiteralPath $settingsPath) {
+  try {
+    Push-Location $infraRoot
+    try {
+      $outputs = tofu output -json outputs_contract | ConvertFrom-Json
+    } finally {
+      Pop-Location
+    }
+
+    $settingsContent = Get-Content -Raw -Path $settingsPath
+    $updated = $false
+
+    $rdsEndpoint = Get-PropValue $outputs "rds_endpoint"
+    if ($rdsEndpoint -and $settingsContent -match "\$SQLNAME") {
+      $settingsContent = $settingsContent.Replace('$SQLNAME', $rdsEndpoint)
+      $updated = $true
+    }
+
+    $ebsId = $null
+    foreach ($candidate in @("ebs_volume_id", "app_ebs_volume_id", "fileshare_ebs_volume_id", "profisee_ebs_volume_id")) {
+      $value = Get-PropValue $outputs $candidate
+      if ($value) { $ebsId = $value; break }
+    }
+    if ($ebsId) {
+      $settingsContent = [regex]::Replace($settingsContent, '(?m)^(\s*ebsVolumeId:\s*).*$',
+        { param($m) ($m.Groups[1].Value + '"' + $ebsId + '"') })
+      $updated = $true
+    }
+
+    if ($updated) {
+      [System.IO.File]::WriteAllText($settingsPath, $settingsContent, (New-Object System.Text.UTF8Encoding($false)))
+      Write-Host ("Updated Settings.yaml with post-apply values: {0}" -f $settingsPath)
+    } else {
+      Write-Host "Settings.yaml not updated (no matching outputs or placeholders)."
+    }
+  } catch {
+    Write-Host ("Warning: failed to update Settings.yaml with outputs. {0}" -f $_.Exception.Message)
+  }
+} else {
+  Write-Host ("Settings.yaml not found; skipping post-apply update: {0}" -f $settingsPath)
+}
+

@@ -15,6 +15,28 @@ variable "tags" {
   description = "Tags applied to all resources via provider default_tags."
 }
 
+variable "app_ebs" {
+  type = object({
+    enabled           = optional(bool, true)
+    availability_zone = optional(string)
+    size_gb           = optional(number, 5)
+    type              = optional(string, "gp3")
+    iops              = optional(number)
+    throughput        = optional(number)
+    encrypted         = optional(bool, true)
+    kms_key_id        = optional(string)
+    tags              = optional(map(string), {})
+  })
+  default     = {}
+  description = "EBS volume configuration for the app fileshare."
+}
+
+variable "app_ebs_volume_id" {
+  type        = string
+  default     = null
+  description = "Optional existing EBS volume ID for the app fileshare (used only when app_ebs.enabled is false)."
+}
+
 variable "vpc" {
   type = object({
     name                 = string

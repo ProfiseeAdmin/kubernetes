@@ -3,6 +3,9 @@ locals {
   jumpbox_name      = coalesce(try(var.jumpbox.name, null), "jumpbox")
   jumpbox_subnet_id = coalesce(try(var.jumpbox.subnet_id, null), module.vpc.private_subnet_ids[0])
   jumpbox_tags      = merge(var.tags, try(var.jumpbox.tags, {}))
+  app_ebs_enabled   = try(var.app_ebs.enabled, true)
+  app_ebs_az        = coalesce(try(var.app_ebs.availability_zone, null), var.vpc.azs[0])
+  app_ebs_tags      = merge(var.tags, try(var.app_ebs.tags, {}))
 }
 
 module "vpc" {
@@ -148,6 +151,27 @@ module "jumpbox_windows" {
   tags                 = local.jumpbox_tags
 }
 
+resource "aws_ebs_volume" "app_fileshare" {
+  count = local.app_ebs_enabled ? 1 : 0
+
+  availability_zone = local.app_ebs_az
+  size              = try(var.app_ebs.size_gb, 5)
+  type              = try(var.app_ebs.type, "gp3")
+  iops              = try(var.app_ebs.iops, null)
+  throughput        = try(var.app_ebs.throughput, null)
+  encrypted         = try(var.app_ebs.encrypted, true)
+  kms_key_id         = try(var.app_ebs.kms_key_id, null)
+
+  tags = merge(
+    local.app_ebs_tags,
+    { Name = "${var.eks.cluster_name}-fileshare" }
+  )
+}
+
+locals {
+  app_ebs_volume_id = local.app_ebs_enabled ? aws_ebs_volume.app_fileshare[0].id : var.app_ebs_volume_id
+}
+
 resource "aws_security_group_rule" "jumpbox_to_eks_api" {
   count = local.jumpbox_enabled ? 1 : 0
 
@@ -166,6 +190,7 @@ module "outputs_contract" {
   outputs = {
     region                     = var.region
     use1_region                = var.use1_region
+    app_ebs_volume_id          = local.app_ebs_volume_id
     vpc_id                     = module.vpc.vpc_id
     public_subnet_ids          = module.vpc.public_subnet_ids
     private_subnet_ids         = module.vpc.private_subnet_ids

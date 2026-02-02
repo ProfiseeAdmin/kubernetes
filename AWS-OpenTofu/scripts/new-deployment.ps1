@@ -70,6 +70,38 @@ function Coerce-List([string]$Label, $Value) {
   return ,@($Value)
 }
 
+function Ensure-Dir([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) {
+    New-Item -ItemType Directory -Path $Path | Out-Null
+  }
+}
+
+function Replace-Token([string]$Content, [string]$Token, [string]$Value) {
+  if ($null -eq $Value) { return $Content }
+  return $Content.Replace(('$' + $Token), $Value)
+}
+
+function Replace-TokenBlock([string]$Content, [string]$Token, [string]$Value) {
+  if ($null -eq $Value) { return $Content }
+  $pattern = "(?m)^(\\s*)\\$" + [regex]::Escape($Token) + "\\s*$"
+  return [regex]::Replace($Content, $pattern, {
+    param($m)
+    $indent = $m.Groups[1].Value
+    $lines = $Value -split "`r?`n"
+    if ($lines.Count -eq 0) { return $indent }
+    $first = $lines[0]
+    if ($lines.Count -eq 1) { return ($indent + $first) }
+    $rest = $lines[1..($lines.Count - 1)] | ForEach-Object { $indent + $_ }
+    return ($indent + $first + "`n" + ($rest -join "`n"))
+  })
+}
+
+function Read-FileBase64([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  $bytes = [System.IO.File]::ReadAllBytes($Path)
+  return [System.Convert]::ToBase64String($bytes)
+}
+
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
 $templateDir = Join-Path $resolvedRepoRoot "deployments\_template"
 
@@ -195,3 +227,210 @@ $jsonOut = $json | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "Wrote config: $configPath"
+
+# ---------------------------------------------------------------------------
+# Settings.yaml (Azure-ARM base) download + replacement
+# ---------------------------------------------------------------------------
+$settingsUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/master/Azure-ARM/Settings.yaml"
+$settingsPath = Join-Path $targetDir "Settings.yaml"
+
+try {
+  Invoke-WebRequest -Uri $settingsUrl -OutFile $settingsPath | Out-Null
+  Write-Host ("Downloaded Settings.yaml to: {0}" -f $settingsPath)
+} catch {
+  throw "Failed to download Settings.yaml from $settingsUrl"
+}
+
+$settingsContent = Get-Content -Raw -Path $settingsPath
+
+$secretsDir = Join-Path $targetDir "secrets"
+Ensure-Dir $secretsDir
+$licensePath = Join-Path $secretsDir "license.txt"
+
+$externalDnsName = $json.route53.record_name
+if (-not $externalDnsName -or $externalDnsName -eq "") { $externalDnsName = $json.acm.domain_name }
+if ($externalDnsName -and $externalDnsName.StartsWith("*.")) {
+  $externalDnsName = $externalDnsName.Substring(2)
+}
+$externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { "" }
+
+$sqlName = $null
+$sqlDbName = "Profisee"
+$sqlUsername = $json.rds_sqlserver.master_username
+$sqlPassword = $null
+$useLetsEncrypt = $true
+$adminAccount = $null
+$infraAdminAccount = $null
+$webAppName = "profisee"
+$oidcProvider = $null
+$oidcName = $null
+$oidcUrl = $null
+$oidcClientId = $null
+$oidcClientSecret = $null
+$oidcUserNameClaim = $null
+$oidcUserIdClaim = $null
+$oidcFirstNameClaim = $null
+$oidcLastNameClaim = $null
+$oidcEmailClaim = $null
+$podCount = "1"
+$acrRepoName = "profiseeplatform"
+$acrRepoLabel = $null
+$acrUser = $null
+$acrPassword = $null
+$acrAuth = $null
+$acrEmail = "support@profisee.com"
+$useOwnTls = $false
+$tlsCert = $null
+$tlsKey = $null
+
+if (-not $NoPrompt) {
+  $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
+  $sqlDbName = Read-Value "SQL database name" $sqlDbName
+  $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
+  $adminAccount = Read-Value "Profisee SuperAdmin email" $adminAccount
+  $infraAdminAccount = Read-Value "Infra admin account email (default to SuperAdmin)" $adminAccount
+  if (-not $infraAdminAccount -or $infraAdminAccount -eq "") { $infraAdminAccount = $adminAccount }
+  $webAppName = Read-Value "Web app name (path segment)" $webAppName
+
+  $oidcProvider = Read-Value "OIDC provider (Entra or Okta)" "Entra"
+  if ($oidcProvider -match "entra|azure") {
+    $oidcName = "Entra"
+    $tenantId = Read-Value "Entra tenant ID" ""
+    if ($tenantId) { $oidcUrl = "https://login.microsoftonline.com/$tenantId" }
+    $oidcClientId = Read-Value "Entra app registration client ID" $oidcClientId
+    $oidcClientSecret = Read-Value "Entra app registration client secret" $oidcClientSecret
+    $oidcUserNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    $oidcUserIdClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+    $oidcFirstNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
+    $oidcLastNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
+    $oidcEmailClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    if ($externalDnsName -and $webAppName) {
+      Write-Host ("Entra ID: Register the app as Web, enable ID tokens, and add redirect URL: https://{0}/{1}/auth/signin-microsoft" -f $externalDnsName, $webAppName)
+    }
+  } elseif ($oidcProvider -match "okta") {
+    $oidcName = "Okta"
+    $oidcUrl = Read-Value "Okta authority URL (e.g., https://mycompany.okta.com)" $oidcUrl
+    $oidcClientId = Read-Value "Okta client ID" $oidcClientId
+    $oidcClientSecret = Read-Value "Okta client secret" $oidcClientSecret
+    $oidcUserNameClaim = "preferred_username"
+    $oidcUserIdClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+    $oidcFirstNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
+    $oidcLastNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"
+    $oidcEmailClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    if ($externalDnsName -and $webAppName) {
+      Write-Host ("Okta: Enable ID tokens and set redirect URI: https://{0}/{1}/auth/signin-microsoft" -f $externalDnsName, $webAppName)
+      Write-Host ("Okta: Set sign-out URL: https://{0}/{1}/Account/Logout" -f $externalDnsName, $webAppName)
+    }
+  }
+
+  $podCount = Read-Value "Cluster node count (app pods)" $podCount
+
+  $acrRepoName = Read-Value "ACR repository name" $acrRepoName
+  $acrRepoLabel = Read-Value "ACR image tag/label" $acrRepoLabel
+  $acrUser = Read-Value "ACR username" $acrUser
+  $acrPassword = Read-Value "ACR password" $acrPassword
+  $acrAuth = Read-Value "ACR auth" $acrAuth
+  $acrEmail = Read-Value "ACR email" $acrEmail
+
+  $useOwnTls = Read-Bool "Use your own TLS cert (no internal CA certs)" $useOwnTls
+  if ($useOwnTls) {
+    $certPath = Read-Value "Path to TLS cert PEM" ""
+    $keyPath = Read-Value "Path to TLS key PEM" ""
+    if ($certPath -and (Test-Path -LiteralPath $certPath)) {
+      $tlsCert = Get-Content -Raw -Path $certPath
+    }
+    if ($keyPath -and (Test-Path -LiteralPath $keyPath)) {
+      $tlsKey = Get-Content -Raw -Path $keyPath
+    }
+    if ($tlsCert -and $tlsKey) {
+      $useLetsEncrypt = $false
+    }
+  }
+}
+
+$licenseB64 = Read-FileBase64 $licensePath
+if (-not $licenseB64) {
+  Write-Host ("Note: license file not found at {0}. Place your license file there as license.txt." -f $licensePath)
+}
+
+# Replace core tokens
+$settingsContent = Replace-Token $settingsContent "SQLNAME" $sqlName
+$settingsContent = Replace-Token $settingsContent "SQLDBNAME" $sqlDbName
+$settingsContent = Replace-Token $settingsContent "SQLUSERNAME" $sqlUsername
+$settingsContent = Replace-Token $settingsContent "SQLUSERPASSWORD" $sqlPassword
+$settingsContent = Replace-Token $settingsContent "USELETSENCRYPT" ($useLetsEncrypt.ToString().ToLower())
+$settingsContent = Replace-Token $settingsContent "ADMINACCOUNTNAME" $adminAccount
+$settingsContent = Replace-Token $settingsContent "INFRAADMINACCOUNT" $infraAdminAccount
+$settingsContent = Replace-Token $settingsContent "FILEREPOACCOUNTNAME" ""
+$settingsContent = Replace-Token $settingsContent "FILEREPOUSERNAME" "user manager\\containeradministrator"
+$settingsContent = Replace-Token $settingsContent "FILEREPOPASSWORD" ""
+$settingsContent = Replace-Token $settingsContent "FILEREPOSHARENAME" ""
+$settingsContent = Replace-Token $settingsContent "FILEREPOURL" "c:\\fileshare"
+$settingsContent = Replace-Token $settingsContent "EXTERNALDNSURL" $externalDnsUrl
+$settingsContent = Replace-Token $settingsContent "EXTERNALDNSNAME" $externalDnsName
+$settingsContent = Replace-Token $settingsContent "WEBAPPNAME" $webAppName
+
+$settingsContent = Replace-Token $settingsContent "OIDCNAME" $oidcName
+$settingsContent = Replace-Token $settingsContent "OIDCURL" $oidcUrl
+$settingsContent = Replace-Token $settingsContent "CLIENTID" $oidcClientId
+$settingsContent = Replace-Token $settingsContent "OIDCCLIENTSECRET" $oidcClientSecret
+$settingsContent = Replace-Token $settingsContent "OIDCCMUserName" $oidcUserNameClaim
+$settingsContent = Replace-Token $settingsContent "OIDCCMUserID" $oidcUserIdClaim
+$settingsContent = Replace-Token $settingsContent "OIDCCMFirstName" $oidcFirstNameClaim
+$settingsContent = Replace-Token $settingsContent "OIDCCMLastName" $oidcLastNameClaim
+$settingsContent = Replace-Token $settingsContent "OIDCCMEmailAddress" $oidcEmailClaim
+
+$settingsContent = Replace-Token $settingsContent "PodCount" $podCount
+$settingsContent = Replace-Token $settingsContent "CPULIMITSVALUE" "1000"
+$settingsContent = Replace-Token $settingsContent "MEMORYLIMITSVALUE" "10T"
+
+$settingsContent = Replace-Token $settingsContent "ACRREPONAME" $acrRepoName
+$settingsContent = Replace-Token $settingsContent "ACRREPOLABEL" $acrRepoLabel
+$settingsContent = Replace-Token $settingsContent "ACRUSER" $acrUser
+$settingsContent = Replace-Token $settingsContent "ACRPASSWORD" $acrPassword
+$settingsContent = Replace-Token $settingsContent "ACREMAIL" $acrEmail
+$settingsContent = Replace-Token $settingsContent "ACRAUTH" $acrAuth
+
+if ($licenseB64) {
+  $settingsContent = Replace-Token $settingsContent "LICENSEDATA" $licenseB64
+}
+
+$settingsContent = Replace-Token $settingsContent "preInitScriptData" "Cg=="
+$settingsContent = Replace-Token $settingsContent "postInitScriptData" "Cg=="
+$settingsContent = Replace-TokenBlock $settingsContent "OIDCFileData" "{`n    }"
+
+if ($useOwnTls -and $tlsCert) {
+  $settingsContent = Replace-TokenBlock $settingsContent "TLSCERT" $tlsCert.Trim()
+}
+if ($useOwnTls -and $tlsKey) {
+  $settingsContent = Replace-TokenBlock $settingsContent "TLSKEY" $tlsKey.Trim()
+}
+
+# Azure-specific fields (set to empty and disable)
+$settingsContent = Replace-Token $settingsContent "USEKEYVAULT" "false"
+$settingsContent = Replace-Token $settingsContent "KEYVAULTIDENTITCLIENTID" ""
+$settingsContent = Replace-Token $settingsContent "KEYVAULTIDENTITYRESOURCEID" '""'
+$settingsContent = Replace-Token $settingsContent "SQL_USERNAMESECRET" '""'
+$settingsContent = Replace-Token $settingsContent "SQL_USERPASSWORDSECRET" '""'
+$settingsContent = Replace-Token $settingsContent "TLS_CERTSECRET" '""'
+$settingsContent = Replace-Token $settingsContent "LICENSE_DATASECRET" '""'
+$settingsContent = Replace-Token $settingsContent "KEYVAULTNAME" ""
+$settingsContent = Replace-Token $settingsContent "KEYVAULTRESOURCEGROUP" ""
+$settingsContent = Replace-Token $settingsContent "AZURESUBSCRIPTIONID" ""
+$settingsContent = Replace-Token $settingsContent "AZURETENANTID" ""
+$settingsContent = Replace-Token $settingsContent "KUBERNETESCLIENTID" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWURL" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTID" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTSECRET" ""
+
+# Force cloud provider flags for AWS
+$settingsContent = $settingsContent -replace '(?m)^(\s*azure:\s*\r?\n\s*isProvider:\s*)true', '${1}false'
+$settingsContent = $settingsContent -replace '(?m)^(\s*aws:\s*\r?\n\s*isProvider:\s*)false', '${1}true'
+
+# Make EBS volume explicit placeholder for later update
+$settingsContent = $settingsContent -replace '(?m)^(\s*ebsVolumeId:\s*).*$','$1"$EBSVOLUMEID"'
+
+[System.IO.File]::WriteAllText($settingsPath, $settingsContent, (New-Object System.Text.UTF8Encoding($false)))
+Write-Host ("Wrote settings: {0}" -f $settingsPath)

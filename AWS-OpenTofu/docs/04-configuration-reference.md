@@ -8,6 +8,7 @@ See `deployments/_template/config.auto.tfvars.json.example` for a full example.
 - `region`: primary AWS region (use `us-east-1`)
 - `use1_region`: `us-east-1` (ACM for CloudFront)
 - `tags`: default tags applied to resources
+- `app_ebs`: optional EBS volume configuration for the app fileshare (created by OpenTofu)
 
 ## VPC
 
@@ -67,5 +68,15 @@ Key fields:
 - `enabled`
 - `key_name` (required for classic RDP)
 - `assume_role_arn` (recommended)
-- `associate_public_ip` (default false)
+  - `associate_public_ip` (default false)
+
+## App EBS (fileshare)
+
+`app_ebs` controls the dedicated EBS volume used by the app fileshare.
+
+Key fields:
+- `enabled` (default true)
+- `size_gb`, `type` (default 5 GB, `gp3`)
+- `availability_zone` (defaults to first VPC AZ)
+- `encrypted`, `kms_key_id`
 
