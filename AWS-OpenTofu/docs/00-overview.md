@@ -45,21 +45,23 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Stage A: Deployment folder"] --> B["Stage B: Bootstrap"]
+  A["Stage A: AWS creds + Bootstrap"] --> B["Stage B: Deployment folder"]
   B --> C["Stage C: Core infra"]
-  C --> C1["Stage C.1: Jumpbox optional"]
-  C1 --> D["Stage D: Platform foundation"]
+  C --> C1["Stage C.1: DB init (Fargate)"]
+  C1 --> C2["Stage C.2: Jumpbox optional"]
+  C2 --> D["Stage D: Platform foundation"]
   D --> E["Stage E: App + Edge"]
 ```
 
 ## Staged flow (recommended)
 
-1. **Stage A** – Create deployment folder  
-2. **Stage B** – Bootstrap state backend  
+1. **Stage A** – AWS credentials + bootstrap state backend  
+2. **Stage B** – Create deployment folder  
 3. **Stage C** – Core infra (VPC + EKS + RDS + ACM)  
-4. **Stage C.1** – Jumpbox (optional)  
-5. **Stage D** – Platform foundation (Traefik/NLB + addons)  
-6. **Stage E** – App deploy + optional Edge (CloudFront + Route53)
+4. **Stage C.1** – DB init (automated via Fargate)  
+5. **Stage C.2** – Jumpbox (optional)  
+6. **Stage D** – Platform foundation (Traefik/NLB + addons)  
+7. **Stage E** – App deploy + optional Edge (CloudFront + Route53)
 
 ## Key design choices
 

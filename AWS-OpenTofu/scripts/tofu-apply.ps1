@@ -40,6 +40,19 @@ function Get-PropValue($obj, [string]$name) {
   return $prop.Value
 }
 
+$cachedOutputs = $null
+function Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
+  if ($null -ne $script:cachedOutputs) { return $script:cachedOutputs }
+  Push-Location $InfraRoot
+  try {
+    tofu init "-backend-config=$BackendConfigPath" | Out-Null
+    $script:cachedOutputs = tofu output -json outputs_contract | ConvertFrom-Json
+  } finally {
+    Pop-Location
+  }
+  return $script:cachedOutputs
+}
+
 # If the user changed the deploy role name, derive it from config when possible.
 try {
   $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
@@ -53,6 +66,17 @@ try {
   }
 } catch {
   # Non-fatal; keep DeployRoleName as-is.
+}
+
+if ($cfg) {
+  $dbInitCfgEarly = Get-PropValue $cfg "db_init"
+  $dbInitEnabledEarly = Get-PropValue $dbInitCfgEarly "enabled"
+  if ($dbInitEnabledEarly -eq $true) {
+    $dbInitSecretsEarly = Get-PropValue $dbInitCfgEarly "secret_arns"
+    if ($null -eq $dbInitSecretsEarly -or $dbInitSecretsEarly.PSObject.Properties.Count -eq 0) {
+      throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
+    }
+  }
 }
 
 if ($EnsureJumpboxKey) {
@@ -128,12 +152,7 @@ if (Test-Path -LiteralPath $trustScript) {
     $shouldUpdateTrust = $true
   } else {
     try {
-      Push-Location $infraRoot
-      try {
-        $outputs = tofu output -json outputs_contract | ConvertFrom-Json
-      } finally {
-        Pop-Location
-      }
+      $outputs = Get-Outputs -InfraRoot $infraRoot -BackendConfigPath $backendConfig
       if ($outputs.jumpbox_role_arn -and $outputs.jumpbox_role_arn -ne "") {
         $JumpboxRoleArn = $outputs.jumpbox_role_arn
         $shouldUpdateTrust = $true
@@ -164,12 +183,7 @@ if (Test-Path -LiteralPath $trustScript) {
 $settingsPath = Join-Path $deploymentPath "Settings.yaml"
 if (Test-Path -LiteralPath $settingsPath) {
   try {
-    Push-Location $infraRoot
-    try {
-      $outputs = tofu output -json outputs_contract | ConvertFrom-Json
-    } finally {
-      Pop-Location
-    }
+    $outputs = Get-Outputs -InfraRoot $infraRoot -BackendConfigPath $backendConfig
 
     $settingsContent = Get-Content -Raw -Path $settingsPath
     $updated = $false
@@ -202,5 +216,83 @@ if (Test-Path -LiteralPath $settingsPath) {
   }
 } else {
   Write-Host ("Settings.yaml not found; skipping post-apply update: {0}" -f $settingsPath)
+}
+
+# ---------------------------------------------------------------------------
+# Auto-run DB init task (Fargate) when enabled
+# ---------------------------------------------------------------------------
+$dbInitCfg = Get-PropValue $cfg "db_init"
+$dbInitEnabled = Get-PropValue $dbInitCfg "enabled"
+if ($dbInitEnabled -eq $true) {
+  if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+    throw "AWS CLI (aws) is not on PATH. Install AWS CLI and try again."
+  }
+
+  $dbInitSecrets = Get-PropValue $dbInitCfg "secret_arns"
+  if ($null -eq $dbInitSecrets -or $dbInitSecrets.PSObject.Properties.Count -eq 0) {
+    throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
+  }
+
+  $region = Get-PropValue $cfg "region"
+  if (-not $region -or $region -eq "") { $region = "us-east-1" }
+
+  $outputs = Get-Outputs -InfraRoot $infraRoot -BackendConfigPath $backendConfig
+  $clusterArn = Get-PropValue $outputs "db_init_cluster_arn"
+  $taskDefArn = Get-PropValue $outputs "db_init_task_definition_arn"
+  $sgId = Get-PropValue $outputs "db_init_security_group_id"
+  $subnetIds = Get-PropValue $outputs "private_subnet_ids"
+
+  if (-not $clusterArn -or -not $taskDefArn -or -not $sgId -or -not $subnetIds) {
+    throw "db_init outputs missing. Ensure db_init is enabled and apply completed successfully."
+  }
+
+  $subnetList = @($subnetIds | ForEach-Object { $_ })
+  $sgList = @($sgId)
+
+  $networkConfig = @{
+    awsvpcConfiguration = @{
+      subnets        = $subnetList
+      securityGroups = $sgList
+      assignPublicIp = "DISABLED"
+    }
+  } | ConvertTo-Json -Depth 5 -Compress
+
+  Write-Host "Starting DB init Fargate task..."
+  $taskArn = aws ecs run-task `
+    --cluster $clusterArn `
+    --launch-type FARGATE `
+    --task-definition $taskDefArn `
+    --network-configuration $networkConfig `
+    --region $region `
+    --query "tasks[0].taskArn" --output text
+
+  if ($LASTEXITCODE -ne 0 -or -not $taskArn -or $taskArn -eq "None") {
+    throw "Failed to start DB init task."
+  }
+
+  Write-Host ("DB init task started: {0}" -f $taskArn)
+
+  $maxWaitMinutes = 20
+  $elapsed = 0
+  $sleepSeconds = 10
+  while ($true) {
+    $desc = aws ecs describe-tasks --cluster $clusterArn --tasks $taskArn --region $region | ConvertFrom-Json
+    $task = $desc.tasks | Select-Object -First 1
+    if ($task -and $task.lastStatus -eq "STOPPED") {
+      $exitCode = $task.containers[0].exitCode
+      if ($exitCode -ne 0) {
+        throw "DB init task failed (exit code $exitCode). Check CloudWatch logs: /aws/ecs/$($cfg.eks.cluster_name)-db-init"
+      }
+      Write-Host "DB init task completed."
+      break
+    }
+
+    Start-Sleep -Seconds $sleepSeconds
+    $elapsed += $sleepSeconds
+    if ($elapsed -ge ($maxWaitMinutes * 60)) {
+      Write-Host "DB init task still running. Check status in ECS console."
+      break
+    }
+  }
 }
 

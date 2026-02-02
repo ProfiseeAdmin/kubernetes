@@ -11,6 +11,7 @@ See `deployments/_template/config.auto.tfvars.json.example` for a full example.
 - `settings_bucket`: S3 bucket for `Settings.yaml` and deployment artifacts
 - `app_ebs`: optional EBS volume configuration for the app fileshare (created by OpenTofu)
 - `platform_deployer`: optional Fargate one‑shot deployer configuration
+- `db_init`: **required** Fargate one‑shot DB initializer configuration
 
 ## VPC
 
@@ -38,6 +39,7 @@ Key fields:
 Key fields:
 - `identifier`, `engine_version`, `instance_class`
 - `allocated_storage`
+- `db_name` (required; initial DB created by RDS)
 - `publicly_accessible` (default false)
 
 ## KMS / Secrets (optional)
@@ -101,5 +103,16 @@ Key fields:
 - `image_uri` (container image that runs the deploy script)
 - `cpu`, `memory`
 - `settings_key` (S3 key for `Settings.yaml`)
+- `secret_arns` (map of secrets for the container to retrieve)
+
+## DB init (Fargate)
+
+`db_init` defines a one‑shot Fargate task that creates the **app SQL login/user**
+and grants `db_owner` on the app database.
+
+Key fields:
+- `enabled` (required; set to true)
+- `image_uri` (container image with `sqlcmd` + AWS CLI/SDK)
+- `cpu`, `memory`
 - `secret_arns` (map of secrets for the container to retrieve)
 

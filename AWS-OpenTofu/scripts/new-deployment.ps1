@@ -1,7 +1,8 @@
 param(
   [string]$DeploymentName,
   [string]$RepoRoot,
-  [switch]$NoPrompt
+  [switch]$NoPrompt,
+  [bool]$SeedSecrets = $true
 )
 
 Set-StrictMode -Version Latest
@@ -148,6 +149,12 @@ if (-not $NoPrompt) {
   $json.settings_bucket.force_destroy = Read-Bool "Settings bucket force destroy" (if ($null -eq $json.settings_bucket.force_destroy) { $false } else { $json.settings_bucket.force_destroy })
   $json.settings_bucket.kms_key_arn = Read-Value "Settings bucket KMS key ARN (optional)" $json.settings_bucket.kms_key_arn
 
+  if (-not $json.db_init) { $json | Add-Member -NotePropertyName "db_init" -NotePropertyValue @{} }
+  $json.db_init.enabled = $true
+  $json.db_init.image_uri = Read-Value "DB init Fargate image URI (required)" $json.db_init.image_uri
+  $json.db_init.cpu = Read-Number "DB init CPU (default 512)" (if ($null -eq $json.db_init.cpu) { 512 } else { $json.db_init.cpu })
+  $json.db_init.memory = Read-Number "DB init memory (default 1024)" (if ($null -eq $json.db_init.memory) { 1024 } else { $json.db_init.memory })
+
   $json.vpc.name = Read-Value "VPC name" $json.vpc.name
   $json.vpc.cidr_block = Read-Value "VPC CIDR block" $json.vpc.cidr_block
   $json.vpc.azs = Read-List "VPC AZs (comma-separated)" $json.vpc.azs
@@ -193,6 +200,7 @@ if (-not $NoPrompt) {
   $json.rds_sqlserver.instance_class = Read-Value "RDS instance class" $json.rds_sqlserver.instance_class
   $json.rds_sqlserver.allocated_storage = Read-Number "RDS allocated storage (GB)" $json.rds_sqlserver.allocated_storage
   $json.rds_sqlserver.master_username = Read-Value "RDS master username" $json.rds_sqlserver.master_username
+  $json.rds_sqlserver.db_name = Read-Value "RDS initial database name" $json.rds_sqlserver.db_name
   $json.rds_sqlserver.publicly_accessible = Read-Bool "RDS publicly accessible" $json.rds_sqlserver.publicly_accessible
 
   $json.acm.domain_name = Read-Value "ACM domain name" $json.acm.domain_name
@@ -228,6 +236,10 @@ $json.eks.windows_node_group.instance_types = Coerce-List "EKS windows instance 
 $json.cloudfront.aliases = Coerce-List "CloudFront aliases" $json.cloudfront.aliases
 $json.jumpbox.allowed_rdp_cidrs = Coerce-List "Jumpbox RDP CIDRs" $json.jumpbox.allowed_rdp_cidrs
 
+if ($json.db_init -and $json.db_init.enabled -eq $true -and (-not $json.db_init.image_uri -or $json.db_init.image_uri -eq "")) {
+  throw "db_init.image_uri is required when db_init is enabled."
+}
+
 $jsonOut = $json | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -260,7 +272,7 @@ if ($externalDnsName -and $externalDnsName.StartsWith("*.")) {
 $externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { "" }
 
 $sqlName = $null
-$sqlDbName = "Profisee"
+$sqlDbName = if ($json.rds_sqlserver.db_name) { $json.rds_sqlserver.db_name } else { "Profisee" }
 $sqlUsername = $null
 $sqlPassword = $null
 $useLetsEncrypt = $true
@@ -294,7 +306,6 @@ $tlsKeyPath = $null
 
 if (-not $NoPrompt) {
   $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
-  $sqlDbName = Read-Value "SQL database name" $sqlDbName
   $sqlUsername = Read-Value "App SQL username (not RDS master)" $sqlUsername
   $sqlPassword = Read-Value "App SQL password" $sqlPassword
   $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
@@ -357,6 +368,12 @@ if (-not $NoPrompt) {
     if ($tlsCert -and $tlsKey) {
       $useLetsEncrypt = $false
     }
+  }
+}
+
+if (-not $NoPrompt -and $json.db_init -and $json.db_init.enabled -eq $true) {
+  if (-not $sqlUsername -or -not $sqlPassword) {
+    throw "App SQL username/password are required when db_init is enabled."
   }
 }
 
@@ -459,3 +476,15 @@ $settingsContent = $settingsContent -replace '(?m)^(\s*ebsVolumeId:\s*).*$','$1"
 
 [System.IO.File]::WriteAllText($settingsPath, $settingsContent, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host ("Wrote settings: {0}" -f $settingsPath)
+
+if ($SeedSecrets) {
+  $seedScript = Join-Path $resolvedRepoRoot "scripts\\seed-secrets.ps1"
+  if (-not (Test-Path -LiteralPath $seedScript)) {
+    throw "seed-secrets.ps1 not found: $seedScript"
+  }
+  $seedPath = Join-Path $secretsDir "seed-secrets.json"
+  if ($NoPrompt -and -not (Test-Path -LiteralPath $seedPath)) {
+    throw "seed-secrets.json not found. Run without -NoPrompt to generate it, or create it manually before seeding."
+  }
+  & $seedScript -DeploymentName $DeploymentName -RepoRoot $resolvedRepoRoot -UpdateConfig
+}

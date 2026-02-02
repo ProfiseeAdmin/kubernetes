@@ -32,6 +32,14 @@
     "environment": {},
     "secret_arns": {}
   },
+  "db_init": {
+    "enabled": true,
+    "image_uri": "<db-init-image-uri>",
+    "cpu": 512,
+    "memory": 1024,
+    "environment": {},
+    "secret_arns": {}
+  },
   "vpc": {
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",
@@ -78,6 +86,7 @@
     "engine_version": "<sqlserver-version>",
     "instance_class": "db.m6i.large",
     "allocated_storage": 200,
+    "db_name": "Profisee",
     "master_username": "dbadmin",
     "publicly_accessible": false
   },

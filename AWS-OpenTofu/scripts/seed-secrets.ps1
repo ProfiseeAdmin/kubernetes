@@ -153,15 +153,31 @@ if ($useTls -match "^(y|yes|true|1)$") {
   }
 }
 
-# Optional app SQL credentials (not RDS master)
-$storeSql = Read-Value "Store app SQL username/password? (y/n)" "n"
-if ($storeSql -match "^(y|yes|true|1)$") {
+# App SQL credentials (required for DB init when enabled)
+$dbInitEnabled = $false
+if ($cfg -and $cfg.db_init) {
+  $dbInitEnabled = [bool]$cfg.db_init.enabled
+}
+
+if ($dbInitEnabled) {
   $sqlUser = if ($seed -and $seed.sql.username) { $seed.sql.username } else { Read-Value "App SQL username" "" }
   $sqlPass = if ($seed -and $seed.sql.password) { $seed.sql.password } else { Read-SecretValue "App SQL password" }
-  if ($sqlUser -and $sqlPass) {
-    $sqlPayload = @{ username = $sqlUser; password = $sqlPass } | ConvertTo-Json -Depth 4
-    $secretName = "$Prefix/sql"
-    $secretArns.sql = Put-Secret $secretName $sqlPayload $Region
+  if (-not $sqlUser -or -not $sqlPass) {
+    throw "App SQL username/password are required when db_init.enabled is true."
+  }
+  $sqlPayload = @{ username = $sqlUser; password = $sqlPass } | ConvertTo-Json -Depth 4
+  $secretName = "$Prefix/sql"
+  $secretArns.sql = Put-Secret $secretName $sqlPayload $Region
+} else {
+  $storeSql = Read-Value "Store app SQL username/password? (y/n)" "n"
+  if ($storeSql -match "^(y|yes|true|1)$") {
+    $sqlUser = if ($seed -and $seed.sql.username) { $seed.sql.username } else { Read-Value "App SQL username" "" }
+    $sqlPass = if ($seed -and $seed.sql.password) { $seed.sql.password } else { Read-SecretValue "App SQL password" }
+    if ($sqlUser -and $sqlPass) {
+      $sqlPayload = @{ username = $sqlUser; password = $sqlPass } | ConvertTo-Json -Depth 4
+      $secretName = "$Prefix/sql"
+      $secretArns.sql = Put-Secret $secretName $sqlPayload $Region
+    }
   }
 }
 
@@ -170,6 +186,10 @@ if ($UpdateConfig -and $cfg) {
     $cfg | Add-Member -NotePropertyName "platform_deployer" -NotePropertyValue @{}
   }
   $cfg.platform_deployer.secret_arns = $secretArns
+  if (-not $cfg.db_init) {
+    $cfg | Add-Member -NotePropertyName "db_init" -NotePropertyValue @{}
+  }
+  $cfg.db_init.secret_arns = $secretArns
   $jsonOut = $cfg | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
   Write-Host ("Updated config with secret ARNs: {0}" -f $configPath)

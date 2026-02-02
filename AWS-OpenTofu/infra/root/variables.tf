@@ -78,6 +78,40 @@ variable "platform_deployer" {
   }
 }
 
+variable "db_init" {
+  type = object({
+    enabled     = optional(bool, false)
+    image_uri   = optional(string)
+    cpu         = optional(number, 512)
+    memory      = optional(number, 1024)
+    tags        = optional(map(string), {})
+    environment = optional(map(string), {})
+    secret_arns = optional(map(string), {})
+  })
+  default     = { enabled = true }
+  description = "Fargate one-shot DB initializer for creating app SQL login/user."
+
+  validation {
+    condition     = !try(var.db_init.enabled, false) || (try(var.db_init.image_uri, "") != "")
+    error_message = "db_init.image_uri is required when db_init.enabled is true."
+  }
+
+  validation {
+    condition     = try(var.db_init.enabled, false) == true
+    error_message = "db_init.enabled must be true (DB init is required)."
+  }
+
+  validation {
+    condition     = !try(var.db_init.enabled, false) || try(var.rds_sqlserver.manage_master_user_password, true)
+    error_message = "rds_sqlserver.manage_master_user_password must be true when db_init.enabled is true."
+  }
+
+  validation {
+    condition     = !try(var.db_init.enabled, false) || (try(var.rds_sqlserver.db_name, "") != "")
+    error_message = "rds_sqlserver.db_name must be set when db_init.enabled is true."
+  }
+}
+
 variable "vpc" {
   type = object({
     name                 = string

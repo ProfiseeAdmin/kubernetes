@@ -15,133 +15,7 @@ account. It keeps secrets out of Git and out of OpenTofu state.
 - A public Route53 hosted zone (or delegated subdomain) for your hostname
 - OpenTofu, AWS CLI, kubectl, and Helm installed
 
-## Stage A - Clone repo + create a deployment folder
-
-Clone the repo locally:
-
-```powershell
-git clone <repo-url>
-cd <repo-folder>
-```
-
-Copy the template folder locally (do not commit):
-
-```powershell
-New-Item -ItemType Directory -Path .\customer-deployments\acme-prod
-Copy-Item -Recurse -Force .\deployments\_template\* .\customer-deployments\acme-prod\
-```
-
-Or use the helper (prompts for key values and writes `config.auto.tfvars.json`):
-
-```powershell
-.\scripts\new-deployment.ps1 -DeploymentName acme-prod
-```
-
-To skip prompts and only copy the template:
-
-```powershell
-.\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
-```
-
-License file:
-- Place your license at `customer-deployments/<name>/secrets/license.txt`.
-- `new-deployment.ps1` will **not** inject it into `Settings.yaml`. It keeps
-  placeholders and writes a `secrets/seed-secrets.json` file so you can seed
-  Secrets Manager later.
-
-`new-deployment.ps1` also downloads `Settings.yaml` from the Azure-ARM base and
-fills **non‑secret** app settings. It keeps placeholders for secrets
-(license, ACR creds, OIDC client details, TLS cert/key, app SQL creds), and
-writes them to `secrets/seed-secrets.json`. After `tofu-apply`, the script will
-update `Settings.yaml` with the RDS endpoint and the app EBS volume ID.
-
-Stage A collects **two categories** of input:
-- **Infra** (VPC/EKS/RDS/ACM/Route53/CloudFront/jumpbox)
-- **Profisee app config** (OIDC, admin email, ACR creds, TLS choice, etc.)
-
-### Prompt reference (new-deployment.ps1)
-
-Press **Enter** to accept the default value shown in brackets. Lists are
-comma‑separated.
-
-- **Primary region**: `us-east-1`
-- **us-east-1 region (ACM/CloudFront)**: `us-east-1`
-- **Tag: Project**: `my-product`
-- **Tag: Environment**: `dev` / `test` / `prod`
-- **Settings S3 bucket enabled**: `y` (recommended)
-- **Settings S3 bucket name**: `my-unique-settings-bucket`
-- **Settings bucket force destroy**: `n` (recommended)
-- **Settings bucket KMS key ARN (optional)**: leave blank to use SSE-S3
-- **VPC name**: `my-product`
-- **VPC CIDR block**: `10.20.0.0/16`
-- **VPC AZs** (comma‑separated): `us-east-1a,us-east-1b,us-east-1c`
-- **Public subnet CIDRs**: `10.20.0.0/20,10.20.16.0/20,10.20.32.0/20`
-- **Private subnet CIDRs**: `10.20.64.0/20,10.20.80.0/20,10.20.96.0/20`
-- **EKS cluster name**: `my-product-eks`
-- **EKS cluster version**: `1.29`
-- **EKS public endpoint**: `n` (recommended)
-- **EKS private endpoint**: `y` (recommended)
-- **Linux node instance types**: `m6i.large`
-- **Linux node min/max/desired**: `2 / 4 / 2`
-- **Windows node instance types**: `m6i.large`
-- **Windows node min/max/desired**: `1 / 2 / 1`
-- **RDS identifier**: `my-product-sql`
-- **RDS SQL Server engine version**: use a valid RDS engine version string (see AWS CLI in docs)
-- **RDS instance class**: `db.m6i.large`
-- **RDS allocated storage (GB)**: `200`
-- **RDS master username**: `dbadmin`
-- **RDS publicly accessible**: `n` (recommended)
-- **ACM domain name**: `app.example.com`
-- **ACM hosted zone ID**: `Z1234567890ABC`
-- **Route53 hosted zone ID**: `Z1234567890ABC` (same as ACM)
-- **Route53 record name**: `app.example.com`
-- **CloudFront enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
-- **Route53 enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
-- **CloudFront aliases** (when enabled): `app.example.com`
-- **CloudFront origin domain (NLB DNS)** (when enabled): `nlb-abc123.us-east-1.elb.amazonaws.com`
-- **Jumpbox enabled**: `y`/`n`
-- **Jumpbox instance type**: `m6i.large`
-- **Jumpbox key pair name (optional, for RDP)**: `profisee-jumpbox-key`
-- **Jumpbox public IP**: `n` (recommended)
-- **Jumpbox inbound RDP**: `n` (recommended)
-- **Jumpbox RDP CIDRs**: `203.0.113.10/32`
-- **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy` (replace with your role name if different)
-
-After the infra prompts, the script will also ask for **app settings**
-(OIDC provider, ACR credentials, admin account, app SQL creds, etc.). These
-values are written to `secrets/seed-secrets.json` and **not** injected into
-`Settings.yaml`.
-
-App settings prompts (stored in `secrets/seed-secrets.json`):
-- **SQL Server endpoint** (optional, filled after apply)
-- **SQL database name**
-- **App SQL username / password** (not the RDS master)
-- **Use Let’s Encrypt**
-- **SuperAdmin email / Infra admin email**
-- **Web app name (path)**
-- **OIDC provider** (Entra or Okta)
-- **Entra tenant ID** or **Okta authority URL**
-- **OIDC client ID / client secret**
-- **Cluster node count (app pods)**
-- **ACR repository name / image tag / registry**
-- **ACR username / password / auth / email**
-- **TLS cert/key paths** (manual TLS only)
-
-After Stage B, `backend.hcl` will be written here. Example content:
-
-```hcl
-bucket         = "my-state-bucket"
-key            = "infra/acme-prod.tfstate"
-region         = "us-east-1"
-dynamodb_table = "opentofu-state-locks"
-encrypt        = true
-kms_key_id     = "arn:aws:kms:us-east-1:123456789012:key/..."
-```
-
-Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
-`deployments/_template/config.auto.tfvars.json.example` as a baseline.
-
-## Stage B - Bootstrap state backend
+## Stage A - AWS credentials + bootstrap state backend
 
 ### Step 1 - Create the deploy role (CloudShell)
 
@@ -319,6 +193,149 @@ tofu apply
 Pop-Location
 ```
 
+After Stage A, `backend.hcl` will be written here. Example content:
+
+```hcl
+bucket         = "my-state-bucket"
+key            = "infra/acme-prod.tfstate"
+region         = "us-east-1"
+dynamodb_table = "opentofu-state-locks"
+encrypt        = true
+kms_key_id     = "arn:aws:kms:us-east-1:123456789012:key/..."
+```
+
+## Stage B - Clone repo + create a deployment folder
+
+Before running `new-deployment.ps1`, make sure Stage A is complete and your
+AWS CLI credentials are set (admin or your deploy role). This script now
+**seeds Secrets Manager** automatically.
+
+Clone the repo locally:
+
+```powershell
+git clone <repo-url>
+cd <repo-folder>
+```
+
+Copy the template folder locally (do not commit):
+
+```powershell
+New-Item -ItemType Directory -Path .\customer-deployments\acme-prod
+Copy-Item -Recurse -Force .\deployments\_template\* .\customer-deployments\acme-prod\
+```
+
+Or use the helper (prompts for key values and writes `config.auto.tfvars.json`):
+
+```powershell
+.\scripts\new-deployment.ps1 -DeploymentName acme-prod
+```
+
+`new-deployment.ps1` will **always seed Secrets Manager** at the end
+(recommended) so the DB init task has the secret ARNs it needs. This requires
+valid AWS CLI credentials (admin or your deploy role).
+
+Review `customer-deployments/acme-prod/config.auto.tfvars.json` (based on
+`deployments/_template/config.auto.tfvars.json.example`) before continuing.
+
+To skip prompts and only copy the template:
+
+```powershell
+.\scripts\new-deployment.ps1 -DeploymentName acme-prod -NoPrompt
+```
+
+If you run with `-NoPrompt`, you must provide
+`customer-deployments/<name>/secrets/seed-secrets.json` before seeding.
+
+License file:
+- Place your license at `customer-deployments/<name>/secrets/license.txt`.
+- `new-deployment.ps1` will **not** inject it into `Settings.yaml`. It keeps
+  placeholders and writes a `secrets/seed-secrets.json` file so you can seed
+  Secrets Manager later.
+
+`new-deployment.ps1` also downloads `Settings.yaml` from the Azure-ARM base and
+fills **non‑secret** app settings. It keeps placeholders for secrets
+(license, ACR creds, OIDC client details, TLS cert/key, app SQL creds), and
+writes them to `secrets/seed-secrets.json`. After `tofu-apply`, the script will
+update `Settings.yaml` with the RDS endpoint and the app EBS volume ID.
+
+Stage B collects **two categories** of input:
+- **Infra** (VPC/EKS/RDS/ACM/Route53/CloudFront/jumpbox)
+- **Profisee app config** (OIDC, admin email, ACR creds, TLS choice, etc.)
+
+### Prompt reference (new-deployment.ps1)
+
+Press **Enter** to accept the default value shown in brackets. Lists are
+comma‑separated.
+
+- **Primary region**: `us-east-1`
+- **us-east-1 region (ACM/CloudFront)**: `us-east-1`
+- **Tag: Project**: `my-product`
+- **Tag: Environment**: `dev` / `test` / `prod`
+- **Settings S3 bucket enabled**: `y` (recommended)
+- **Settings S3 bucket name**: `my-unique-settings-bucket`
+- **Settings bucket force destroy**: `n` (recommended)
+- **Settings bucket KMS key ARN (optional)**: leave blank to use SSE-S3
+- **DB init Fargate image URI (required)**: `<db-init-image-uri>`
+- **DB init CPU / memory**: `512 / 1024`
+- **VPC name**: `my-product`
+- **VPC CIDR block**: `10.20.0.0/16`
+- **VPC AZs** (comma‑separated): `us-east-1a,us-east-1b,us-east-1c`
+- **Public subnet CIDRs**: `10.20.0.0/20,10.20.16.0/20,10.20.32.0/20`
+- **Private subnet CIDRs**: `10.20.64.0/20,10.20.80.0/20,10.20.96.0/20`
+- **EKS cluster name**: `my-product-eks`
+- **EKS cluster version**: `1.29`
+- **EKS public endpoint**: `n` (recommended)
+- **EKS private endpoint**: `y` (recommended)
+- **Linux node instance types**: `m6i.large`
+- **Linux node min/max/desired**: `2 / 4 / 2`
+- **Windows node instance types**: `m6i.large`
+- **Windows node min/max/desired**: `1 / 2 / 1`
+- **RDS identifier**: `my-product-sql`
+- **RDS SQL Server engine version**: use a valid RDS engine version string (see AWS CLI in docs)
+- **RDS instance class**: `db.m6i.large`
+- **RDS allocated storage (GB)**: `200`
+- **RDS master username**: `dbadmin`
+- **RDS initial database name**: `Profisee`
+- **RDS publicly accessible**: `n` (recommended)
+- **ACM domain name**: `app.example.com`
+- **ACM hosted zone ID**: `Z1234567890ABC`
+- **Route53 hosted zone ID**: `Z1234567890ABC` (same as ACM)
+- **Route53 record name**: `app.example.com`
+- **CloudFront enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
+- **Route53 enabled (Stage E)**: `n` (Stage C), `y` (Stage E)
+- **CloudFront aliases** (when enabled): `app.example.com`
+- **CloudFront origin domain (NLB DNS)** (when enabled): `nlb-abc123.us-east-1.elb.amazonaws.com`
+- **Jumpbox enabled**: `y`/`n`
+- **Jumpbox instance type**: `m6i.large`
+- **Jumpbox key pair name (optional, for RDP)**: `profisee-jumpbox-key`
+- **Jumpbox public IP**: `n` (recommended)
+- **Jumpbox inbound RDP**: `n` (recommended)
+- **Jumpbox RDP CIDRs**: `203.0.113.10/32`
+- **Jumpbox assume role ARN**: `arn:aws:iam::<ACCOUNT_ID>:role/opentofu-deploy` (replace with your role name if different)
+
+After the infra prompts, the script will also ask for **app settings**
+(OIDC provider, ACR credentials, admin account, app SQL creds, etc.). These
+values are written to `secrets/seed-secrets.json` and **not** injected into
+`Settings.yaml`.
+
+App settings prompts (stored in `secrets/seed-secrets.json`):
+- **SQL Server endpoint** (optional, filled after apply)
+- **SQL database name**
+- **App SQL username / password** (required; not the RDS master)
+- **Use Let’s Encrypt**
+- **SuperAdmin email / Infra admin email**
+- **Web app name (path)**
+- **OIDC provider** (Entra or Okta)
+- **Entra tenant ID** or **Okta authority URL**
+- **OIDC client ID / client secret**
+- **Cluster node count (app pods)**
+- **ACR repository name / image tag / registry**
+- **ACR username / password / auth / email**
+- **TLS cert/key paths** (manual TLS only)
+
+Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
+`deployments/_template/config.auto.tfvars.json.example` as a baseline.
+
 ## Stage C - Core infra (VPC + EKS + RDS + ACM)
 
 Disable CloudFront and Route53 for this stage:
@@ -336,6 +353,15 @@ Then:
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -DeployRoleName opentofu-deploy
 ```
 
+If you skipped seeding in Stage B, run:
+
+```powershell
+.\scripts\seed-secrets.ps1 -DeploymentName acme-prod -UpdateConfig
+```
+
+Run `seed-secrets.ps1` **before** `tofu-apply.ps1` so the DB init task
+definition includes the secret ARNs.
+
 After apply, `Settings.yaml` is updated with the RDS endpoint and (if provided)
 the app EBS volume ID.
 
@@ -345,39 +371,31 @@ Upload `Settings.yaml` to the settings bucket:
 .\scripts\upload-settings.ps1 -DeploymentName acme-prod
 ```
 
-Seed Secrets Manager for platform deployer (license, ACR, OIDC, TLS):
-
-```powershell
-.\scripts\seed-secrets.ps1 -DeploymentName acme-prod -UpdateConfig
-```
-
 Notes:
-- Store **app SQL** credentials (not the RDS master) when prompted.
-- The script writes secret ARNs into `platform_deployer.secret_arns` so the
-  Fargate task can retrieve them.
- - If `secrets/seed-secrets.json` exists, the script will use it instead of
-   re‑prompting.
+- Store **app SQL** credentials (not the RDS master) when prompted — required
+  because `db_init` runs automatically after apply.
+- The script writes secret ARNs into `platform_deployer.secret_arns` and
+  `db_init.secret_arns` so the Fargate tasks can retrieve them.
+- If `secrets/seed-secrets.json` exists, the script will use it instead of
+  re‑prompting.
+- If you skip `seed-secrets.ps1`, `tofu-apply.ps1` will fail because `db_init`
+  requires secret ARNs.
 
-### Stage C.2 - Create the app SQL login/user (one-time)
+### Stage C.1 - DB init (automated via Fargate)
 
-OpenTofu creates the **RDS instance** and (if `rds_sqlserver.db_name` is set)
-the **initial database**, but it does **not** create the app SQL login/user.
-Create a dedicated app login and grant `db_owner` on the app database.
+OpenTofu creates the **RDS instance** and (if `rds_sqlserver.db_name` is set
+in `config.auto.tfvars.json`) the **initial database**. The app login/user is
+created automatically by a **one‑shot Fargate task** (`db_init`) that runs
+as part of `tofu-apply.ps1` when `db_init.enabled = true` (required).
 
-From the jumpbox (or any host with network access to RDS) retrieve the **RDS
-master password** from Secrets Manager, then connect with SSMS and run:
+The task receives:
+- `DB_ENDPOINT`, `DB_NAME`, and `SECRET_RDS_MASTER_ARN`
+- any `SECRET_<NAME>_ARN` entries from `db_init.secret_arns`
 
-```sql
--- Replace values with your app SQL username/password and DB name.
-CREATE LOGIN [<app_user>] WITH PASSWORD = '<app_password>';
-USE [<db_name>];
-CREATE USER [<app_user>] FOR LOGIN [<app_user>];
-ALTER ROLE db_owner ADD MEMBER [<app_user>];
-```
+If the task fails, check CloudWatch logs:
+`/aws/ecs/<cluster-name>-db-init`.
 
-Tip: the jumpbox role is allowed to read the RDS master secret when `manage_master_user_password = true`.
-
-## Stage C.1 - Jumpbox (optional, GUI access)
+## Stage C.2 - Jumpbox (optional, GUI access)
 
 This stage creates an optional **Windows jumpbox** inside the VPC so you can
 manage a **private‑only EKS API** and private RDS from a GUI (SSMS, kubectl,

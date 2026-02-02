@@ -12,6 +12,8 @@ locals {
   platform_deployer_enabled = try(var.platform_deployer.enabled, false)
   platform_deployer_tags    = merge(var.tags, try(var.platform_deployer.tags, {}))
   platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
+  db_init_enabled = try(var.db_init.enabled, false)
+  db_init_tags    = merge(var.tags, try(var.db_init.tags, {}))
 }
 
 module "vpc" {
@@ -95,6 +97,21 @@ resource "aws_ecs_cluster" "platform_deployer" {
   tags = local.platform_deployer_tags
 }
 
+resource "aws_ecs_cluster" "db_init" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name = "${var.eks.cluster_name}-db-init"
+  tags = local.db_init_tags
+}
+
+resource "aws_cloudwatch_log_group" "db_init" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name              = "/aws/ecs/${var.eks.cluster_name}-db-init"
+  retention_in_days = 14
+  tags              = local.db_init_tags
+}
+
 resource "aws_cloudwatch_log_group" "platform_deployer" {
   count = local.platform_deployer_enabled ? 1 : 0
 
@@ -122,6 +139,27 @@ resource "aws_iam_role" "platform_deployer_task" {
   name               = "${var.eks.cluster_name}-platform-deployer-task"
   assume_role_policy = data.aws_iam_policy_document.platform_deployer_task_assume[0].json
   tags               = local.platform_deployer_tags
+}
+
+data "aws_iam_policy_document" "db_init_task_assume" {
+  count = local.db_init_enabled ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "db_init_task" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name               = "${var.eks.cluster_name}-db-init-task"
+  assume_role_policy = data.aws_iam_policy_document.db_init_task_assume[0].json
+  tags               = local.db_init_tags
 }
 
 data "aws_iam_policy_document" "platform_deployer_task" {
@@ -172,12 +210,60 @@ resource "aws_iam_role_policy" "platform_deployer_task" {
   policy = data.aws_iam_policy_document.platform_deployer_task[0].json
 }
 
+locals {
+  db_init_secret_arns = length(try(var.db_init.secret_arns, {})) > 0 ? var.db_init.secret_arns : try(var.platform_deployer.secret_arns, {})
+}
+
+data "aws_iam_policy_document" "db_init_task" {
+  count = local.db_init_enabled ? 1 : 0
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue"
+    ]
+    resources = concat(
+      [module.rds_sqlserver.master_user_secret_arn],
+      length(local.db_init_secret_arns) > 0 ? values(local.db_init_secret_arns) : []
+    )
+  }
+
+  statement {
+    effect = "Allow"
+    actions = ["kms:Decrypt"]
+    resources = try(var.rds_sqlserver.master_user_secret_kms_key_id, null) != null ? [var.rds_sqlserver.master_user_secret_kms_key_id] : ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "db_init_task" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name   = "${var.eks.cluster_name}-db-init-task"
+  role   = aws_iam_role.db_init_task[0].id
+  policy = data.aws_iam_policy_document.db_init_task[0].json
+}
+
 resource "aws_iam_role" "platform_deployer_execution" {
   count = local.platform_deployer_enabled ? 1 : 0
 
   name               = "${var.eks.cluster_name}-platform-deployer-exec"
   assume_role_policy = data.aws_iam_policy_document.platform_deployer_task_assume[0].json
   tags               = local.platform_deployer_tags
+}
+
+resource "aws_iam_role" "db_init_execution" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name               = "${var.eks.cluster_name}-db-init-exec"
+  assume_role_policy = data.aws_iam_policy_document.db_init_task_assume[0].json
+  tags               = local.db_init_tags
+}
+
+resource "aws_iam_role_policy_attachment" "db_init_execution" {
+  count = local.db_init_enabled ? 1 : 0
+
+  role       = aws_iam_role.db_init_execution[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "platform_deployer_execution" {
@@ -204,6 +290,23 @@ resource "aws_security_group" "platform_deployer" {
   tags = local.platform_deployer_tags
 }
 
+resource "aws_security_group" "db_init" {
+  count = local.db_init_enabled ? 1 : 0
+
+  name        = "${var.eks.cluster_name}-db-init-sg"
+  description = "Fargate DB init egress"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.db_init_tags
+}
+
 locals {
   platform_deployer_settings_uri = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_deployer_settings_key}" : ""
   platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
@@ -217,6 +320,17 @@ locals {
     },
     try(var.platform_deployer.environment, {}),
     local.platform_deployer_secret_env
+  )
+  db_init_secret_env = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
+  db_init_env = merge(
+    {
+      AWS_REGION            = var.region
+      DB_ENDPOINT           = module.rds_sqlserver.endpoint
+      DB_NAME               = var.rds_sqlserver.db_name
+      SECRET_RDS_MASTER_ARN = module.rds_sqlserver.master_user_secret_arn
+    },
+    try(var.db_init.environment, {}),
+    local.db_init_secret_env
   )
 }
 
@@ -248,6 +362,40 @@ resource "aws_ecs_task_definition" "platform_deployer" {
           awslogs-group         = aws_cloudwatch_log_group.platform_deployer[0].name
           awslogs-region        = var.region
           awslogs-stream-prefix = "platform"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "db_init" {
+  count = local.db_init_enabled ? 1 : 0
+
+  family                   = "${var.eks.cluster_name}-db-init"
+  cpu                      = tostring(try(var.db_init.cpu, 512))
+  memory                   = tostring(try(var.db_init.memory, 1024))
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  execution_role_arn       = aws_iam_role.db_init_execution[0].arn
+  task_role_arn            = aws_iam_role.db_init_task[0].arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "db-init"
+      image     = var.db_init.image_uri
+      essential = true
+      environment = [
+        for k, v in local.db_init_env : {
+          name  = k
+          value = tostring(v)
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.db_init[0].name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "db-init"
         }
       }
     }
@@ -294,7 +442,9 @@ module "rds_sqlserver" {
   subnet_ids                    = module.vpc.private_subnet_ids
   allowed_security_group_ids    = concat(
     var.rds_sqlserver.allowed_security_group_ids,
-    local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : []
+    local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : [],
+    local.platform_deployer_enabled ? [aws_security_group.platform_deployer[0].id] : [],
+    local.db_init_enabled ? [aws_security_group.db_init[0].id] : []
   )
   backup_retention_days         = var.rds_sqlserver.backup_retention_days
   multi_az                      = var.rds_sqlserver.multi_az
@@ -476,6 +626,10 @@ module "outputs_contract" {
     platform_deployer_task_definition_arn = local.platform_deployer_enabled ? aws_ecs_task_definition.platform_deployer[0].arn : null
     platform_deployer_task_role_arn       = local.platform_deployer_enabled ? aws_iam_role.platform_deployer_task[0].arn : null
     platform_deployer_security_group_id   = local.platform_deployer_enabled ? aws_security_group.platform_deployer[0].id : null
+    db_init_cluster_arn         = local.db_init_enabled ? aws_ecs_cluster.db_init[0].arn : null
+    db_init_task_definition_arn = local.db_init_enabled ? aws_ecs_task_definition.db_init[0].arn : null
+    db_init_task_role_arn       = local.db_init_enabled ? aws_iam_role.db_init_task[0].arn : null
+    db_init_security_group_id   = local.db_init_enabled ? aws_security_group.db_init[0].id : null
     vpc_id                     = module.vpc.vpc_id
     public_subnet_ids          = module.vpc.public_subnet_ids
     private_subnet_ids         = module.vpc.private_subnet_ids
