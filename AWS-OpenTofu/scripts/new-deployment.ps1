@@ -12,8 +12,25 @@ Write-Host "Note: RDS identifier must be lowercase letters, numbers, and hyphens
 Write-Host "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
 Write-Host "      This script will normalize identifiers and coerce lists before writing the config."
 
+$defaultDbInitImage = "public.ecr.aws/amazonlinux/amazonlinux:2023"
+
 function Read-Value([string]$Label, $Current) {
   $display = if ($null -eq $Current -or $Current -eq "") { "" } else { " [$Current]" }
+  $input = Read-Host ("{0}{1}" -f $Label, $display)
+  if ($input -eq "") { return $Current }
+  return $input
+}
+
+function Mask-Secret([string]$Value, [int]$Prefix = 3) {
+  if ($null -eq $Value -or $Value -eq "") { return "" }
+  if ($Value.Length -le $Prefix) { return ("*" * $Value.Length) }
+  $stars = "*" * ($Value.Length - $Prefix)
+  return ($Value.Substring(0, $Prefix) + $stars)
+}
+
+function Read-ValueMasked([string]$Label, $Current) {
+  $masked = Mask-Secret $Current
+  $display = if ($null -eq $masked -or $masked -eq "") { "" } else { " [$masked]" }
   $input = Read-Host ("{0}{1}" -f $Label, $display)
   if ($input -eq "") { return $Current }
   return $input
@@ -38,6 +55,20 @@ function Read-Bool([string]$Label, $Current) {
   $input = Read-Host ("{0} [y/n, default {1}]" -f $Label, $defaultText)
   if ($input -eq "") { return $Current }
   return ($input.ToLower() -in @("y", "yes", "true", "1"))
+}
+
+function Get-PropValue($obj, [string]$Name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties[$Name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
+function Ensure-ObjectProperty($obj, [string]$Name, $DefaultValue) {
+  if ($null -eq $obj.PSObject.Properties[$Name]) {
+    $obj | Add-Member -NotePropertyName $Name -NotePropertyValue $DefaultValue
+  }
+  return $obj.PSObject.Properties[$Name].Value
 }
 
 function Normalize-RdsIdentifier([string]$Value) {
@@ -102,6 +133,27 @@ function Read-FileRaw([string]$Path) {
   return Get-Content -Raw -Path $Path
 }
 
+function Try-Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
+  if (-not (Get-Command tofu -ErrorAction SilentlyContinue)) { return $null }
+  if (-not (Test-Path -LiteralPath $InfraRoot)) { return $null }
+  if (-not (Test-Path -LiteralPath $BackendConfigPath)) { return $null }
+  Push-Location $InfraRoot
+  try {
+    tofu init "-backend-config=$BackendConfigPath" | Out-Null
+    return tofu output -json outputs_contract | ConvertFrom-Json
+  } catch {
+    return $null
+  } finally {
+    Pop-Location
+  }
+}
+
+function Save-Config([string]$Path, $Obj) {
+  $jsonOut = $Obj | ConvertTo-Json -Depth 10
+  [System.IO.File]::WriteAllText($Path, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host ("Saved progress: {0}" -f $Path)
+}
+
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
 $templateDir = Join-Path $resolvedRepoRoot "deployments\_template"
 
@@ -143,17 +195,26 @@ if (-not $NoPrompt) {
   $json.tags.Project = Read-Value "Tag: Project" $json.tags.Project
   $json.tags.Environment = Read-Value "Tag: Environment" $json.tags.Environment
 
-  if (-not $json.settings_bucket) { $json | Add-Member -NotePropertyName "settings_bucket" -NotePropertyValue @{} }
-  $json.settings_bucket.enabled = Read-Bool "Settings S3 bucket enabled" (if ($null -eq $json.settings_bucket.enabled) { $true } else { $json.settings_bucket.enabled })
-  $json.settings_bucket.name = Read-Value "Settings S3 bucket name" $json.settings_bucket.name
-  $json.settings_bucket.force_destroy = Read-Bool "Settings bucket force destroy" (if ($null -eq $json.settings_bucket.force_destroy) { $false } else { $json.settings_bucket.force_destroy })
-  $json.settings_bucket.kms_key_arn = Read-Value "Settings bucket KMS key ARN (optional)" $json.settings_bucket.kms_key_arn
+  Ensure-ObjectProperty $json "settings_bucket" @{} | Out-Null
+  $settingsBucket = $json.settings_bucket
+  Ensure-ObjectProperty $settingsBucket "enabled" $true | Out-Null
+  Ensure-ObjectProperty $settingsBucket "name" $null | Out-Null
+  Ensure-ObjectProperty $settingsBucket "force_destroy" $false | Out-Null
+  Ensure-ObjectProperty $settingsBucket "kms_key_arn" $null | Out-Null
 
-  if (-not $json.db_init) { $json | Add-Member -NotePropertyName "db_init" -NotePropertyValue @{} }
-  $json.db_init.enabled = $true
-  $json.db_init.image_uri = Read-Value "DB init Fargate image URI (required)" $json.db_init.image_uri
-  $json.db_init.cpu = Read-Number "DB init CPU (default 512)" (if ($null -eq $json.db_init.cpu) { 512 } else { $json.db_init.cpu })
-  $json.db_init.memory = Read-Number "DB init memory (default 1024)" (if ($null -eq $json.db_init.memory) { 1024 } else { $json.db_init.memory })
+  $settingsBucket.enabled = $true
+  $settingsBucket.name = Read-Value "App Settings S3 bucket name" $settingsBucket.name
+  $settingsBucket.force_destroy = Read-Bool "App Settings bucket force destroy" $settingsBucket.force_destroy
+  $settingsBucket.kms_key_arn = Read-Value "App Settings bucket KMS key ARN (optional)" $settingsBucket.kms_key_arn
+
+  Ensure-ObjectProperty $json "db_init" @{} | Out-Null
+  $dbInit = $json.db_init
+  Ensure-ObjectProperty $dbInit "enabled" $true | Out-Null
+  Ensure-ObjectProperty $dbInit "image_uri" $defaultDbInitImage | Out-Null
+  Ensure-ObjectProperty $dbInit "cpu" 512 | Out-Null
+  Ensure-ObjectProperty $dbInit "memory" 1024 | Out-Null
+
+  $dbInit.enabled = $true
 
   $json.vpc.name = Read-Value "VPC name" $json.vpc.name
   $json.vpc.cidr_block = Read-Value "VPC CIDR block" $json.vpc.cidr_block
@@ -170,6 +231,8 @@ if (-not $NoPrompt) {
   $json.eks.cluster_version = Read-Value "EKS cluster version" $json.eks.cluster_version
   $json.eks.endpoint_public_access = Read-Bool "EKS public endpoint" $json.eks.endpoint_public_access
   $json.eks.endpoint_private_access = Read-Bool "EKS private endpoint" $json.eks.endpoint_private_access
+
+  Save-Config $configPath $json
 }
 
 $json.eks.linux_node_group.instance_types = Coerce-List "EKS linux instance types" $json.eks.linux_node_group.instance_types
@@ -186,6 +249,8 @@ if (-not $NoPrompt) {
   $json.eks.windows_node_group.desired_size = Read-Number "Windows node desired size" $json.eks.windows_node_group.desired_size
 }
 
+Ensure-ObjectProperty $json "rds_sqlserver" @{} | Out-Null
+Ensure-ObjectProperty $json.rds_sqlserver "db_name" "Profisee" | Out-Null
 $json.rds_sqlserver.identifier = if (-not $NoPrompt) { Read-Value "RDS identifier" $json.rds_sqlserver.identifier } else { $json.rds_sqlserver.identifier }
 $normalizedIdentifier = Normalize-RdsIdentifier $json.rds_sqlserver.identifier
 if (-not $normalizedIdentifier) {
@@ -200,7 +265,7 @@ if (-not $NoPrompt) {
   $json.rds_sqlserver.instance_class = Read-Value "RDS instance class" $json.rds_sqlserver.instance_class
   $json.rds_sqlserver.allocated_storage = Read-Number "RDS allocated storage (GB)" $json.rds_sqlserver.allocated_storage
   $json.rds_sqlserver.master_username = Read-Value "RDS master username" $json.rds_sqlserver.master_username
-  $json.rds_sqlserver.db_name = Read-Value "RDS initial database name" $json.rds_sqlserver.db_name
+  $json.rds_sqlserver.db_name = Read-Value "Application database name (created by db_init)" $json.rds_sqlserver.db_name
   $json.rds_sqlserver.publicly_accessible = Read-Bool "RDS publicly accessible" $json.rds_sqlserver.publicly_accessible
 
   $json.acm.domain_name = Read-Value "ACM domain name" $json.acm.domain_name
@@ -226,6 +291,8 @@ if (-not $NoPrompt) {
     $json.jumpbox.allowed_rdp_cidrs = Read-List "Jumpbox RDP CIDRs (comma-separated)" $json.jumpbox.allowed_rdp_cidrs
     $json.jumpbox.assume_role_arn = Read-Value "Jumpbox assume role ARN" $json.jumpbox.assume_role_arn
   }
+
+  Save-Config $configPath $json
 }
 
 $json.vpc.azs = Coerce-List "VPC AZs" $json.vpc.azs
@@ -237,13 +304,20 @@ $json.cloudfront.aliases = Coerce-List "CloudFront aliases" $json.cloudfront.ali
 $json.jumpbox.allowed_rdp_cidrs = Coerce-List "Jumpbox RDP CIDRs" $json.jumpbox.allowed_rdp_cidrs
 
 if ($json.db_init -and $json.db_init.enabled -eq $true -and (-not $json.db_init.image_uri -or $json.db_init.image_uri -eq "")) {
-  throw "db_init.image_uri is required when db_init is enabled."
+  $json.db_init.image_uri = $defaultDbInitImage
+  Write-Host ("db_init.image_uri not set; defaulting to {0}" -f $json.db_init.image_uri)
 }
 
-$jsonOut = $json | ConvertTo-Json -Depth 10
-[System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
+if ($json.db_init -and $json.db_init.image_uri -eq $defaultDbInitImage) {
+  $json.db_init.PSObject.Properties.Remove("image_uri")
+}
 
-Write-Host "Wrote config: $configPath"
+if ($json.db_init) {
+  if ($json.db_init.cpu -eq 512) { $json.db_init.PSObject.Properties.Remove("cpu") }
+  if ($json.db_init.memory -eq 1024) { $json.db_init.PSObject.Properties.Remove("memory") }
+}
+
+Save-Config $configPath $json
 
 # ---------------------------------------------------------------------------
 # Settings.yaml (Azure-ARM base) download + replacement
@@ -263,6 +337,16 @@ $settingsContent = Get-Content -Raw -Path $settingsPath
 $secretsDir = Join-Path $targetDir "secrets"
 Ensure-Dir $secretsDir
 $licensePath = Join-Path $secretsDir "license.txt"
+$seedPath = Join-Path $secretsDir "seed-secrets.json"
+
+# If infra has already been applied, pull outputs to prefill values.
+$sqlEndpointFromOutputs = $null
+$backendConfig = Join-Path $targetDir "backend.hcl"
+$infraRoot = Join-Path $resolvedRepoRoot "infra\root"
+$outputs = Try-Get-Outputs $infraRoot $backendConfig
+if ($outputs) {
+  $sqlEndpointFromOutputs = Get-PropValue $outputs "rds_endpoint"
+}
 
 $externalDnsName = $json.route53.record_name
 if (-not $externalDnsName -or $externalDnsName -eq "") { $externalDnsName = $json.acm.domain_name }
@@ -279,7 +363,7 @@ $useLetsEncrypt = $true
 $adminAccount = $null
 $infraAdminAccount = $null
 $webAppName = "profisee"
-$oidcProvider = $null
+$oidcProvider = "Entra"
 $oidcName = $null
 $oidcUrl = $null
 $oidcTenantId = $null
@@ -304,23 +388,55 @@ $tlsKey = $null
 $tlsCertPath = $null
 $tlsKeyPath = $null
 
+if (Test-Path -LiteralPath $seedPath) {
+  try {
+    $seedDefaults = Get-Content -Raw -Path $seedPath | ConvertFrom-Json
+    if ($seedDefaults.app.super_admin_email) { $adminAccount = $seedDefaults.app.super_admin_email }
+    if ($seedDefaults.app.infra_admin_email) { $infraAdminAccount = $seedDefaults.app.infra_admin_email }
+    if ($seedDefaults.app.web_app_name) { $webAppName = $seedDefaults.app.web_app_name }
+    if ($seedDefaults.app.pod_count) { $podCount = $seedDefaults.app.pod_count }
+    if ($seedDefaults.sql.username) { $sqlUsername = $seedDefaults.sql.username }
+    if ($seedDefaults.sql.password) { $sqlPassword = $seedDefaults.sql.password }
+    if ($seedDefaults.acr.username) { $acrUser = $seedDefaults.acr.username }
+    if ($seedDefaults.acr.password) { $acrPassword = $seedDefaults.acr.password }
+    if ($seedDefaults.acr.auth) { $acrAuth = $seedDefaults.acr.auth }
+    if ($seedDefaults.acr.label) { $acrRepoLabel = $seedDefaults.acr.label }
+    if (-not $acrRepoLabel -and $seedDefaults.acr.image_tag) { $acrRepoLabel = $seedDefaults.acr.image_tag }
+    if ($seedDefaults.acr.email) { $acrEmail = $seedDefaults.acr.email }
+    if ($seedDefaults.acr.registry) { $acrRegistry = $seedDefaults.acr.registry }
+    if ($seedDefaults.oidc.provider) { $oidcProvider = $seedDefaults.oidc.provider }
+    if ($seedDefaults.oidc.client_id) { $oidcClientId = $seedDefaults.oidc.client_id }
+    if ($seedDefaults.oidc.client_secret) { $oidcClientSecret = $seedDefaults.oidc.client_secret }
+    if ($seedDefaults.oidc.authority) { $oidcUrl = $seedDefaults.oidc.authority }
+    if ($seedDefaults.oidc.tenant_id) { $oidcTenantId = $seedDefaults.oidc.tenant_id }
+    if ($seedDefaults.tls.cert_path) { $tlsCertPath = $seedDefaults.tls.cert_path }
+    if ($seedDefaults.tls.key_path) { $tlsKeyPath = $seedDefaults.tls.key_path }
+  } catch {
+    Write-Host ("Warning: could not parse seed-secrets.json at {0}" -f $seedPath)
+  }
+}
+
+if (-not $sqlName -and $sqlEndpointFromOutputs) {
+  $sqlName = $sqlEndpointFromOutputs
+}
+
 if (-not $NoPrompt) {
   $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
-  $sqlUsername = Read-Value "App SQL username (not RDS master)" $sqlUsername
-  $sqlPassword = Read-Value "App SQL password" $sqlPassword
+  $sqlUsername = Read-ValueMasked "App SQL username (not RDS master)" $sqlUsername
+  $sqlPassword = Read-ValueMasked "App SQL password" $sqlPassword
   $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
   $adminAccount = Read-Value "Profisee SuperAdmin email" $adminAccount
   $infraAdminAccount = Read-Value "Infra admin account email (default to SuperAdmin)" $adminAccount
   if (-not $infraAdminAccount -or $infraAdminAccount -eq "") { $infraAdminAccount = $adminAccount }
   $webAppName = Read-Value "Web app name (path segment)" $webAppName
 
-  $oidcProvider = Read-Value "OIDC provider (Entra or Okta)" "Entra"
+  $oidcProvider = Read-Value "OIDC provider (Entra or Okta)" $oidcProvider
   if ($oidcProvider -match "entra|azure") {
     $oidcName = "Entra"
-    $oidcTenantId = Read-Value "Entra tenant ID" ""
+    $oidcTenantId = Read-ValueMasked "Entra tenant ID" $oidcTenantId
     if ($oidcTenantId) { $oidcUrl = "https://login.microsoftonline.com/$oidcTenantId" }
-    $oidcClientId = Read-Value "Entra app registration client ID" $oidcClientId
-    $oidcClientSecret = Read-Value "Entra app registration client secret" $oidcClientSecret
+    $oidcClientId = Read-ValueMasked "Entra app registration client ID" $oidcClientId
+    $oidcClientSecret = Read-ValueMasked "Entra app registration client secret" $oidcClientSecret
     $oidcUserNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
     $oidcUserIdClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
     $oidcFirstNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
@@ -332,8 +448,8 @@ if (-not $NoPrompt) {
   } elseif ($oidcProvider -match "okta") {
     $oidcName = "Okta"
     $oidcUrl = Read-Value "Okta authority URL (e.g., https://mycompany.okta.com)" $oidcUrl
-    $oidcClientId = Read-Value "Okta client ID" $oidcClientId
-    $oidcClientSecret = Read-Value "Okta client secret" $oidcClientSecret
+    $oidcClientId = Read-ValueMasked "Okta client ID" $oidcClientId
+    $oidcClientSecret = Read-ValueMasked "Okta client secret" $oidcClientSecret
     $oidcUserNameClaim = "preferred_username"
     $oidcUserIdClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
     $oidcFirstNameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
@@ -349,10 +465,10 @@ if (-not $NoPrompt) {
 
   $acrRepoName = Read-Value "ACR repository name" $acrRepoName
   $acrRepoLabel = Read-Value "ACR image tag/label" $acrRepoLabel
-  $acrRegistry = Read-Value "ACR registry" $acrRegistry
-  $acrUser = Read-Value "ACR username" $acrUser
-  $acrPassword = Read-Value "ACR password" $acrPassword
-  $acrAuth = Read-Value "ACR auth" $acrAuth
+  $acrRegistry = Read-ValueMasked "ACR registry" $acrRegistry
+  $acrUser = Read-ValueMasked "ACR username" $acrUser
+  $acrPassword = Read-ValueMasked "ACR password" $acrPassword
+  $acrAuth = Read-ValueMasked "ACR auth" $acrAuth
   $acrEmail = Read-Value "ACR email" $acrEmail
 
   $useOwnTls = Read-Bool "Use your own TLS cert (no internal CA certs)" $useOwnTls
@@ -371,9 +487,12 @@ if (-not $NoPrompt) {
   }
 }
 
-if (-not $NoPrompt -and $json.db_init -and $json.db_init.enabled -eq $true) {
-  if (-not $sqlUsername -or -not $sqlPassword) {
-    throw "App SQL username/password are required when db_init is enabled."
+if (-not $NoPrompt) {
+  $dbInitCfgCheck = Get-PropValue $json "db_init"
+  if ($dbInitCfgCheck -and $dbInitCfgCheck.enabled -eq $true) {
+    if (-not $sqlUsername -or -not $sqlPassword) {
+      throw "App SQL username/password are required when db_init is enabled."
+    }
   }
 }
 
@@ -383,8 +502,13 @@ if (-not $licenseRaw) {
 }
 
 if (-not $NoPrompt) {
-  $seedPath = Join-Path $secretsDir "seed-secrets.json"
   $seedPayload = @{
+    app = @{
+      super_admin_email = $adminAccount
+      infra_admin_email = $infraAdminAccount
+      web_app_name      = $webAppName
+      pod_count         = $podCount
+    }
     license_path = $licensePath
     sql = @{
       username = $sqlUsername
@@ -393,6 +517,7 @@ if (-not $NoPrompt) {
     acr = @{
       username = $acrUser
       password = $acrPassword
+      label    = $acrRepoLabel
       auth     = $acrAuth
       email    = $acrEmail
       registry = $acrRegistry

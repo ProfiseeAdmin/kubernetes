@@ -6,9 +6,9 @@
 - License files live in `customer-deployments/<name>/secrets/license.txt` and
   are **not** injected into `Settings.yaml`. Instead, seed Secrets Manager and
   keep the entire `customer-deployments/` tree out of Git.
-- `Settings.yaml` may contain sensitive values. Store it in the dedicated S3
-  settings bucket with encryption enabled and restrict access to the deployer
-  role only.
+- `Settings.yaml` may contain sensitive values. Store it in the App Settings
+  S3 bucket with encryption enabled and restrict access to the deployer role
+  only.
 - `secrets/seed-secrets.json` contains sensitive values (ACR creds, OIDC client
   secret, TLS key). Keep it out of Git and delete it after seeding Secrets
   Manager.

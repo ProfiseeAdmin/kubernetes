@@ -99,8 +99,8 @@ variable "allowed_security_group_ids" {
 
 variable "backup_retention_days" {
   type        = number
-  default     = 7
-  description = "Backup retention period in days."
+  default     = 0
+  description = "Backup retention period in days (0 disables automated backups)."
 }
 
 variable "multi_az" {
@@ -117,7 +117,7 @@ variable "publicly_accessible" {
 
 variable "deletion_protection" {
   type        = bool
-  default     = true
+  default     = false
   description = "Whether to enable deletion protection."
 }
 

@@ -17,7 +17,12 @@ Apply:
 .\scripts\tofu-apply.ps1 -DeploymentName <name>
 ```
 
-## Stage C (Core infra)
+## Stage D (Platform + App)
+
+Remove the app and platform components (Traefik/addons) from the cluster using
+your platform deployer or Helm uninstall commands.
+
+## Stage C (Core infra + DB init)
 
 Destroy the core infra:
 

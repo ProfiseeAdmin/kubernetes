@@ -34,9 +34,6 @@
   },
   "db_init": {
     "enabled": true,
-    "image_uri": "<db-init-image-uri>",
-    "cpu": 512,
-    "memory": 1024,
     "environment": {},
     "secret_arns": {}
   },

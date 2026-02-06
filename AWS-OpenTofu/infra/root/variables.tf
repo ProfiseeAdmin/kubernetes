@@ -81,7 +81,7 @@ variable "platform_deployer" {
 variable "db_init" {
   type = object({
     enabled     = optional(bool, false)
-    image_uri   = optional(string)
+    image_uri   = optional(string, "public.ecr.aws/amazonlinux/amazonlinux:2023")
     cpu         = optional(number, 512)
     memory      = optional(number, 1024)
     tags        = optional(map(string), {})
@@ -108,7 +108,7 @@ variable "db_init" {
 
   validation {
     condition     = !try(var.db_init.enabled, false) || (try(var.rds_sqlserver.db_name, "") != "")
-    error_message = "rds_sqlserver.db_name must be set when db_init.enabled is true."
+    error_message = "rds_sqlserver.db_name must be set when db_init.enabled is true (app database name)."
   }
 }
 
@@ -174,15 +174,15 @@ variable "rds_sqlserver" {
     iops                        = optional(number)
     storage_encrypted           = optional(bool, true)
     kms_key_arn                 = optional(string)
-    db_name                     = optional(string)
+    db_name                     = optional(string) # App DB name created by db_init (not the RDS initial DB)
     master_username             = string
     manage_master_user_password = optional(bool, true)
     master_user_secret_kms_key_id = optional(string)
     allowed_security_group_ids  = optional(list(string), [])
-    backup_retention_days       = optional(number, 7)
+    backup_retention_days       = optional(number, 0)
     multi_az                    = optional(bool, false)
     publicly_accessible         = optional(bool, false)
-    deletion_protection         = optional(bool, true)
+    deletion_protection         = optional(bool, false)
     tags                        = optional(map(string), {})
   })
   description = "RDS SQL Server configuration."

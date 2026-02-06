@@ -8,7 +8,7 @@ See `deployments/_template/config.auto.tfvars.json.example` for a full example.
 - `region`: primary AWS region (use `us-east-1`)
 - `use1_region`: `us-east-1` (ACM for CloudFront)
 - `tags`: default tags applied to resources
-- `settings_bucket`: S3 bucket for `Settings.yaml` and deployment artifacts
+- `settings_bucket`: App Settings S3 bucket for `Settings.yaml` and deployment artifacts
 - `app_ebs`: optional EBS volume configuration for the app fileshare (created by OpenTofu)
 - `platform_deployer`: optional Fargate one‑shot deployer configuration
 - `db_init`: **required** Fargate one‑shot DB initializer configuration
@@ -39,7 +39,7 @@ Key fields:
 Key fields:
 - `identifier`, `engine_version`, `instance_class`
 - `allocated_storage`
-- `db_name` (required; initial DB created by RDS)
+- `db_name` (required; db_init uses this to create the app DB; RDS initial DB is not used)
 - `publicly_accessible` (default false)
 
 ## KMS / Secrets (optional)
@@ -84,7 +84,7 @@ Key fields:
 - `availability_zone` (defaults to first VPC AZ)
 - `encrypted`, `kms_key_id`
 
-## Settings bucket (S3)
+## App Settings S3 bucket
 
 `settings_bucket` controls the S3 bucket used to store `Settings.yaml`.
 
@@ -112,7 +112,7 @@ and grants `db_owner` on the app database.
 
 Key fields:
 - `enabled` (required; set to true)
-- `image_uri` (container image with `sqlcmd` + AWS CLI/SDK)
+- `image_uri` (default: `public.ecr.aws/amazonlinux/amazonlinux:2023`; installs `aws`, `sqlcmd`, `kubectl`, `helm`, `eksctl` at runtime)
 - `cpu`, `memory`
 - `secret_arns` (map of secrets for the container to retrieve)
 

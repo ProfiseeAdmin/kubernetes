@@ -28,9 +28,36 @@ locals {
     Start-Sleep -Seconds 300
 
     Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu awscli-session-manager -y
+    choco upgrade chocolatey kubernetes-cli eksctl kubernetes-helm awscli opentofu awscli-session-manager sqlcmd -y
     Import-Module C:\\ProgramData\\chocolatey\\helpers\\chocolateyProfile.psm1
     refreshenv
+
+    # Pull kubeconfig from the App Settings bucket (if configured).
+    $kubeBucket = "${var.settings_bucket_name}"
+    $kubeKey = "${var.kubeconfig_s3_key}"
+    $kubeRegion = "${var.region}"
+    if ($kubeBucket -and $kubeKey -and $kubeRegion) {
+      $kubeDir = "C:\\kubeconfig"
+      New-Item -ItemType Directory -Path $kubeDir -Force | Out-Null
+      $kubePath = Join-Path $kubeDir "kubeconfig"
+      $maxAttempts = 60
+      $delaySeconds = 60
+      for ($i = 1; $i -le $maxAttempts; $i++) {
+        try {
+          aws s3 cp ("s3://{0}/{1}" -f $kubeBucket, $kubeKey) $kubePath --region $kubeRegion | Out-Null
+          if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $kubePath)) {
+            setx KUBECONFIG $kubePath /M | Out-Null
+            Write-Host ("Kubeconfig downloaded to {0}" -f $kubePath)
+            break
+          }
+        } catch {
+          # Ignore and retry
+        }
+        Start-Sleep -Seconds $delaySeconds
+      }
+    } else {
+      Write-Host "Kubeconfig S3 details not set; skipping download."
+    }
     </powershell>
   EOF
   user_data = (var.user_data != null && trim(var.user_data) != "") ? var.user_data : local.default_user_data
@@ -60,10 +87,10 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
 }
 
 resource "aws_iam_role_policy_attachment" "additional" {
-  for_each = toset(var.iam_policy_arns)
+  count = length(var.iam_policy_arns)
 
   role       = aws_iam_role.ssm.name
-  policy_arn = each.value
+  policy_arn = var.iam_policy_arns[count.index]
 }
 
 data "aws_iam_policy_document" "assume_role" {

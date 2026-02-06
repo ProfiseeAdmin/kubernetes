@@ -5,7 +5,10 @@ param(
   [string]$RepoRoot,
   [string]$Region,
   [string]$Prefix,
-  [switch]$UpdateConfig
+  [string]$Profile,
+  [switch]$UpdateConfig,
+  [string]$LogPath,
+  [switch]$VerboseLog
 )
 
 Set-StrictMode -Version Latest
@@ -13,6 +16,102 @@ $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
   throw "AWS CLI (aws) is not on PATH. Install AWS CLI and try again."
+}
+
+$script:LogPath = $null
+$script:VerboseLog = $false
+$script:LastAwsExitCode = $null
+
+function Write-LogFile([string]$Message) {
+  if (-not $script:LogPath) { return }
+  $ts = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+  $line = ("{0} {1}" -f $ts, $Message)
+  try {
+    [System.IO.File]::AppendAllText($script:LogPath, $line + [System.Environment]::NewLine)
+  } catch {
+    Write-Host ("Log write failed: {0}" -f $_.Exception.Message)
+  }
+}
+
+function Write-LogVerbose([string]$Message) {
+  if ($script:VerboseLog) { Write-LogFile $Message }
+}
+
+function Format-AwsArgsForLog([string[]]$CliArgs) {
+  $redactNext = $false
+  $out = @()
+  foreach ($a in $CliArgs) {
+    if ($redactNext) {
+      $out += "<REDACTED>"
+      $redactNext = $false
+      continue
+    }
+    if ($a -in @("--secret-string","--secret-binary","--cli-input-json","--password","--secret-access-key")) {
+      $out += $a
+      $redactNext = $true
+      continue
+    }
+    $out += $a
+  }
+  return ($out -join " ")
+}
+
+function Join-AwsArgsForProcess([string[]]$CliArgs) {
+  $quoted = foreach ($a in $CliArgs) {
+    if ($null -eq $a) { "" }
+    elseif ($a -match '[\s"]') { '"' + ($a -replace '"', '\"') + '"' }
+    else { $a }
+  }
+  return ($quoted -join " ")
+}
+
+function Normalize-AwsArgs([object[]]$CliArgs) {
+  $flat = @()
+  foreach ($a in $CliArgs) {
+    if ($null -eq $a) { continue }
+    if ($a -is [System.Array]) { $flat += $a }
+    else { $flat += $a }
+  }
+  return $flat
+}
+
+function Invoke-AwsCliProcessCapture([string[]]$CliArgs) {
+  $outFile = New-TemporaryFile
+  $errFile = New-TemporaryFile
+  $flatArgs = Normalize-AwsArgs ($CliArgs + $script:AwsProfileArgs)
+  $argString = Join-AwsArgsForProcess $flatArgs
+  if ([string]::IsNullOrWhiteSpace($argString)) {
+    Remove-Item -LiteralPath $outFile, $errFile -ErrorAction SilentlyContinue
+    return @{
+      Exit = 1
+      Out  = ""
+      Err  = "Argument list empty"
+      Args = $argString
+    }
+  }
+  try {
+    $proc = Start-Process -FilePath "aws" -ArgumentList $argString -NoNewWindow -PassThru -Wait `
+      -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+  } catch {
+    Remove-Item -LiteralPath $outFile, $errFile -ErrorAction SilentlyContinue
+    return @{
+      Exit = 1
+      Out  = ""
+      Err  = $_.Exception.Message
+      Args = $argString
+    }
+  }
+  $out = ""
+  $err = ""
+  try { $out = Get-Content -Raw -Path $outFile } catch {}
+  try { $err = Get-Content -Raw -Path $errFile } catch {}
+  Remove-Item -LiteralPath $outFile, $errFile -ErrorAction SilentlyContinue
+  return @{
+    Exit = $proc.ExitCode
+    Out  = ($out | Out-String).Trim()
+    Err  = ($err | Out-String).Trim()
+    Args = $argString
+  }
 }
 
 function Read-Value([string]$Label, $Current) {
@@ -26,22 +125,143 @@ function Read-SecretValue([string]$Label) {
   return Read-Host $Label
 }
 
+function Ensure-ObjectProperty($obj, [string]$Name, $DefaultValue) {
+  $prop = $obj.PSObject.Properties[$Name]
+  if ($null -eq $prop) {
+    $obj | Add-Member -Force -NotePropertyName $Name -NotePropertyValue $DefaultValue
+    return $obj.PSObject.Properties[$Name].Value
+  }
+  $val = $prop.Value
+  $isObject = ($val -is [pscustomobject]) -or ($val -is [System.Collections.IDictionary])
+  if ($null -eq $val -or -not $isObject) {
+    $obj | Add-Member -Force -NotePropertyName $Name -NotePropertyValue $DefaultValue
+    return $obj.PSObject.Properties[$Name].Value
+  }
+  return $val
+}
+
+function Set-ObjectProperty($obj, [string]$Name, $Value) {
+  if ($obj -is [System.Collections.IDictionary]) {
+    $obj[$Name] = $Value
+    return
+  }
+  $prop = $obj.PSObject.Properties[$Name]
+  if ($null -eq $prop) {
+    $obj | Add-Member -Force -NotePropertyName $Name -NotePropertyValue $Value
+  } else {
+    $prop.Value = $Value
+  }
+}
+
+function Get-FileUri([string]$Path) {
+  $full = [System.IO.Path]::GetFullPath($Path)
+  if ($full -match '^[A-Za-z]:\\') {
+    $normalized = $full -replace '\\','/'
+    return "file://$normalized"
+  }
+  return "file://$full"
+}
+
+function Invoke-AwsCliNoThrow([string[]]$CliArgs) {
+  if ($null -eq $CliArgs) {
+    Write-LogFile "Invoke-AwsCliNoThrow: Args is null"
+  } else {
+    $count = ($CliArgs | Measure-Object).Count
+    Write-LogVerbose ("Invoke-AwsCliNoThrow: ArgsCount={0}; Args={1}" -f $count, ($CliArgs -join "|"))
+  }
+  try {
+    $result = Invoke-AwsCliProcessCapture $CliArgs
+    $script:LastAwsExitCode = $result.Exit
+    Write-LogFile ("aws {0} (exit {1})" -f (Format-AwsArgsForLog $CliArgs), $result.Exit)
+    if ($result.Exit -ne 0 -or $script:VerboseLog) {
+      $text = $result.Out
+      if ($text -eq "") { $text = $result.Err }
+      if ($text -eq "") { $text = "<empty>" }
+      Write-LogFile $text
+      if ($result.Args -ne "") { Write-LogVerbose ("aws args: {0}" -f $result.Args) }
+    }
+    if ($result.Out -ne "") { return $result.Out }
+    if ($result.Err -ne "") { return $result.Err }
+    return $null
+  } catch {
+    $script:LastAwsExitCode = $LASTEXITCODE
+    return $null
+  }
+}
+
+function Invoke-AwsCliCapture([string[]]$CliArgs) {
+  if ($null -eq $CliArgs) {
+    Write-LogFile "Invoke-AwsCliCapture: Args is null"
+  } else {
+    $count = ($CliArgs | Measure-Object).Count
+    Write-LogVerbose ("Invoke-AwsCliCapture: ArgsCount={0}; Args={1}" -f $count, ($CliArgs -join "|"))
+  }
+  try {
+    $result = Invoke-AwsCliProcessCapture $CliArgs
+    $script:LastAwsExitCode = $result.Exit
+    Write-LogFile ("aws {0} (exit {1})" -f (Format-AwsArgsForLog $CliArgs), $result.Exit)
+    if ($result.Exit -ne 0 -or $script:VerboseLog) {
+      $text = $result.Out
+      if ($text -eq "") { $text = $result.Err }
+      if ($text -eq "") { $text = "<empty>" }
+      Write-LogFile $text
+      if ($result.Args -ne "") { Write-LogVerbose ("aws args: {0}" -f $result.Args) }
+    }
+    $combined = @()
+    if ($result.Out -ne "") { $combined += $result.Out }
+    if ($result.Err -ne "") { $combined += $result.Err }
+    return ($combined -join [System.Environment]::NewLine).Trim()
+  } catch {
+    $script:LastAwsExitCode = $LASTEXITCODE
+    return $_.Exception.Message
+  }
+}
+
 function Get-SecretArn([string]$SecretName, [string]$Region) {
-  $arn = aws secretsmanager describe-secret --secret-id $SecretName --query Arn --output text --region $Region 2>$null
-  if ($LASTEXITCODE -eq 0 -and $arn) { return $arn }
+  $arn = Invoke-AwsCliNoThrow @(
+    "secretsmanager","describe-secret",
+    "--secret-id",$SecretName,
+    "--query","ARN","--output","text",
+    "--no-cli-pager",
+    "--region",$Region
+  )
+  if ($script:LastAwsExitCode -eq 0 -and $arn) { return $arn }
   return $null
 }
 
 function Put-Secret([string]$SecretName, [string]$SecretValue, [string]$Region) {
-  $arn = Get-SecretArn $SecretName $Region
-  if ($arn) {
-    aws secretsmanager put-secret-value --secret-id $SecretName --secret-string $SecretValue --region $Region | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Failed to update secret: $SecretName" }
-    return $arn
+  $tempFile = New-TemporaryFile
+  try {
+    [System.IO.File]::WriteAllText($tempFile, $SecretValue, (New-Object System.Text.UTF8Encoding($false)))
+    $fileUri = Get-FileUri $tempFile
+  } catch {
+    Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
+    throw "Failed to create temp secret file for $SecretName"
   }
-  $create = aws secretsmanager create-secret --name $SecretName --secret-string $SecretValue --region $Region --query Arn --output text
-  if ($LASTEXITCODE -ne 0 -or -not $create) { throw "Failed to create secret: $SecretName" }
-  return $create
+
+  try {
+    $createOut = Invoke-AwsCliCapture @("secretsmanager","create-secret","--name",$SecretName,"--secret-string",$fileUri,"--region",$Region,"--query","ARN","--output","text","--no-cli-pager")
+    $createExit = $script:LastAwsExitCode
+    if ($createExit -eq 0) {
+      if ($createOut) { return $createOut }
+      $arn = Get-SecretArn $SecretName $Region
+      if ($arn) { return $arn }
+    }
+
+    $putOut = Invoke-AwsCliCapture @("secretsmanager","put-secret-value","--secret-id",$SecretName,"--secret-string",$fileUri,"--region",$Region,"--no-cli-pager")
+    $putExit = $script:LastAwsExitCode
+    if ($putExit -eq 0) {
+      $arn = Get-SecretArn $SecretName $Region
+      if ($arn) { return $arn }
+      return $SecretName
+    }
+
+    $msgCreate = if ($createOut) { $createOut } else { "AWS CLI create-secret failed without output (exit $createExit)." }
+    $msgPut = if ($putOut) { $putOut } else { "AWS CLI put-secret-value failed without output (exit $putExit)." }
+    throw "Failed to create/update secret: $SecretName. Create output: $msgCreate; Put output: $msgPut"
+  } finally {
+    Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
+  }
 }
 
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
@@ -51,6 +271,49 @@ $seedPath = Join-Path $deploymentPath "secrets\\seed-secrets.json"
 
 if (-not (Test-Path -LiteralPath $deploymentPath)) {
   throw "Deployment folder not found: $deploymentPath"
+}
+
+$logPathResolved = $LogPath
+if (-not $logPathResolved -or $logPathResolved -eq "") {
+  $logDir = Join-Path $deploymentPath "logs"
+  if (-not (Test-Path -LiteralPath $logDir)) {
+    New-Item -ItemType Directory -Path $logDir | Out-Null
+  }
+  $logPathResolved = Join-Path $logDir "seed-secrets.log"
+} else {
+  $logDir = Split-Path -Parent $logPathResolved
+  if ($logDir -and -not (Test-Path -LiteralPath $logDir)) {
+    New-Item -ItemType Directory -Path $logDir | Out-Null
+  }
+}
+$script:LogPath = $logPathResolved
+if ($VerboseLog.IsPresent) { $script:VerboseLog = $true }
+try {
+  # Overwrite log each run
+  Set-Content -Path $script:LogPath -Value "" -Encoding UTF8
+} catch {
+  Write-Host ("Log init failed: {0}" -f $_.Exception.Message)
+}
+Write-Host ("Logging to: {0}" -f $script:LogPath)
+Write-LogFile "---- seed-secrets start ----"
+Write-LogFile ("Log path resolved: {0}" -f $script:LogPath)
+Write-LogVerbose ("PWD: {0}" -f (Get-Location))
+Write-LogVerbose ("Env AWS_PROFILE: {0}" -f $env:AWS_PROFILE)
+Write-LogVerbose ("Env AWS_DEFAULT_PROFILE: {0}" -f $env:AWS_DEFAULT_PROFILE)
+Write-LogVerbose ("Env AWS_SDK_LOAD_CONFIG: {0}" -f $env:AWS_SDK_LOAD_CONFIG)
+Write-LogVerbose ("Env AWS_CONFIG_FILE: {0}" -f $env:AWS_CONFIG_FILE)
+Write-LogVerbose ("Env AWS_SHARED_CREDENTIALS_FILE: {0}" -f $env:AWS_SHARED_CREDENTIALS_FILE)
+try {
+  $awsCmd = Get-Command aws -ErrorAction Stop
+  Write-LogVerbose ("aws path: {0}" -f $awsCmd.Source)
+} catch {
+  Write-LogVerbose ("aws path: <not found>")
+}
+try {
+  $ver = & aws --version 2>&1
+  Write-LogVerbose ("aws --version: {0}" -f ($ver | Out-String).Trim())
+} catch {
+  Write-LogVerbose ("aws --version failed: {0}" -f $_.Exception.Message)
 }
 
 $cfg = $null
@@ -77,6 +340,27 @@ if (-not $Prefix -or $Prefix -eq "") {
 }
 
 Write-Host ("Seeding Secrets Manager in region {0} with prefix {1}" -f $Region, $Prefix)
+Write-LogFile ("Region: {0}; Prefix: {1}" -f $Region, $Prefix)
+
+$script:AwsProfileArgs = @()
+if (-not $Profile -or $Profile -eq "") {
+  if ($env:AWS_PROFILE) { $Profile = $env:AWS_PROFILE }
+  elseif ($env:AWS_DEFAULT_PROFILE) { $Profile = $env:AWS_DEFAULT_PROFILE }
+}
+if ($Profile -and $Profile -ne "") {
+  $script:AwsProfileArgs = @("--profile", $Profile)
+  Write-Host ("Using AWS CLI profile: {0}" -f $Profile)
+  Write-LogFile ("Using AWS CLI profile: {0}" -f $Profile)
+}
+
+$identity = Invoke-AwsCliCapture @("sts","get-caller-identity","--no-cli-pager","--region",$Region)
+Write-LogFile ("sts get-caller-identity output: {0}" -f $identity)
+Write-LogFile ("sts get-caller-identity exit: {0}; output length: {1}" -f $script:LastAwsExitCode, ($identity | Measure-Object -Character).Characters)
+if ($script:LastAwsExitCode -ne 0) {
+  $profileNote = if ($Profile) { " (profile: $Profile)" } else { "" }
+  Write-Host ("AWS CLI auth failed. See log: {0}" -f $script:LogPath)
+  throw "AWS CLI authentication failed$profileNote. Output: $identity"
+}
 
 $secretArns = @{}
 
@@ -182,14 +466,10 @@ if ($dbInitEnabled) {
 }
 
 if ($UpdateConfig -and $cfg) {
-  if (-not $cfg.platform_deployer) {
-    $cfg | Add-Member -NotePropertyName "platform_deployer" -NotePropertyValue @{}
-  }
-  $cfg.platform_deployer.secret_arns = $secretArns
-  if (-not $cfg.db_init) {
-    $cfg | Add-Member -NotePropertyName "db_init" -NotePropertyValue @{}
-  }
-  $cfg.db_init.secret_arns = $secretArns
+  $platform = Ensure-ObjectProperty $cfg "platform_deployer" ([pscustomobject]@{})
+  Set-ObjectProperty $platform "secret_arns" $secretArns
+  $dbInitCfg = Ensure-ObjectProperty $cfg "db_init" ([pscustomobject]@{})
+  Set-ObjectProperty $dbInitCfg "secret_arns" $secretArns
   $jsonOut = $cfg | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
   Write-Host ("Updated config with secret ARNs: {0}" -f $configPath)

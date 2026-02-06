@@ -33,7 +33,7 @@ if (-not $BucketName -or $BucketName -eq "") {
   $BucketName = $cfg.settings_bucket.name
 }
 if (-not $BucketName -or $BucketName -eq "") {
-  throw "Settings bucket name not provided and not found in config.auto.tfvars.json (settings_bucket.name)."
+  throw "App Settings S3 bucket name not provided and not found in config.auto.tfvars.json (settings_bucket.name)."
 }
 
 if (-not $Key -or $Key -eq "") {

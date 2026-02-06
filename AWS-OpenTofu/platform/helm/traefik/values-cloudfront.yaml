@@ -1,8 +1,12 @@
 providers:
   kubernetesIngress:
-    enabled: false
-  kubernetesIngressNginx:
     enabled: true
+    ingressClass: traefik
+  kubernetesIngressNginx:
+    enabled: false
 
-# TODO: NLB public + CloudFront lock-down annotations
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
 

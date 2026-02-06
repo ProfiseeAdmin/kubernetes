@@ -78,3 +78,21 @@ variable "user_data" {
   default     = null
   description = "Windows user data script (optional). If null/empty, a default bootstrap script is used."
 }
+
+variable "region" {
+  type        = string
+  default     = null
+  description = "AWS region (used for kubeconfig download)."
+}
+
+variable "settings_bucket_name" {
+  type        = string
+  default     = null
+  description = "App Settings S3 bucket name (optional, for kubeconfig download)."
+}
+
+variable "kubeconfig_s3_key" {
+  type        = string
+  default     = null
+  description = "S3 key for kubeconfig (optional, for jumpbox auto-download)."
+}

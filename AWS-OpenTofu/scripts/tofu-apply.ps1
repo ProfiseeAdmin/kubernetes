@@ -40,6 +40,43 @@ function Get-PropValue($obj, [string]$name) {
   return $prop.Value
 }
 
+function Get-FileUri([string]$Path) {
+  $full = [System.IO.Path]::GetFullPath($Path)
+  if ($full -match '^[A-Za-z]:\\') {
+    $normalized = $full -replace '\\','/'
+    return "file://$normalized"
+  }
+  return "file://$full"
+}
+
+function Get-PropertyCount($obj) {
+  if ($null -eq $obj) { return 0 }
+  if ($obj -is [System.Collections.IDictionary]) { return $obj.Count }
+  try {
+    return @($obj.PSObject.Properties).Count
+  } catch {
+    return 0
+  }
+}
+
+function Has-Entries($obj) {
+  return (Get-PropertyCount $obj) -gt 0
+}
+
+function Has-SecretValues($obj) {
+  if ($null -eq $obj) { return $false }
+  $values = @()
+  if ($obj -is [System.Collections.IDictionary]) {
+    $values = @($obj.Values)
+  } else {
+    $values = @($obj.PSObject.Properties | ForEach-Object { $_.Value })
+  }
+  foreach ($v in $values) {
+    if ($null -ne $v -and $v -ne "" -and $v -ne "None") { return $true }
+  }
+  return $false
+}
+
 $cachedOutputs = $null
 function Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
   if ($null -ne $script:cachedOutputs) { return $script:cachedOutputs }
@@ -73,7 +110,7 @@ if ($cfg) {
   $dbInitEnabledEarly = Get-PropValue $dbInitCfgEarly "enabled"
   if ($dbInitEnabledEarly -eq $true) {
     $dbInitSecretsEarly = Get-PropValue $dbInitCfgEarly "secret_arns"
-    if ($null -eq $dbInitSecretsEarly -or $dbInitSecretsEarly.PSObject.Properties.Count -eq 0) {
+    if (-not (Has-Entries $dbInitSecretsEarly) -or -not (Has-SecretValues $dbInitSecretsEarly)) {
       throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
     }
   }
@@ -189,7 +226,7 @@ if (Test-Path -LiteralPath $settingsPath) {
     $updated = $false
 
     $rdsEndpoint = Get-PropValue $outputs "rds_endpoint"
-    if ($rdsEndpoint -and $settingsContent -match "\$SQLNAME") {
+    if ($rdsEndpoint -and $settingsContent -match '\$SQLNAME') {
       $settingsContent = $settingsContent.Replace('$SQLNAME', $rdsEndpoint)
       $updated = $true
     }
@@ -229,7 +266,7 @@ if ($dbInitEnabled -eq $true) {
   }
 
   $dbInitSecrets = Get-PropValue $dbInitCfg "secret_arns"
-  if ($null -eq $dbInitSecrets -or $dbInitSecrets.PSObject.Properties.Count -eq 0) {
+  if (-not (Has-Entries $dbInitSecrets) -or -not (Has-SecretValues $dbInitSecrets)) {
     throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
   }
 
@@ -257,14 +294,25 @@ if ($dbInitEnabled -eq $true) {
     }
   } | ConvertTo-Json -Depth 5 -Compress
 
+  $networkConfigFile = New-TemporaryFile
+  try {
+    # Write without BOM; AWS CLI chokes on BOM for JSON inputs
+    [System.IO.File]::WriteAllText($networkConfigFile, $networkConfig, (New-Object System.Text.UTF8Encoding($false)))
+    $networkConfigUri = Get-FileUri $networkConfigFile
+  } catch {
+    Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
+    throw "Failed to create network configuration file for DB init task."
+  }
+
   Write-Host "Starting DB init Fargate task..."
   $taskArn = aws ecs run-task `
     --cluster $clusterArn `
     --launch-type FARGATE `
     --task-definition $taskDefArn `
-    --network-configuration $networkConfig `
+    --network-configuration $networkConfigUri `
     --region $region `
     --query "tasks[0].taskArn" --output text
+  Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
 
   if ($LASTEXITCODE -ne 0 -or -not $taskArn -or $taskArn -eq "None") {
     throw "Failed to start DB init task."
