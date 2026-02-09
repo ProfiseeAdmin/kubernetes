@@ -193,4 +193,3 @@ spec:
           - containerPort: 80
       imagePullSecrets:
       - name: profisee-containerregistry
-      

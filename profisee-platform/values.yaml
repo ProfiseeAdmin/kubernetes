@@ -3,8 +3,6 @@ sqlServer:
     databaseName: "$SQLDBNAME"
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
-ingress:
-    impervaHeaderId: ""    
 profiseeRunTime:
     useLetsEncrypt: $USELETSENCRYPT
     adminAccount: "$ADMINACCOUNTNAME"
@@ -77,8 +75,6 @@ cloud:
           sqlPassword: ""
           tlsCertificate: ""
           license: ""
-          oidcclientId: ""
-          oidcsecret: "" 
         name: ""
         resourceGroup: ""
         subscriptionId: ""
