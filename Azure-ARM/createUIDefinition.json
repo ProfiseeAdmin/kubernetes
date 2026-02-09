@@ -63,7 +63,7 @@
             "name": "UseKeyVault",
             "type": "Microsoft.Common.OptionsGroup",
             "label": "Use Key Vault?",
-            "defaultValue": "Yes, pull sensitive information from Key Vault.",
+            "defaultValue": "No, I will supply the required values.",
             "toolTip": "Profisee can pull a TLS certificate from a Key Vault, as well as these secrets: SQL Username, SQL Password and Profisee License.",
             "constraints": {
               "allowedValues": [
@@ -78,7 +78,7 @@
               ],
               "required": true
             },
-            "visible": false
+            "visible": true
           },
           {
             "name": "KeyVault",
@@ -91,13 +91,13 @@
                 "location": "All"
               }
             },
-            "visible": true
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
           },
           {
             "name": "ProfiseeVersion",
             "type": "Microsoft.Common.DropDown",
             "label": "Profisee version",
-            "defaultValue": "2024R2.0-win22",
+            "defaultValue": "2025r4.0-win22",
             "toolTip": "Which release of the Profisee Platform to deploy.",
             "constraints": {
               "required": true,
@@ -115,12 +115,12 @@
                   "value": "profiseeplatform:2023r2.0-win22"
                 },
                 {
-                  "label": "2024r1.0-win19",
-                  "value": "profiseeplatform:2024r1.0-141066-win19"
+                  "label": "2024R1.0-win19",
+                  "value": "profiseeplatform:2024r1.0-win19"
                 },
                 {
-                  "label": "2024r1.0-win22",
-                  "value": "profiseeplatform:2024r1.0-141066-win22"
+                  "label": "2024R1.0-win22",
+                  "value": "profiseeplatform:2024r1.0-win22"
                 },
                 {
                   "label": "2024R2.0-win19",
@@ -129,6 +129,38 @@
                 {
                   "label": "2024R2.0-win22",
                   "value": "profiseeplatform:2024r2.0-win22"
+                },
+                {
+                  "label": "2025r0.0-win19",
+                  "value": "profiseeplatform:2025r0.0-win19"
+                },
+                {
+                  "label": "2025r0.0-win22",
+                  "value": "profiseeplatform:2025r0.0-win22"
+                },
+                {
+                  "label": "2025r1.0-win19",
+                  "value": "profiseeplatform:2025r1.0-win19"
+                },
+                {
+                  "label": "2025r1.0-win22",
+                  "value": "profiseeplatform:2025r1.0-win22"
+                },
+                {
+                  "label": "2025r2.0-win19",
+                  "value": "profiseeplatform:2025r2.0-win19"
+                },
+                {
+                  "label": "2025r2.0-win22",
+                  "value": "profiseeplatform:2025r2.0-win22"
+                },
+                {
+                  "label": "2025r3.0-win22",
+                  "value": "profiseeplatform:2025r3.0-win22"
+                },
+                {
+                  "label": "2025r4.0-win22",
+                  "value": "profiseeplatform:2025r4.0-win22"
                 }
               ]
             },
@@ -138,7 +170,7 @@
             "name": "ProfiseeAdminUserAccount",
             "type": "Microsoft.Common.TextBox",
             "label": "Super Admin Account",
-            "defaultValue": "admin@profisee.com",
+            "defaultValue": "",
             "placeholder": "first.last@company.com",
             "toolTip": "The first Super User, who will be able to log in and add other users.",
             "constraints": {
@@ -149,10 +181,27 @@
             "visible": true
           },
           {
+            "name": "ProfiseeLicense",
+            "type": "Microsoft.Common.FileUpload",
+            "label": "Profisee license",
+            "toolTip": "This file will be provided by Profisee Support. Please provide the file in txt format.",
+            "constraints": {
+              "required": true,
+              "accept": ".txt"
+            },
+            "options": {
+              "multiple": false,
+              "uploadMode": "file",
+              "openMode": "text",
+              "encoding": "UTF-8"
+            },
+            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
+          },
+          {
             "name": "ProfiseeLicenseSecret",
             "type": "Microsoft.Common.TextBox",
             "label": " Profisee License",
-            "defaultValue": "license",
+            "defaultValue": "",
             "placeholder": "License secret name in Key Vault",
             "toolTip": "This file will be provided by Profisee Support. Please provide the name of the secret that holds the Profisee license: ex. profisee-license",
             "constraints": {
@@ -160,7 +209,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": true
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
           },
           {
             "name": "ProfiseeWebAppName",
@@ -177,31 +226,67 @@
             "visible": true
           },
           {
-            "name": "UserSuppliedClientId",
-            "type": "Microsoft.Common.TextBox",
-            "label": "Application Registration Client Id",
-            "defaultValue": "clientid",
-            "placeholder": "",
-            "toolTip": "Please provide the client ID keyvault secret of the Azure AD application to be used by Profisee for authentication.",
+            "name": "ActiveDirectoryCreateApp",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Create a new Azure AD application registration for you?",
+            "defaultValue": "Yes, create and configure it for me.",
+            "toolTip": "An Azure AD application registration will be used for authentication via ID tokens. For more information please visit https://support.profisee.com/wikis/profiseeplatform/deploying_the_AKS_cluster_with_the_arm_template.",
             "constraints": {
-              "required": true,
-              "regex": "",
-              "validationMessage": ""
+              "allowedValues": [
+                {
+                  "label": "Yes, create and configure it for me.",
+                  "value": "Yes"
+                },
+                {
+                  "label": "No, I will specify the client ID of an existing Azure Active Directory app registration.",
+                  "value": "No"
+                }
+              ],
+              "required": true
             },
             "visible": true
           },
           {
+            "name": "UserSuppliedClientId",
+            "type": "Microsoft.Common.Section",
+            "label": "",
+            "elements": [
+              {
+                "name": "ActiveDirectoryClientId",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Application Registration Client Id",
+                "defaultValue": "",
+                "toolTip": "Please provide the client ID of the Azure AD application to be used by Profisee for authentication.",
+                "constraints": {
+                  "required": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]",
+                  "regex": "",
+                  "validationMessage": ""
+                },
+                "visible": true
+              }
+            ],
+            "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
+          },
+          {
             "name": "UserSuppliedClientSecret",
-            "type": "Microsoft.Common.TextBox",
-            "label": "Application Registration Client Secret",
-            "defaultValue": "clientsecret",
-            "toolTip": "Please provide the client secret keyvault secret of the Azure AD application to be used by Profisee for authentication.",
-            "constraints": {
-              "required": true,
-              "regex": "",
-              "validationMessage": ""
-            },
-            "visible": true
+            "type": "Microsoft.Common.Section",
+            "label": "",
+            "elements": [
+              {
+                "name": "ActiveDirectoryClientSecret",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Application Registration Client Secret",
+                "defaultValue": "",
+                "toolTip": "Please provide the client secret of the Azure AD application to be used by Profisee for authentication.",
+                "constraints": {
+                  "required": "[or(contains(steps('profisee').ProfiseeVersion, '-win19'), contains(steps('profisee').ProfiseeVersion, '-win22'))]",
+                  "regex": "",
+                  "validationMessage": ""
+                },
+                "visible": true
+              }
+            ],
+            "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
           },
           {
             "name": "UsePurview",
@@ -330,27 +415,6 @@
               "required": false,
               "regex": "",
               "validationMessage": ""
-            },
-            "visible": true
-          },
-          {
-            "name": "PricingTier",
-            "type": "Microsoft.Common.OptionsGroup",
-            "label": "Pricing tiers for Azure Kubernetes Service",
-            "defaultValue": "Free tier",
-            "toolTip": "AKS offers two pricing tiers for the managed Kubernetes control plane. Choose the pricing tier that best meets your needs.",
-            "constraints": {
-              "allowedValues": [
-                {
-                  "label": "Free tier",
-                  "value": "Free"
-                },
-                {
-                  "label": "Paid tier",
-                  "value": "Standard"
-                }
-              ],
-              "required": true
             },
             "visible": true
           },
@@ -633,10 +697,22 @@
             "visible": "[equals(steps('sql').SQLServerCreateNew,'Yes')]"
           },
           {
+            "name": "SQLServerUser",
+            "type": "Microsoft.Common.TextBox",
+            "label": "SQL Username",
+            "defaultValue": "sqladmin",
+            "toolTip": "Administrator SQL login name to create with the new SQL Server OR provide the login to connect to an existing SQL Server.  Your login name must not contain a SQL Identifier or a typical system name (like admin, administrator, sa, root, dbmanager, loginmanager, etc.) or a built-in database user or role (like dbo, guest, public, etc.).  Your login name must not include non-alphanumeric characters.  Your login name must not start with numbers or symbols.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
+          },
+          {
             "name": "SQLServerUserSecret",
             "type": "Microsoft.Common.TextBox",
             "label": "SQL Username",
-            "defaultValue": "sqlusername",
             "placeholder": "Key Vault secret name: ex. profisee-sql-username",
             "toolTip": "Administrator SQL login name to create with the new SQL Server OR provide the login to connect to existing SQL Server.  Your login name must not contain a SQL Identifier or a typical system name (like admin, administrator, sa, root, dbmanager, loginmanager, etc.) or a built-in database user or role (like dbo, guest, public, etc.).  Your login name must not include non-alphanumeric characters.  Your login name must not start with numbers or symbols.",
             "constraints": {
@@ -644,13 +720,31 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": true
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
+          },
+          {
+            "name": "SQLServerPassword",
+            "type": "Microsoft.Common.PasswordBox",
+            "label": {
+              "password": " SQL Password",
+              "confirmPassword": "Confirm password"
+            },
+            "toolTip": "",
+            "constraints": {
+              "required": true,
+              "regex": "^((?=.*[A-Z])(?=.*\\d)(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])|(?=.*[a-z])(?=.*\\d)(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])|(?=.*[a-z])(?=.*\\d)(?=.*[A-Z])|(?=.*[a-z])(?=.*[~`!@#$%^&*()\\-_+={[}\\]|\\\\:;\"'<,>.?\\\/])(?=.*[A-Z]))[\\w~`!@#$%^&*()\\-+={[}\\]|\\\\:;\"'<,>.?\\\/]{8,128}$",
+              "validationMessage": "Your password must be at least 8 characters in length.  Your password must be no more than 128 characters in length.  Your password must contain characters from three of the following categories – English uppercase letters, English lowercase letters, numbers (0-9), and non-alphanumeric characters (!, $, #, %, etc.).  Your password cannot contain all or part of the login name. Part of a login name is defined as three or more consecutive alphanumeric characters."
+            },
+            "options": {
+              "hideConfirmation": false
+            },
+            "visible": "[equals(steps('profisee').UseKeyVault,'No')]"
           },
           {
             "name": "SQLServerPasswordSecret",
             "type": "Microsoft.Common.TextBox",
             "label": "SQL Password",
-            "defaultValue": "sqlpassword",
+            "defaultValue": "",
             "placeholder": "Key Vault secret name: ex. profisee-sql-password",
             "toolTip": "",
             "constraints": {
@@ -658,7 +752,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": true
+            "visible": "[equals(steps('profisee').UseKeyVault,'Yes')]"
           },
           {
             "name": "SQLServerDatabaseName",
@@ -709,7 +803,7 @@
             "type": "Microsoft.Solutions.ArmApiControl",
             "request": {
               "method": "POST",
-              "path": "[concat(subscription().id,'/resourceGroups/',steps('storage').StorageAccountNameSection.StorageAccountName.resourceGroup,'/providers/Microsoft.Storage/storageAccounts/',steps('storage').StorageAccountNameSection.StorageAccountName.name,'/listKeys?api-version=2023-01-01')]",
+              "path": "[concat(subscription().id,'/resourceGroups/',steps('storage').StorageAccountNameSection.StorageAccountName.resourceGroup,'/providers/Microsoft.Storage/storageAccounts/',steps('storage').StorageAccountNameSection.StorageAccountName.name,'/listKeys?api-version=2023-05-01')]",
               "body": ""
             }
           },
@@ -867,7 +961,7 @@
           "name": "InfraAdminAccount",
           "type": "Microsoft.Common.TextBox",
           "label": "Certificate Expirations User",
-          "defaultValue": "admin@profisee.com",
+          "defaultValue": "",
           "placeholder": "first.last@company.com",
           "toolTip": "Please specify an email address for the user, or group, that should receive email notifications for certificate expiration.",
           "constraints": {
@@ -940,9 +1034,10 @@
       "ManagedIdentityName": "[basics('ManagedIdentityName')]",
       "ProfiseeVersion": "[steps('profisee').ProfiseeVersion]",
       "ProfiseeAdminUserAccount": "[steps('profisee').ProfiseeAdminUserAccount]",
-      "ProfiseeLicense": "[steps('profisee').ProfiseeLicenseSecret]",
-      "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId]",
-      "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret]",
+      "ProfiseeLicense": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('profisee').ProfiseeLicenseSecret, steps('profisee').ProfiseeLicense)]",
+      "ActiveDirectoryCreateApp": "[steps('profisee').ActiveDirectoryCreateApp]",
+      "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId.ActiveDirectoryClientId]",
+      "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret.ActiveDirectoryClientSecret]",
       "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win22'), 'Windows2022', 'Windows2019')]",
       "KubernetesClusterName": "[steps('kubernetes').KubernetesClusterName]",
       "KubernetesVersion": "[steps('kubernetes').KubernetesVersion]",
@@ -952,7 +1047,6 @@
       "KubernetesWindowsNodeSize": "[steps('kubernetes').KubernetesWindowsNodeSizeSection.KubernetesWindowsNodeSize]",
       "KubernetesWindowsNodeCount": "[steps('kubernetes').KubernetesWindowsNodeCount]",
       "AuthenticationType": "[steps('kubernetes').AuthenticationType]",
-      "PricingTier": "[steps('kubernetes').PricingTier]",
       "KubernetesVnetName": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.name]",
       "KubernetesVnetResourceGroup": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.resourceGroup]",
       "KubernetesSubnetName": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.subnets.subnet1.name]",
@@ -961,8 +1055,8 @@
       "KubernetesDockerBridgeCidr": "[steps('kubernetes').KubernetesAdvanced.KubernetesDockerBridgeCidr]",
       "SQLServerCreateNew": "[steps('sql').SQLServerCreateNew]",
       "SQLServerName": "[if(equals(steps('sql').SQLServerCreateNew, 'Yes'), steps('sql').SQLServerName, steps('sql').SQLServerNameExisting.name)]",
-      "SQLServerUser": "[steps('sql').SQLServerUserSecret]",
-      "SQLServerPassword": "[steps('sql').SQLServerPasswordSecret]",
+      "SQLServerUser": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerUserSecret, steps('sql').SQLServerUser)]",
+      "SQLServerPassword": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerPasswordSecret, steps('sql').SQLServerPassword)]",
       "SQLServerDatabaseName": "[steps('sql').SQLServerDatabaseName]",
       "StorageAccountCreateNew": "[if(equals(steps('storage').StorageAccountNameSection.StorageAccountName.newOrExisting, 'new'), 'Yes', 'No')]",
       "StorageAccountName": "[steps('storage').StorageAccountNameSection.StorageAccountName.name]",

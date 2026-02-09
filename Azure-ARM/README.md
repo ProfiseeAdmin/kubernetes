@@ -6,7 +6,7 @@
 
 Please **DO** review the guide and links below **before** you run the Azure ARM template. We have a pre-requisites script that runs before the deployment to check on the permissions needed.
 
-Click [here](https://support.profisee.com/wikis/2022_r2_support/deploying_the_AKS_cluster_with_the_arm_template) for a detailed deployment guide for Profisee ver. 2022R2 and [here](https://support.profisee.com/lms/courseinfo?id=00u00000000002b00aM&mode=browsecourses) for video training course and slide deck.
+Click [here](https://support.profisee.com/wikis/profiseeplatform/deploying_the_AKS_cluster_with_the_arm_template) for a detailed deployment guide for the latest Profisee version and [here](https://support.profisee.com/lms/courseinfo?id=00u00000000002b00aM&mode=browsecourses) for video training course and slide deck.
 
 
 Here's **what** you will need. You will need a license tied to the DNS URL that will be used by the environment (ex. customer.eastus2.cloudapp.azure.com OR YourOwnEnvironment.Customer.com) This license can be acquired from [Profisee Support](https://support.profisee.com/aspx/ProfiseeCustomerHome). 
@@ -19,9 +19,10 @@ Here's **what** will be deployed, or used if available, by the ARM template:
 5. A Storage account, or use one that you already have. If you precreate the storage account, please make sure to precreate the files share that you'd like to use.
 6. A DNS entry into a zone, assuming the necessary permissions are there. If you use external DNS, you'd have to update/create the record to match the Egress IP.
 7. A free Let's Encrypt certificate, if you choose that option. Please be aware that if you plan on using your own domain with Let's Encrypt you'll need to make sure that if there is a [CAA record set](https://letsencrypt.org/docs/caa/) on your domain it allows Let's Encrypt as the Issuing Authority.
+8. Profisee downloads a powershell script to the container's c:\fileshare (this is the Azure Storage account share) and it is used during the preStop step to collect container, IIS, product and event logs prior to container restart. The script will also auto-delete any log archives (in the all-logs-datetime.zip name format) older than 30 days. These logs can help Profisee Support in their troubleshooting effots. If you do not want to use this script, please feel free to amend the stateful set and either edit or remove it from there.
 
 Here's **how** it will be deployed. You must have a Managed Identity created to run the deployment. This Managed Identity must have the following permissions ONLY when running a deployment. After it is done, the Managed Identity can be deleted. Based on your ARM template choices, you will need some or all of the following permissions assigned to your Managed Identity:
-1. **Contributor** role to the Resource Group where AKS will be deployed. This can either be assigned directly to the Resource Group OR at Subscription level. **Note:** If you want to allow the Deployment Managed Identity to create the resource group for you, then this permission would have to be at Subscription level. 
+1. **Contributor** role to the Subscription where AKS will be deployed. **Note:** The permissions to create a Federated Identity Credential and to register ContainerService provider are presently not included in any MS specific RBAC role. This necessitates a change to where the Deployment Managed Identity must be granted Contributor to the subscription where Profisee is deployed. 
 2. **DNS Zone Contributor** role to the particular DNS zone where the entry will be created OR **Contributor** role to the DNS Zone Resource Group.This is needed only if updating DNS hosted in Azure. To follow best practice for least access, the DNS Zone Contributor on the zone itself is the recommended option.
 3. **Application Administrator** role in Azure Active Directory, so the Application registration can be created by the Deployment Managed Identity and the required permissions can be assigned to it.
 4. **Managed Identity Contributor** and **User Access Administrator** at the Subscription level. These two are needed in order for the ARM template Deployment Managed Identity to be able to create the Key Vault specific Managed Identity that will be used by Profisee to pull the values stored in the Key Vault, as well as to assign the AKSCluster-agentpool the Managed Identity Operator role (to the Resource and Infrastructure Resource groups) and Virtual Machine Operator role (to the Infrastructure Resource group). If Key Vault will not be used, these roles are not required.
@@ -40,7 +41,7 @@ Please read through the upgrade instructions both here and in our Support portal
 For customers who do **NOT** use Purview.
 1. Connect to your cluster from the Azure portal or powershell. For customers running Private PaaS please connect to your jumpbox first, then connect via powershell or Lens.
 2. Run the following commands (if you do not have the repo added that would be the first step):  
-helm -n profisee repo add profisee https://profiseedev.github.io/kubernetes  
+helm -n profisee repo add profisee https://profiseeadmin.github.io/kubernetes  
 helm repo update  
 helm upgrade -n profisee profiseeplatform profisee/profisee-platform --reuse-values --set image.tag=2022r2.0  
 kubectl logs -n profisee profisee-0 -f #this will allow you to follow the upgrade as it is happening  
@@ -51,12 +52,12 @@ For customers who **DO** use Purview.
 1. Connect to your cluster from the Azure portal or powershell. For customers running Private PaaS please connect to your jumpbox first, then connect via powershell or Lens.
 2. Locate your Purview collection Id by visiting your MS Purview Governance Portal. Go to the collection where you would like Profisee to deploy to. Your URL will look like so: web.purview.azure.com/resource/**YourPurviewAccountName**/main/datasource/collections?collection=**ThisIsTheCollectionId**&feature.tenant=**YourAzureTenantId**
 3. Run the following commands (if you do not have the repo added that would be the first step):  
-helm -n profisee repo add profisee https://profiseedev.github.io/kubernetes  
+helm -n profisee repo add profisee https://profiseeadmin.github.io/kubernetes  
 helm repo update  
 helm upgrade -n profisee profiseeplatform profisee/profisee-platform --reuse-values --set cloud.azure.purview.collectionId=YourCollectionId --set image.tag=2022r2.0  
 kubectl logs -n profisee profisee-0 -f #this will allow you to follow the upgrade as it is happening  
 4. This will upgrade your installation to version 2022r2.0 and provide the required collection Id while keeping the rest of the values. Failure to provide the collection Id would result in a failed upgrade.
-5. To run the Histroy tables upgrade please follow the steps as outlined [here](https://support.profisee.com/wikis/release_notes/upgrade_considerations_and_prerequisites)
+5. To run the History tables upgrade please follow the steps as outlined [here](https://support.profisee.com/wikis/release_notes/upgrade_considerations_and_prerequisites)
 
 
 ## Deployment steps

@@ -52,19 +52,21 @@ miname=$(echo $miname | xargs)
 
 #Get the ID of the current user (MI)
 echo "Running az identity show -g $mirg -n $miname --query principalId -o tsv"
-currentIdentityId=$(az identity show -g $mirg -n $miname --query principalId -o tsv)
-
+currentIdentityId=$(az identity show -g $mirg -n $miname --subscription $SUBSCRIPTIONID --query principalId -o tsv)
+echo $currentIdentityId
 if [ -z "$currentIdentityId" ]; then
 	err="Unable to query the Deployment Managed Identity to get principal id. Exiting with error. IF the Deployment Managed Identity has just been created, this issue is most likely intermittent. Please retry your deployment."
 	echo $err
 	set_resultAndReturn;
 fi
 
+echo "0"
 #Check to make sure you have effective Contributor access at Subscription level. This is now required at Sub level due to the lack of specific roles to use that can grant Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write and Microsoft.ContainerService/register/action. Once these are made part of a role the we will rechecked if we can lower the permissions.
 #Checking Subscription level.
 
 echo "Is the Deployment Managed Identity assigned the Contributor Role at the Subscription level?"
 subscriptionContributor=$(az role assignment list --all --assignee $currentIdentityId --output json --include-inherited --query "[?roleDefinitionName=='Contributor' && scope=='/subscriptions/$SUBSCRIPTIONID'].roleDefinitionName" --output tsv)
+echo $subscriptionContributor
 if [ -z "$subscriptionContributor" ]; then
 	echo "Role is NOT assigned at Subscription level. Exiting with error. Please assign the Contributor role to the Deployment Managed Identity at the Subscription Level. Please visit https://support.profisee.com/wikis/profiseeplatform/planning_your_managed_identity_configuration for more information."
 	#Deployment Managed Identity is not granted Contributor at Subscription level, checking Resource Group level.
@@ -108,12 +110,12 @@ fi
 #	echo "Role is assigned at Subsciption level. Continuing checks."
 #fi
 
-# If using Purview, check for the following: 
+# If using Purview, check for the following:
 # 1. Has the Purview Application Registration been added to the Data Curators role in the Purview account. If not, exit with error.
 # 2. Does the Purview Application Registartion have the proper permissions. If not, output warnings and continue.
 if [ "$USEPURVIEW" = "Yes" ]; then
 	purviewClientPermissions=$(az ad app permission list --id $PURVIEWCLIENTID --output tsv --query [].resourceAccess[].id)
-	
+
 	#Check if User.Read permission has been granted to the Purview specific Azure Application Registration.
 	if [[ $purviewClientPermissions != *"e1fe6dd8-ba31-4d61-89e7-88639da4683d"* ]]; then
 		echo "The Purview Azure AD application registration is missing the Microsoft Graph API User.Read delegated permission. Some governance features may not function until this permission is granted. This permission might require an Azure AD Global Admin consent. Please visit https://support.profisee.com/wikis/profiseeplatform/prerequisites_for_integrating_with_purview for more information. "
@@ -147,7 +149,7 @@ if [ "$USEPURVIEW" = "Yes" ]; then
 	else
 		echo $"The "$PURVIEWCOLLECTIONID" collection name provided was found. Continuing checks."
 	fi
-fi 
+fi
 
 #If using Key Vault, checks to make sure that the Deployment Managed Identity has been assigned the Managed Identity Contributor role AND User Access Administrator as Subscription level.
 if [ "$USEKEYVAULT" = "Yes" ]; then
