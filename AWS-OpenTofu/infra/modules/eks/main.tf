@@ -39,6 +39,14 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.cluster.arn
   version  = var.cluster_version
 
+  access_config {
+    authentication_mode = var.authentication_mode
+  }
+
+  lifecycle {
+    ignore_changes = [access_config]
+  }
+
   vpc_config {
     subnet_ids              = local.cluster_subnet_ids
     endpoint_public_access  = var.endpoint_public_access

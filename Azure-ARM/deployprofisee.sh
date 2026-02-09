@@ -241,14 +241,17 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 fi
 
 
-#Installation of nginx
-echo $"Installation of nginx ingress started.";
-echo $"Adding ingress-nginx repo."
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#Installation of Traefik
+echo $"Installation of Traefik ingress started.";
 
-#Get profisee nginx settings
-echo $"Acquiring nginxSettings.yaml file from Profisee repo."
-curl -fsSL -o nginxSettings.yaml "$REPOURL/Azure-ARM/nginxSettings.yaml";
+#Grab existing ingress-nginx public IP (if present) before uninstalling.
+echo "Checking for existing ingress-nginx service..."
+nginxip=$(kubectl -n profisee get services nginx-ingress-nginx-controller --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true)
+if [ -n "$nginxip" ]; then
+	echo $"Found existing ingress-nginx IP: $nginxip";
+else
+	echo $"No existing ingress-nginx IP found. Traefik will allocate a new IP.";
+fi
 
 #If nginx is present, uninstall it.
 echo "If nginx is installed, we'll uninstall it first."
@@ -259,30 +262,34 @@ if [ "$nginxpresent" = "nginx" ]; then
 	sleep 60;
 fi
 
-#Install nginx either with or without Let's Encrypt
-echo $"Installation of nginx started.";
-if [ "$USELETSENCRYPT" = "Yes" ]; then
-	echo $"Install nginx ready to integrate with Let's Encrypt's automatic certificate provisioning and renewal, and set the DNS FQDN to the load balancer's ingress public IP address."
-	helm install -n profisee nginx ingress-nginx/ingress-nginx --values nginxSettings.yaml  --set controller.service.loadBalancerIP=$nginxip --set controller.service.appProtocol=false --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
-else
-	echo $"Install nginx without integration with Let's Encrypt's automatic certificate provisioning and renewal, also do not set the DNS FQDN to the load balancer's ingress public IP address."
-	helm install -n profisee nginx ingress-nginx/ingress-nginx --values nginxSettings.yaml  --set controller.service.loadBalancerIP=$nginxip --set controller.service.appProtocol=false
-fi
+echo $"Adding Traefik repo."
+helm repo add traefik https://traefik.github.io/charts
+helm repo update
 
-echo $"Installation of nginx finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
+#Install Traefik (reuse existing IP if available).
+echo $"Installation of Traefik started.";
+traefikArgs="--set providers.kubernetesIngress.enabled=true --set providers.kubernetesIngress.ingressClass=traefik --set providers.kubernetesIngressNginx.enabled=false --set service.type=LoadBalancer"
+if [ -n "$nginxip" ]; then
+	traefikArgs="$traefikArgs --set service.spec.loadBalancerIP=$nginxip"
+fi
+if [ "$USELETSENCRYPT" = "Yes" ]; then
+	traefikArgs="$traefikArgs --set service.annotations.\"service\.beta\.kubernetes\.io/azure-dns-label-name\"=$DNSHOSTNAME"
+fi
+helm upgrade --install traefik traefik/traefik -n profisee --create-namespace $traefikArgs
+
+echo $"Installation of Traefik finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
 sleep 30;
 
 #Get the load balancer's public IP so it can be used later on.
 echo $"Let's see if the the load balancer's IP address is available."
-nginxip=$(kubectl -n profisee get services nginx-ingress-nginx-controller --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
-#
+nginxip=$(kubectl -n profisee get services traefik --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
 if [ -z "$nginxip" ]; then
 	#try again
-	echo $"Nginx is not configured properly because the load balancer's public IP is null, will wait for another minute.";
+	echo $"Traefik is not configured properly because the load balancer's public IP is null, will wait for another minute.";
     sleep 60;
-	nginxip=$(kubectl -n profisee get services nginx-ingress-nginx-controller --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
+	nginxip=$(kubectl -n profisee get services traefik --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
 	if [ -z "$nginxip" ]; then
-    	echo $"Nginx is not configured properly because the load balancer's public IP is null. Exiting with error.";
+    	echo $"Traefik is not configured properly because the load balancer's public IP is null. Exiting with error.";
 		exit 1
 	fi
 fi

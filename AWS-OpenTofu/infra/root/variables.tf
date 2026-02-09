@@ -19,7 +19,7 @@ variable "settings_bucket" {
   type = object({
     enabled       = optional(bool, true)
     name          = optional(string)
-    force_destroy = optional(bool, false)
+    force_destroy = optional(bool, true)
     kms_key_arn   = optional(string)
     tags          = optional(map(string), {})
   })
@@ -135,6 +135,7 @@ variable "eks" {
   type = object({
     cluster_name            = string
     cluster_version         = string
+    authentication_mode     = optional(string, "API_AND_CONFIG_MAP")
     endpoint_public_access  = optional(bool, false)
     endpoint_private_access = optional(bool, true)
     enabled_cluster_log_types = optional(

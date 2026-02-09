@@ -48,6 +48,12 @@ variable "cluster_kms_key_arn" {
   description = "KMS key ARN for Kubernetes secrets encryption."
 }
 
+variable "authentication_mode" {
+  type        = string
+  default     = "API_AND_CONFIG_MAP"
+  description = "EKS authentication mode (API, CONFIG_MAP, or API_AND_CONFIG_MAP). Required for access entries."
+}
+
 variable "linux_node_group" {
   type = object({
     instance_types = list(string)

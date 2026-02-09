@@ -2,6 +2,7 @@ param(
   [string]$DeploymentName,
   [string]$RepoRoot,
   [switch]$NoPrompt,
+  [switch]$ForceDestroySettingsBucket,
   [bool]$SeedSecrets = $true
 )
 
@@ -199,12 +200,16 @@ if (-not $NoPrompt) {
   $settingsBucket = $json.settings_bucket
   Ensure-ObjectProperty $settingsBucket "enabled" $true | Out-Null
   Ensure-ObjectProperty $settingsBucket "name" $null | Out-Null
-  Ensure-ObjectProperty $settingsBucket "force_destroy" $false | Out-Null
+  Ensure-ObjectProperty $settingsBucket "force_destroy" $true | Out-Null
   Ensure-ObjectProperty $settingsBucket "kms_key_arn" $null | Out-Null
 
   $settingsBucket.enabled = $true
   $settingsBucket.name = Read-Value "App Settings S3 bucket name" $settingsBucket.name
-  $settingsBucket.force_destroy = Read-Bool "App Settings bucket force destroy" $settingsBucket.force_destroy
+  if ($ForceDestroySettingsBucket) {
+    $settingsBucket.force_destroy = $true
+  } else {
+    $settingsBucket.force_destroy = Read-Bool "App Settings bucket force destroy" $settingsBucket.force_destroy
+  }
   $settingsBucket.kms_key_arn = Read-Value "App Settings bucket KMS key ARN (optional)" $settingsBucket.kms_key_arn
 
   Ensure-ObjectProperty $json "db_init" @{} | Out-Null
@@ -315,6 +320,13 @@ if ($json.db_init -and $json.db_init.image_uri -eq $defaultDbInitImage) {
 if ($json.db_init) {
   if ($json.db_init.cpu -eq 512) { $json.db_init.PSObject.Properties.Remove("cpu") }
   if ($json.db_init.memory -eq 1024) { $json.db_init.PSObject.Properties.Remove("memory") }
+}
+
+if ($ForceDestroySettingsBucket) {
+  Ensure-ObjectProperty $json "settings_bucket" @{} | Out-Null
+  $settingsBucket = $json.settings_bucket
+  Ensure-ObjectProperty $settingsBucket "force_destroy" $true | Out-Null
+  $settingsBucket.force_destroy = $true
 }
 
 Save-Config $configPath $json

@@ -230,6 +230,13 @@ Or use the helper (prompts for key values and writes `config.auto.tfvars.json`):
 .\scripts\new-deployment.ps1 -DeploymentName acme-prod
 ```
 
+If you want the settings bucket to be auto‑emptied on destroy (recommended for
+test runs), add:
+
+```powershell
+.\scripts\new-deployment.ps1 -DeploymentName acme-prod -ForceDestroySettingsBucket
+```
+
 `new-deployment.ps1` will **always seed Secrets Manager** at the end
 (recommended) so the DB init task has the secret ARNs it needs. This requires
 valid AWS CLI credentials (admin or your deploy role).
@@ -272,7 +279,7 @@ comma‑separated.
 - **Tag: Project**: `my-product`
 - **Tag: Environment**: `dev` / `test` / `prod`
 - **App Settings S3 bucket name**: `my-unique-settings-bucket`
-- **App Settings bucket force destroy**: `n` (recommended)
+- **App Settings bucket force destroy**: `y` (default). Use `-ForceDestroySettingsBucket` to force‑enable.
 - **App Settings bucket KMS key ARN (optional)**: leave blank to use SSE-S3
 - **VPC name**: `my-product`
 - **VPC CIDR block**: `10.20.0.0/16`

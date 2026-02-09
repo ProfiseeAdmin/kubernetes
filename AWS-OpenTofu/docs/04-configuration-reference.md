@@ -90,7 +90,7 @@ Key fields:
 
 Key fields:
 - `name` (globally unique)
-- `force_destroy` (default false)
+- `force_destroy` (default true)
 - `kms_key_arn` (optional)
 
 ## Platform deployer (Fargate)

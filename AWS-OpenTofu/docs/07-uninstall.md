@@ -30,6 +30,11 @@ Destroy the core infra:
 tofu -chdir=infra/root destroy -var-file=..\..\customer-deployments\<name>\config.auto.tfvars.json
 ```
 
+If `settings_bucket.force_destroy` is `true`, `tofu-destroy.ps1` will purge the
+Settings bucket (including versioned objects) to avoid `BucketNotEmpty` errors.
+Ensure your AWS credentials allow `s3:ListBucket`, `s3:ListBucketVersions`,
+`s3:DeleteObject`, and `s3:DeleteObjectVersion` on the settings bucket.
+
 ## Bootstrap (state backend)
 
 Only when you are fully done, destroy the bootstrap stack:

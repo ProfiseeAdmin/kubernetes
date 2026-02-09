@@ -8,7 +8,7 @@
   "settings_bucket": {
     "enabled": true,
     "name": "<unique-settings-bucket-name>",
-    "force_destroy": false,
+    "force_destroy": true,
     "kms_key_arn": null,
     "tags": {}
   },
