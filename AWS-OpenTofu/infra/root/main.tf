@@ -380,6 +380,10 @@ locals {
   platform_deployer_settings_uri = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_deployer_settings_key}" : ""
   kubeconfig_s3_uri              = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.kubeconfig_s3_key}" : ""
   platform_outputs_s3_uri        = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_outputs_s3_key}" : ""
+  app_deploy_enabled             = try(var.app_deploy.enabled, false)
+  app_deploy_chart_key           = try(var.app_deploy.chart_key, "charts/profisee-platform.tgz")
+  app_deploy_release_name        = try(var.app_deploy.release_name, "profisee")
+  app_deploy_namespace           = try(var.app_deploy.namespace, "profisee")
   platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
   platform_deployer_env = merge(
     {
@@ -657,14 +661,24 @@ else
   log "Route53 details not set; skipping DNS update."
 fi
 
-if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
-  cat > /tmp/platform.json <<JSON
-{"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
-JSON
-  run "Upload platform outputs" aws s3 cp /tmp/platform.json "s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
-  log "Platform outputs uploaded to s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
-fi
-EOT
+    if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
+      cat > /tmp/platform.json <<JSON
+  {"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
+  JSON
+      run "Upload platform outputs" aws s3 cp /tmp/platform.json "s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
+      log "Platform outputs uploaded to s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
+    fi
+
+    if [ "$APP_DEPLOY_ENABLED" = "true" ]; then
+      if [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ] || [ -z "$APP_CHART_S3_BUCKET" ] || [ -z "$APP_CHART_S3_KEY" ]; then
+        log "Skipping app deploy (missing SETTINGS_S3_* or APP_CHART_S3_*)."
+      else
+        run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
+        run "Download app chart" aws s3 cp "s3://$APP_CHART_S3_BUCKET/$APP_CHART_S3_KEY" /tmp/profisee-platform.tgz
+        run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" /tmp/profisee-platform.tgz -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
+      fi
+    fi
+  EOT
   db_init_env = merge(
     {
       AWS_REGION            = var.region
@@ -672,12 +686,19 @@ EOT
       DB_ENDPOINT           = module.rds_sqlserver.endpoint
       DB_NAME               = var.rds_sqlserver.db_name
       SECRET_RDS_MASTER_ARN = module.rds_sqlserver.master_user_secret_arn
+      SETTINGS_S3_BUCKET    = local.settings_bucket_enabled ? local.settings_bucket_name : ""
+      SETTINGS_S3_KEY       = local.settings_bucket_enabled ? local.platform_deployer_settings_key : ""
       KUBECONFIG_S3_BUCKET  = local.settings_bucket_enabled ? local.settings_bucket_name : ""
       KUBECONFIG_S3_KEY     = local.settings_bucket_enabled ? local.kubeconfig_s3_key : ""
       PLATFORM_OUTPUTS_S3_BUCKET = local.settings_bucket_enabled ? local.settings_bucket_name : ""
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
       ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+      APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
+      APP_CHART_S3_BUCKET        = local.settings_bucket_enabled ? local.settings_bucket_name : ""
+      APP_CHART_S3_KEY           = local.app_deploy_chart_key
+      APP_RELEASE_NAME           = local.app_deploy_release_name
+      APP_NAMESPACE              = local.app_deploy_namespace
     },
     try(var.db_init.environment, {}),
     local.db_init_secret_env

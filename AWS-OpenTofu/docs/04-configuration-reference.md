@@ -112,7 +112,18 @@ and grants `db_owner` on the app database.
 
 Key fields:
 - `enabled` (required; set to true)
-- `image_uri` (default: `public.ecr.aws/amazonlinux/amazonlinux:2023`; installs `aws`, `sqlcmd`, `kubectl`, `helm`, `eksctl` at runtime)
+- `image_uri` (default: `profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest`; tools pre‑installed)
 - `cpu`, `memory`
 - `secret_arns` (map of secrets for the container to retrieve)
+
+## App deploy (db_init task)
+
+`app_deploy` enables app install/upgrade **inside the db_init task** (Stage E).
+The task pulls the Helm chart from the Settings S3 bucket.
+
+Key fields:
+- `enabled` (default false)
+- `chart_key` (default `charts/profisee-platform.tgz` in the Settings bucket)
+- `release_name` (default `profisee`)
+- `namespace` (default `profisee`)
 

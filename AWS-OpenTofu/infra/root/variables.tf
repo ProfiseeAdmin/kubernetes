@@ -112,6 +112,17 @@ variable "db_init" {
   }
 }
 
+variable "app_deploy" {
+  type = object({
+    enabled      = optional(bool, false)
+    chart_key    = optional(string, "charts/profisee-platform.tgz")
+    release_name = optional(string, "profisee")
+    namespace    = optional(string, "profisee")
+  })
+  default     = {}
+  description = "App deployment toggles for the db_init ECS task (Stage E)."
+}
+
 variable "vpc" {
   type = object({
     name                 = string

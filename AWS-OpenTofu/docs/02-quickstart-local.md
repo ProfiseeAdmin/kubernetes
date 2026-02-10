@@ -340,19 +340,16 @@ App settings prompts (stored in `secrets/seed-secrets.json`):
 Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
 `deployments/_template/config.auto.tfvars.json.example` as a baseline.
 
-### DB init image (no build required)
+### DB init image (prebuilt tools)
 
-The db_init task runs the public Amazon Linux 2023 image and installs the
-required tools (`aws`, `sqlcmd`, `kubectl`, `helm`, `eksctl`) at runtime.
+The db_init task uses a prebuilt image that already includes the required tools.
 Leave `db_init.image_uri` at the default:
 
 ```json
 "db_init": {
-  "image_uri": "public.ecr.aws/amazonlinux/amazonlinux:2023"
+  "image_uri": "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
 }
 ```
-
-Note: first run may take a few minutes while it installs dependencies.
 
 ## Stage C - Core infra (VPC + EKS + RDS + ACM)
 
@@ -541,11 +538,8 @@ install script:
 Note: if you plan to use CloudFront in Stage E, this CNAME is temporary and
 will be updated to the CloudFront distribution later.
 
-Note: Traefik is configured to use the **NGINX compatibility provider** and
-the standard `kubernetesIngress` provider is disabled. This allows existing
-NGINX‑style Ingress manifests to work without installing ingress‑nginx. When
-you migrate your manifests to `ingressClassName: traefik`, you can switch
-Traefik back to the standard provider.
+Note: Traefik is configured to use the **standard kubernetesIngress provider**
+and the NGINX compatibility provider is disabled.
 
 ## Stage E - App + Edge (CloudFront + Route53)
 
@@ -569,6 +563,12 @@ Enable CloudFront and Route53, then set the origin domain name and alias:
 }
 ```
 
+Or use the helper to wire Stage E from platform outputs:
+
+```powershell
+.\scripts\enable-edge.ps1 -DeploymentName acme-prod
+```
+
 Get the NLB DNS name from:
 - CloudWatch logs: `/aws/ecs/<cluster-name>-db-init`, or
 - `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`
@@ -582,6 +582,28 @@ Re-apply infra:
 
 Deploy the Profisee app **now** (Stage E). If your platform script installs the
 app, run it here instead of Stage D, using the completed `Settings.yaml`.
+
+**App deploy via db_init task (no extra scripts):**
+
+1) Upload the app Helm chart to the **Settings S3 bucket**:
+
+```powershell
+aws s3 cp <path-to-profisee-platform.tgz> s3://<settings-bucket>/charts/profisee-platform.tgz
+```
+
+2) Enable app deploy in the config:
+
+```json
+"app_deploy": {
+  "enabled": true
+}
+```
+
+3) Re-apply infra (this will run db_init again and install/upgrade the app):
+
+```powershell
+.\scripts\tofu-apply.ps1 -DeploymentName acme-prod -AutoApprove
+```
 
 
 ## Validate

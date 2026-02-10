@@ -37,6 +37,12 @@
     "environment": {},
     "secret_arns": {}
   },
+  "app_deploy": {
+    "enabled": false,
+    "chart_key": "charts/profisee-platform.tgz",
+    "release_name": "profisee",
+    "namespace": "profisee"
+  },
   "vpc": {
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",
