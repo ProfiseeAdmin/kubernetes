@@ -1,6 +1,6 @@
 output "cluster_name" {
   description = "EKS cluster name."
-  value       = var.cluster_name
+  value       = aws_eks_cluster.this.name
 }
 
 output "cluster_endpoint" {
