@@ -13,7 +13,7 @@ Write-Host "Note: RDS identifier must be lowercase letters, numbers, and hyphens
 Write-Host "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
 Write-Host "      This script will normalize identifiers and coerce lists before writing the config."
 
-$defaultDbInitImage = "public.ecr.aws/amazonlinux/amazonlinux:2023"
+$defaultDbInitImage = "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
 
 function Read-Value([string]$Label, $Current) {
   $display = if ($null -eq $Current -or $Current -eq "") { "" } else { " [$Current]" }

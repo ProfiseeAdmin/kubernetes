@@ -81,7 +81,7 @@ variable "platform_deployer" {
 variable "db_init" {
   type = object({
     enabled     = optional(bool, false)
-    image_uri   = optional(string, "public.ecr.aws/amazonlinux/amazonlinux:2023")
+    image_uri   = optional(string, "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest")
     cpu         = optional(number, 512)
     memory      = optional(number, 1024)
     tags        = optional(map(string), {})

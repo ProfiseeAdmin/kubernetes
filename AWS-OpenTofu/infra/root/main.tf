@@ -319,6 +319,22 @@ resource "aws_iam_role_policy_attachment" "db_init_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+data "aws_iam_policy_document" "db_init_execution" {
+  count = local.db_init_enabled && local.db_init_acr_secret_arn != null ? 1 : 0
+
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [local.db_init_acr_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "db_init_execution" {
+  count = local.db_init_enabled && local.db_init_acr_secret_arn != null ? 1 : 0
+
+  role   = aws_iam_role.db_init_execution[0].id
+  policy = data.aws_iam_policy_document.db_init_execution[0].json
+}
+
 resource "aws_iam_role_policy_attachment" "platform_deployer_execution" {
   count = local.platform_deployer_enabled ? 1 : 0
 
@@ -376,7 +392,8 @@ locals {
     try(var.platform_deployer.environment, {}),
     local.platform_deployer_secret_env
   )
-  db_init_secret_env = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
+  db_init_secret_env      = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
+  db_init_acr_secret_arn  = try(local.db_init_secret_arns["acr"], null)
 db_init_command = <<-EOT
 set -eo pipefail
 
@@ -452,40 +469,7 @@ download_tar_gz() {
   return 1
 }
 
-run "Install base packages" dnf -y install --allowerasing curl-minimal tar gzip unzip jq ca-certificates shadow-utils
-curl_step "Add Microsoft repo" "https://packages.microsoft.com/config/rhel/9/prod.repo" "/etc/yum.repos.d/mssql-release.repo" || exit 1
-dnf remove -y unixODBC-utf16 unixODBC-utf16-devel >/dev/null 2>&1 || true
-run "Install SQL tools" dnf install -y msodbcsql18 mssql-tools18 unixODBC-devel
-rm -rf /var/cache/dnf >/dev/null 2>&1 || true
-
-# AWS CLI v2
-curl_step "Download AWS CLI" "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" "/tmp/awscliv2.zip" || exit 1
-run "Unpack AWS CLI" unzip -q /tmp/awscliv2.zip -d /tmp
-run "Install AWS CLI" /tmp/aws/install
-rm -rf /tmp/aws /tmp/awscliv2.zip
-
-# kubectl
-K8S_VER=$(curl -fsSL -L $CURL_RETRY_OPTS https://dl.k8s.io/release/stable.txt)
-curl_step "Download kubectl" "https://dl.k8s.io/release/$K8S_VER/bin/linux/amd64/kubectl" "/usr/local/bin/kubectl" || exit 1
-chmod +x /usr/local/bin/kubectl >/dev/null 2>&1 || true
-
-# helm
-HELM_VER=$(curl -fsSL -L $CURL_RETRY_OPTS https://get.helm.sh/helm-latest-version || true)
-if [ -z "$HELM_VER" ]; then HELM_VER="v3.14.4"; fi
-download_tar_gz "Download Helm" "https://get.helm.sh/helm-$HELM_VER-linux-amd64.tar.gz" "/tmp/helm.tgz" || exit 1
-run "Unpack Helm" tar -xzf /tmp/helm.tgz -C /tmp
-mv /tmp/linux-amd64/helm /usr/local/bin/helm
-chmod +x /usr/local/bin/helm >/dev/null 2>&1 || true
-rm -rf /tmp/helm.tgz /tmp/linux-amd64
-
-# eksctl
-EKSCTL_URL="https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
-download_tar_gz "Download eksctl" "$EKSCTL_URL" "/tmp/eksctl.tar.gz" || exit 1
-run "Unpack eksctl" tar -xzf /tmp/eksctl.tar.gz -C /usr/local/bin
-chmod +x /usr/local/bin/eksctl >/dev/null 2>&1 || true
-rm -f /tmp/eksctl.tar.gz
-
-log "Tooling install complete."
+log "Using prebuilt db-init tools image; skipping tool installation."
 
 export PATH="/opt/mssql-tools18/bin:$PATH"
 export AWS_PAGER=""
@@ -630,11 +614,11 @@ fi
 export KUBECONFIG=/tmp/kubeconfig
 log "Deploying Traefik (NLB)..."
 cat > /tmp/traefik-values.yaml <<'YAML'
-providers:
-  kubernetesIngress:
-    enabled: false
-  kubernetesIngressNginx:
-    enabled: true
+  providers:
+    kubernetesIngress:
+      enabled: true
+    kubernetesIngressNginx:
+      enabled: false
 
 service:
   type: LoadBalancer
@@ -746,26 +730,33 @@ resource "aws_ecs_task_definition" "db_init" {
   task_role_arn            = aws_iam_role.db_init_task[0].arn
 
   container_definitions = jsonencode([
-    {
-      name      = "db-init"
-      image     = var.db_init.image_uri
-      essential = true
-      command   = ["/bin/bash", "-lc", local.db_init_command]
-      environment = [
-        for k, v in local.db_init_env : {
-          name  = k
-          value = tostring(v)
+    merge(
+      {
+        name      = "db-init"
+        image     = var.db_init.image_uri
+        essential = true
+        command   = ["/bin/bash", "-lc", local.db_init_command]
+        environment = [
+          for k, v in local.db_init_env : {
+            name  = k
+            value = tostring(v)
+          }
+        ]
+        logConfiguration = {
+          logDriver = "awslogs"
+          options = {
+            awslogs-group         = aws_cloudwatch_log_group.db_init[0].name
+            awslogs-region        = var.region
+            awslogs-stream-prefix = "db-init"
+          }
         }
-      ]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.db_init[0].name
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "db-init"
+      },
+      local.db_init_acr_secret_arn != null ? {
+        repositoryCredentials = {
+          credentialsParameter = local.db_init_acr_secret_arn
         }
-      }
-    }
+      } : {}
+    )
   ])
 }
 
@@ -1074,6 +1065,18 @@ resource "aws_security_group_rule" "jumpbox_to_eks_api" {
   security_group_id        = module.eks.cluster_security_group_id
   source_security_group_id = module.jumpbox_windows[0].security_group_id
   description              = "Allow jumpbox access to EKS API"
+}
+
+resource "aws_security_group_rule" "db_init_to_eks_api" {
+  count = local.db_init_enabled ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  security_group_id        = module.eks.cluster_security_group_id
+  source_security_group_id = aws_security_group.db_init[0].id
+  description              = "Allow db-init Fargate access to EKS API"
 }
 
 module "outputs_contract" {
