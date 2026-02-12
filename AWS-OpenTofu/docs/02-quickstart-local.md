@@ -353,7 +353,7 @@ Leave `db_init.image_uri` at the default:
 
 ## Stage C - Core infra (VPC + EKS + RDS + ACM)
 
-Disable CloudFront and Route53 for this stage:
+Disable CloudFront and Route53 for this stage (template defaults enable them):
 
 ```json
 "cloudfront": { "enabled": false },
@@ -523,6 +523,7 @@ For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
 **Automatic (default):** The **db_init** Fargate task now runs Stage D after it
 finishes DB init. It:
 - Installs Traefik via Helm and waits for the NLB hostname.
+- Uses a **managed NLB security group** created by OpenTofu.
 - Logs the NLB DNS name in `/aws/ecs/<cluster-name>-db-init`.
 - Writes platform outputs to the App Settings S3 bucket:
   `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`.
@@ -585,21 +586,17 @@ app, run it here instead of Stage D, using the completed `Settings.yaml`.
 
 **App deploy via db_init task (no extra scripts):**
 
-1) Upload the app Helm chart to the **Settings S3 bucket**:
-
-```powershell
-aws s3 cp <path-to-profisee-platform.tgz> s3://<settings-bucket>/charts/profisee-platform.tgz
-```
-
-2) Enable app deploy in the config:
+1) Enable app deploy in the config:
 
 ```json
 "app_deploy": {
-  "enabled": true
+  "enabled": true,
+  "release_name": "profiseeplatform",
+  "namespace": "profisee"
 }
 ```
 
-3) Re-apply infra (this will run db_init again and install/upgrade the app):
+2) Re-apply infra (this will run db_init again and install/upgrade the app):
 
 ```powershell
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -AutoApprove

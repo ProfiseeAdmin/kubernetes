@@ -376,13 +376,41 @@ resource "aws_security_group" "db_init" {
   tags = local.db_init_tags
 }
 
+resource "aws_security_group" "traefik_nlb" {
+  name        = "${var.eks.cluster_name}-traefik-nlb-sg"
+  description = "Traefik NLB security group (managed by OpenTofu)"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = local.db_init_tags
+}
+
 locals {
   platform_deployer_settings_uri = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_deployer_settings_key}" : ""
   kubeconfig_s3_uri              = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.kubeconfig_s3_key}" : ""
   platform_outputs_s3_uri        = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_outputs_s3_key}" : ""
   app_deploy_enabled             = try(var.app_deploy.enabled, false)
-  app_deploy_chart_key           = try(var.app_deploy.chart_key, "charts/profisee-platform.tgz")
-  app_deploy_release_name        = try(var.app_deploy.release_name, "profisee")
+  app_deploy_release_name        = try(var.app_deploy.release_name, "profiseeplatform")
   app_deploy_namespace           = try(var.app_deploy.namespace, "profisee")
   platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
   platform_deployer_env = merge(
@@ -617,18 +645,19 @@ fi
 
 export KUBECONFIG=/tmp/kubeconfig
 log "Deploying Traefik (NLB)..."
-cat > /tmp/traefik-values.yaml <<'YAML'
-  providers:
-    kubernetesIngress:
-      enabled: true
-    kubernetesIngressNginx:
-      enabled: false
+  cat > /tmp/traefik-values.yaml <<YAML
+    providers:
+      kubernetesIngress:
+        enabled: true
+      kubernetesIngressNginx:
+        enabled: false
 
-service:
-  type: LoadBalancer
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb
-YAML
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      service.beta.kubernetes.io/aws-load-balancer-security-groups: "$TRAEFIK_NLB_SG_ID"
+  YAML
 run "Add Traefik Helm repo" helm repo add traefik https://traefik.github.io/charts --force-update
 run "Update Helm repos" helm repo update
 run "Install/Upgrade Traefik" helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f /tmp/traefik-values.yaml
@@ -670,12 +699,13 @@ fi
     fi
 
     if [ "$APP_DEPLOY_ENABLED" = "true" ]; then
-      if [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ] || [ -z "$APP_CHART_S3_BUCKET" ] || [ -z "$APP_CHART_S3_KEY" ]; then
-        log "Skipping app deploy (missing SETTINGS_S3_* or APP_CHART_S3_*)."
+      if [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
+        log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
-        run "Download app chart" aws s3 cp "s3://$APP_CHART_S3_BUCKET/$APP_CHART_S3_KEY" /tmp/profisee-platform.tgz
-        run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" /tmp/profisee-platform.tgz -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
+        run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
+        run "Update Helm repos" helm repo update
+        run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" profisee/profisee-platform -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
       fi
     fi
   EOT
@@ -694,9 +724,8 @@ fi
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
       ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+      TRAEFIK_NLB_SG_ID          = aws_security_group.traefik_nlb.id
       APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
-      APP_CHART_S3_BUCKET        = local.settings_bucket_enabled ? local.settings_bucket_name : ""
-      APP_CHART_S3_KEY           = local.app_deploy_chart_key
       APP_RELEASE_NAME           = local.app_deploy_release_name
       APP_NAMESPACE              = local.app_deploy_namespace
     },

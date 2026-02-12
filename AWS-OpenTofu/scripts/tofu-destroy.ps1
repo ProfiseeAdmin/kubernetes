@@ -32,8 +32,12 @@ function Remove-S3BucketContents([string]$Bucket, [string]$Region) {
 
   Write-Host ("Purging S3 bucket contents (including versions): {0}" -f $Bucket)
   $listArgs = @("s3api", "list-object-versions", "--bucket", $Bucket, "--region", $Region, "--output", "json")
-  $raw = & aws @listArgs 2>$null
+  $raw = & aws @listArgs 2>&1
   if ($LASTEXITCODE -ne 0) {
+    if ($raw -match "NoSuchBucket") {
+      Write-Host "Bucket $Bucket does not exist; skipping purge."
+      return
+    }
     throw "Failed to list objects in S3 bucket $Bucket (exit code $LASTEXITCODE)."
   }
   if (-not $raw) {

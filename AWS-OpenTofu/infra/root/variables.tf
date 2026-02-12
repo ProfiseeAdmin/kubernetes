@@ -115,8 +115,7 @@ variable "db_init" {
 variable "app_deploy" {
   type = object({
     enabled      = optional(bool, false)
-    chart_key    = optional(string, "charts/profisee-platform.tgz")
-    release_name = optional(string, "profisee")
+    release_name = optional(string, "profiseeplatform")
     namespace    = optional(string, "profisee")
   })
   default     = {}

@@ -37,12 +37,11 @@
     "environment": {},
     "secret_arns": {}
   },
-  "app_deploy": {
-    "enabled": false,
-    "chart_key": "charts/profisee-platform.tgz",
-    "release_name": "profisee",
-    "namespace": "profisee"
-  },
+    "app_deploy": {
+      "enabled": false,
+      "release_name": "profiseeplatform",
+      "namespace": "profisee"
+    },
   "vpc": {
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",
@@ -104,7 +103,7 @@
     "hosted_zone_id": "Z1234567890ABC"
   },
   "cloudfront": {
-    "enabled": false,
+    "enabled": true,
     "aliases": [
       "app.example.com"
     ],
@@ -112,7 +111,7 @@
     "origin_custom_headers": {}
   },
   "route53": {
-    "enabled": false,
+    "enabled": true,
     "hosted_zone_id": "Z1234567890ABC",
     "record_name": "app.example.com"
   },

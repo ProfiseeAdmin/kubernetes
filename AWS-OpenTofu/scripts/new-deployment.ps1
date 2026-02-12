@@ -183,15 +183,24 @@ if (-not (Test-Path -LiteralPath $examplePath)) {
   throw "Template config not found: $examplePath"
 }
 
-if (-not (Test-Path -LiteralPath $configPath)) {
-  Copy-Item -Force $examplePath $configPath
-}
+  if (-not (Test-Path -LiteralPath $configPath)) {
+    Copy-Item -Force $examplePath $configPath
+  }
 
-$json = Get-Content -Raw -Path $configPath | ConvertFrom-Json
+  $json = Get-Content -Raw -Path $configPath | ConvertFrom-Json
+  Ensure-ObjectProperty $json "cloudfront" @{} | Out-Null
+  Ensure-ObjectProperty $json.cloudfront "enabled" $true | Out-Null
+  Ensure-ObjectProperty $json.cloudfront "aliases" @() | Out-Null
+  Ensure-ObjectProperty $json.cloudfront "origin_domain_name" $null | Out-Null
+  Ensure-ObjectProperty $json.cloudfront "origin_custom_headers" @{} | Out-Null
+  Ensure-ObjectProperty $json "route53" @{} | Out-Null
+  Ensure-ObjectProperty $json.route53 "enabled" $true | Out-Null
+  Ensure-ObjectProperty $json.route53 "hosted_zone_id" $null | Out-Null
+  Ensure-ObjectProperty $json.route53 "record_name" $null | Out-Null
 
-if (-not $NoPrompt) {
-  $json.region = Read-Value "Primary region" $json.region
-  $json.use1_region = Read-Value "us-east-1 region (ACM/CloudFront)" $json.use1_region
+  if (-not $NoPrompt) {
+    $json.region = Read-Value "Primary region" $json.region
+    $json.use1_region = Read-Value "us-east-1 region (ACM/CloudFront)" $json.use1_region
 
   $json.tags.Project = Read-Value "Tag: Project" $json.tags.Project
   $json.tags.Environment = Read-Value "Tag: Environment" $json.tags.Environment
@@ -208,7 +217,6 @@ if (-not $NoPrompt) {
   if ($ForceDestroySettingsBucket) {
     $settingsBucket.force_destroy = $true
   } else {
-    $settingsBucket.force_destroy = Read-Bool "App Settings bucket force destroy" $settingsBucket.force_destroy
   }
   $settingsBucket.kms_key_arn = Read-Value "App Settings bucket KMS key ARN (optional)" $settingsBucket.kms_key_arn
 
@@ -234,8 +242,6 @@ if (-not $NoPrompt) {
 
   $json.eks.cluster_name = Read-Value "EKS cluster name" $json.eks.cluster_name
   $json.eks.cluster_version = Read-Value "EKS cluster version" $json.eks.cluster_version
-  $json.eks.endpoint_public_access = Read-Bool "EKS public endpoint" $json.eks.endpoint_public_access
-  $json.eks.endpoint_private_access = Read-Bool "EKS private endpoint" $json.eks.endpoint_private_access
 
   Save-Config $configPath $json
 }
@@ -276,18 +282,7 @@ if (-not $NoPrompt) {
   $json.acm.domain_name = Read-Value "ACM domain name" $json.acm.domain_name
   $json.acm.hosted_zone_id = Read-Value "ACM hosted zone ID" $json.acm.hosted_zone_id
 
-  $json.route53.hosted_zone_id = Read-Value "Route53 hosted zone ID" $json.route53.hosted_zone_id
-  $json.route53.record_name = Read-Value "Route53 record name" $json.route53.record_name
-
-  $json.cloudfront.enabled = Read-Bool "CloudFront enabled (Stage E)" $json.cloudfront.enabled
-  $json.route53.enabled = Read-Bool "Route53 enabled (Stage E)" $json.route53.enabled
-
-  if ($json.cloudfront.enabled) {
-    $json.cloudfront.aliases = Read-List "CloudFront aliases (comma-separated)" $json.cloudfront.aliases
-    $json.cloudfront.origin_domain_name = Read-Value "CloudFront origin domain (NLB DNS)" $json.cloudfront.origin_domain_name
-  }
-
-  $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
+    $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
   if ($json.jumpbox.enabled) {
     $json.jumpbox.instance_type = Read-Value "Jumpbox instance type" $json.jumpbox.instance_type
     $json.jumpbox.key_name = Read-Value "Jumpbox key pair name (optional, for RDP)" $json.jumpbox.key_name

@@ -418,14 +418,11 @@ if ($oidcClientId -or $oidcClientSecret) {
   $secretArns.oidc = Put-Secret $secretName $oidcPayload $Region
 }
 
-# TLS cert/key (manual)
-$useTls = Read-Value "Provide manual TLS cert/key? (y/n)" "n"
+# TLS cert/key (manual) - driven by seed file, no extra prompt
 $certPath = if ($seed -and $seed.tls.cert_path) { $seed.tls.cert_path } else { $null }
 $keyPath = if ($seed -and $seed.tls.key_path) { $seed.tls.key_path } else { $null }
-if ($useTls -match "^(y|yes|true|1)$") {
-  if (-not $certPath) { $certPath = Read-Value "Path to TLS cert PEM" "" }
-  if (-not $keyPath) { $keyPath = Read-Value "Path to TLS key PEM" "" }
-  if ($certPath -and (Test-Path -LiteralPath $certPath) -and $keyPath -and (Test-Path -LiteralPath $keyPath)) {
+if ($certPath -and $keyPath) {
+  if ((Test-Path -LiteralPath $certPath) -and (Test-Path -LiteralPath $keyPath)) {
     $tlsPayload = @{
       cert = Get-Content -Raw -Path $certPath
       key  = Get-Content -Raw -Path $keyPath
@@ -433,7 +430,7 @@ if ($useTls -match "^(y|yes|true|1)$") {
     $secretName = "$Prefix/tls"
     $secretArns.tls = Put-Secret $secretName $tlsPayload $Region
   } else {
-    Write-Host "TLS cert/key not found; skipping TLS secret."
+    Write-Host "TLS cert/key not found at provided paths; skipping TLS secret."
   }
 }
 

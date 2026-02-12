@@ -56,14 +56,14 @@ Key fields:
 ## CloudFront (edge)
 
 `cloudfront` is **stage‑gated**:
-- `enabled`: false for Stage C, true for Stage E
+- `enabled`: set false for Stage C (and for deployments not using CloudFront)
 - `origin_domain_name`: NLB DNS name (from platform)
 - `aliases`: customer hostname
 
 ## Route53 (edge DNS)
 
 `route53` is also **stage‑gated**:
-- `enabled`: false for Stage C, true for Stage E
+- `enabled`: set false for Stage C (and for deployments not using Route53)
 - `hosted_zone_id`, `record_name`
 
 ## Jumpbox (optional)
@@ -119,11 +119,10 @@ Key fields:
 ## App deploy (db_init task)
 
 `app_deploy` enables app install/upgrade **inside the db_init task** (Stage E).
-The task pulls the Helm chart from the Settings S3 bucket.
+The task uses the Profisee Helm repo and installs the chart with your Settings.yaml.
 
 Key fields:
 - `enabled` (default false)
-- `chart_key` (default `charts/profisee-platform.tgz` in the Settings bucket)
-- `release_name` (default `profisee`)
+- `release_name` (default `profiseeplatform`)
 - `namespace` (default `profisee`)
 
