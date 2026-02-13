@@ -707,7 +707,19 @@ JSON
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
+        chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/db-init-step.log | awk '/^version:/ {print $2; exit}')
+        if [ -n "$chart_version" ]; then
+          log "Profisee chart version (repo): $chart_version"
+        else
+          log "Profisee chart version (repo): <unknown>"
+        fi
         run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" profisee/profisee-platform -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
+        installed_version=$(helm get metadata "$APP_RELEASE_NAME" -n "$APP_NAMESPACE" 2>/dev/null | awk '/^VERSION:/ {print $2; exit}')
+        if [ -n "$installed_version" ]; then
+          log "Profisee chart version (installed): $installed_version"
+        else
+          log "Profisee chart version (installed): <unknown>"
+        fi
       fi
     fi
   EOT
