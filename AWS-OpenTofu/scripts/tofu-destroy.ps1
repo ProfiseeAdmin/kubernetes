@@ -83,6 +83,73 @@ function Remove-S3BucketContents([string]$Bucket, [string]$Region) {
   }
 }
 
+function Get-VpcIdByName([string]$VpcName, [string]$Region) {
+  if (-not $VpcName) { return $null }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) {
+    Write-Host "AWS CLI not found; skipping VPC lookup."
+    return $null
+  }
+  $tagName = "$VpcName-vpc"
+  $args = @("ec2", "describe-vpcs", "--filters", "Name=tag:Name,Values=$tagName", "--query", "Vpcs[0].VpcId", "--output", "text", "--region", $Region)
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to lookup VPC by tag Name={0}: {1}" -f $tagName, $raw)
+    return $null
+  }
+  if ($raw -and $raw -ne "None") { return $raw.Trim() }
+  return $null
+}
+
+function Remove-LoadBalancers([string]$VpcId, [string]$Region) {
+  if (-not $VpcId) { return }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) {
+    Write-Host "AWS CLI not found; skipping load balancer cleanup."
+    return
+  }
+
+  Write-Host ("Checking for load balancers in VPC {0}..." -f $VpcId)
+
+  # ELBv2 (ALB/NLB)
+  $lbArgs = @("elbv2", "describe-load-balancers", "--region", $Region, "--query", "LoadBalancers[?VpcId=='$VpcId'].[LoadBalancerArn,LoadBalancerName]", "--output", "json")
+  $lbRaw = & aws @lbArgs 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to list ELBv2 load balancers in VPC $VpcId (exit code $LASTEXITCODE)."
+  }
+  $lbList = @()
+  if ($lbRaw) { $lbList = $lbRaw | ConvertFrom-Json }
+  foreach ($lb in $lbList) {
+    $arn = $lb[0]
+    $name = $lb[1]
+    if ($arn) {
+      Write-Host ("Deleting ELBv2 load balancer: {0} ({1})" -f $name, $arn)
+      & aws elbv2 delete-load-balancer --load-balancer-arn $arn --region $Region | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to delete ELBv2 load balancer $name (exit code $LASTEXITCODE)."
+      }
+    }
+  }
+
+  # Classic ELB
+  $elbArgs = @("elb", "describe-load-balancers", "--region", $Region, "--query", "LoadBalancerDescriptions[?VPCId=='$VpcId'].LoadBalancerName", "--output", "json")
+  $elbRaw = & aws @elbArgs 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to list classic ELBs in VPC $VpcId (exit code $LASTEXITCODE)."
+  }
+  $elbList = @()
+  if ($elbRaw) { $elbList = $elbRaw | ConvertFrom-Json }
+  foreach ($name in $elbList) {
+    if ($name) {
+      Write-Host ("Deleting classic ELB: {0}" -f $name)
+      & aws elb delete-load-balancer --load-balancer-name $name --region $Region | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to delete classic ELB $name (exit code $LASTEXITCODE)."
+      }
+    }
+  }
+}
+
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
 $deploymentPath = Join-Path $resolvedRepoRoot "customer-deployments\$DeploymentName"
 
@@ -107,6 +174,15 @@ if (-not $region) { $region = "us-east-1" }
 
 if ($settingsEnabled -and $settingsForceDestroy -and $settingsBucketName) {
   Remove-S3BucketContents -Bucket $settingsBucketName -Region $region
+}
+
+$vpcCfg = Get-OptionalProperty $config "vpc"
+$vpcName = Get-OptionalProperty $vpcCfg "name"
+$vpcId = Get-VpcIdByName -VpcName $vpcName -Region $region
+if ($vpcId) {
+  Remove-LoadBalancers -VpcId $vpcId -Region $region
+} else {
+  Write-Host "VPC ID not found; skipping load balancer cleanup."
 }
 
 $infraRoot = Join-Path $resolvedRepoRoot "infra\root"
