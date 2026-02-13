@@ -37,9 +37,9 @@ locals {
     $kubeKey = "${var.kubeconfig_s3_key}"
     $kubeRegion = "${var.region}"
     if ($kubeBucket -and $kubeKey -and $kubeRegion) {
-      $kubeDir = "C:\\kubeconfig"
+      $kubeDir = "C:\\Users\\Administrator\\.kube"
       New-Item -ItemType Directory -Path $kubeDir -Force | Out-Null
-      $kubePath = Join-Path $kubeDir "kubeconfig"
+      $kubePath = Join-Path $kubeDir "config"
       $maxAttempts = 60
       $delaySeconds = 60
       for ($i = 1; $i -le $maxAttempts; $i++) {

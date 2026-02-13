@@ -11,6 +11,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-PropValue {
+  param(
+    [object]$Obj,
+    [string]$Name
+  )
+  if ($null -eq $Obj -or -not $Name) { return $null }
+  $prop = $Obj.PSObject.Properties[$Name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
   throw "AWS CLI (aws) is not on PATH. Install AWS CLI and try again."
 }
@@ -37,7 +48,19 @@ if (-not $BucketName -or $BucketName -eq "") {
 }
 
 if (-not $Key -or $Key -eq "") {
-  $Key = "settings/$DeploymentName/Settings.yaml"
+  $cfgKey = $null
+  $pd = Get-PropValue $cfg "platform_deployer"
+  $cfgKey = Get-PropValue $pd "settings_key"
+  $clusterName = $null
+  $eks = Get-PropValue $cfg "eks"
+  $clusterName = Get-PropValue $eks "cluster_name"
+  if ($cfgKey) {
+    $Key = $cfgKey
+  } elseif ($clusterName) {
+    $Key = "settings/$clusterName/Settings.yaml"
+  } else {
+    $Key = "settings/$DeploymentName/Settings.yaml"
+  }
 }
 
 if (-not $Region -or $Region -eq "") {

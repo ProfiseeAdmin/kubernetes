@@ -38,10 +38,10 @@
     "secret_arns": {}
   },
     "app_deploy": {
-      "enabled": false,
-      "release_name": "profiseeplatform",
-      "namespace": "profisee"
-    },
+        "enabled": true,
+        "release_name": "profiseeplatform",
+        "namespace": "profisee"
+      },
   "vpc": {
     "name": "my-product",
     "cidr_block": "10.20.0.0/16",

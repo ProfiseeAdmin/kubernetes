@@ -236,7 +236,8 @@ data "aws_iam_policy_document" "db_init_task" {
   statement {
     effect = "Allow"
     actions = [
-      "eks:DescribeCluster"
+      "eks:DescribeCluster",
+      "eks:ListAccessEntries"
     ]
     resources = [
       "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.eks.cluster_name}"
@@ -247,6 +248,8 @@ data "aws_iam_policy_document" "db_init_task" {
     effect = "Allow"
     actions = [
       "s3:PutObject",
+      "s3:GetObject",
+      "s3:GetObjectVersion",
       "s3:ListBucket",
       "s3:GetBucketLocation"
     ]
@@ -280,6 +283,7 @@ data "aws_iam_policy_document" "db_init_task" {
     content {
       effect = "Allow"
       actions = [
+        "kms:Decrypt",
         "kms:Encrypt",
         "kms:GenerateDataKey"
       ]
@@ -376,40 +380,11 @@ resource "aws_security_group" "db_init" {
   tags = local.db_init_tags
 }
 
-resource "aws_security_group" "traefik_nlb" {
-  name        = "${var.eks.cluster_name}-traefik-nlb-sg"
-  description = "Traefik NLB security group (managed by OpenTofu)"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = local.db_init_tags
-}
-
 locals {
   platform_deployer_settings_uri = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_deployer_settings_key}" : ""
   kubeconfig_s3_uri              = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.kubeconfig_s3_key}" : ""
   platform_outputs_s3_uri        = local.settings_bucket_enabled ? "s3://${local.settings_bucket_name}/${local.platform_outputs_s3_key}" : ""
-  app_deploy_enabled             = try(var.app_deploy.enabled, false)
+  app_deploy_enabled             = try(var.app_deploy.enabled, true)
   app_deploy_release_name        = try(var.app_deploy.release_name, "profiseeplatform")
   app_deploy_namespace           = try(var.app_deploy.namespace, "profisee")
   platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
@@ -644,23 +619,36 @@ else
 fi
 
 export KUBECONFIG=/tmp/kubeconfig
-log "Deploying Traefik (NLB)..."
+  log "Ensuring Traefik (NLB)..."
+  need_traefik_upgrade=1
+  if helm status traefik -n traefik >/dev/null 2>&1; then
+    current_os=$(kubectl get deploy traefik -n traefik -o jsonpath='{.spec.template.spec.nodeSelector.kubernetes\.io/os}' 2>/dev/null || true)
+    sg_anno=$(kubectl get svc traefik -n traefik -o jsonpath='{.metadata.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-security-groups}' 2>/dev/null || true)
+    if [ "$current_os" = "linux" ] && [ -z "$sg_anno" ]; then
+      need_traefik_upgrade=0
+    fi
+  fi
+  if [ "$need_traefik_upgrade" -eq 1 ]; then
   cat > /tmp/traefik-values.yaml <<YAML
-    providers:
-      kubernetesIngress:
-        enabled: true
-      kubernetesIngressNginx:
-        enabled: false
+providers:
+  kubernetesIngress:
+    enabled: true
+  kubernetesIngressNginx:
+    enabled: false
 
-  service:
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      service.beta.kubernetes.io/aws-load-balancer-security-groups: "$TRAEFIK_NLB_SG_ID"
-  YAML
-run "Add Traefik Helm repo" helm repo add traefik https://traefik.github.io/charts --force-update
-run "Update Helm repos" helm repo update
-run "Install/Upgrade Traefik" helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f /tmp/traefik-values.yaml
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+nodeSelector:
+  kubernetes.io/os: linux
+YAML
+  run "Add Traefik Helm repo" helm repo add traefik https://traefik.github.io/charts --force-update
+  run "Update Helm repos" helm repo update
+  run "Install/Upgrade Traefik" helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f /tmp/traefik-values.yaml
+  else
+    log "Traefik already configured; skipping Helm upgrade."
+  fi
 
 log "Waiting for Traefik LoadBalancer hostname..."
 lb_host=""
@@ -678,30 +666,44 @@ while [ -z "$lb_host" ]; do
   fi
   sleep 10
 done
-log "Traefik NLB DNS: $lb_host"
+  log "Traefik NLB DNS: $lb_host"
 
-if [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
-  log "Updating Route53 CNAME $ROUTE53_RECORD_NAME -> $lb_host"
-  cat > /tmp/route53.json <<JSON
+  r53_updated=0
+  if [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
+    log "Updating Route53 CNAME $ROUTE53_RECORD_NAME -> $lb_host"
+    cat > /tmp/route53.json <<JSON
 {"Comment":"Profisee Traefik NLB","Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"$ROUTE53_RECORD_NAME","Type":"CNAME","TTL":60,"ResourceRecords":[{"Value":"$lb_host"}]}}]}
 JSON
-  run "Update Route53 record" aws route53 change-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --change-batch file:///tmp/route53.json
-else
-  log "Route53 details not set; skipping DNS update."
-fi
+    run "Update Route53 record" aws route53 change-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --change-batch file:///tmp/route53.json
+    r53_updated=1
+  else
+    log "Route53 details not set; skipping DNS update."
+  fi
 
-    if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
-      cat > /tmp/platform.json <<JSON
-  {"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
-  JSON
-      run "Upload platform outputs" aws s3 cp /tmp/platform.json "s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
+      if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
+        cat > /tmp/platform.json <<JSON
+{"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
+JSON
+        run "Upload platform outputs" aws s3 cp /tmp/platform.json "s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
       log "Platform outputs uploaded to s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
     fi
 
     if [ "$APP_DEPLOY_ENABLED" = "true" ]; then
-      if [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
+      if [ -z "$lb_host" ]; then
+        log "Skipping app deploy (Traefik NLB hostname missing)."
+      elif [ "$r53_updated" -ne 1 ]; then
+        log "Skipping app deploy (Route53 not updated)."
+      elif [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
+        if ! kubectl get crd clusterissuers.cert-manager.io >/dev/null 2>&1; then
+          run "Add Jetstack Helm repo" helm repo add jetstack https://charts.jetstack.io --force-update
+          run "Update Helm repos" helm repo update
+          run "Install cert-manager" helm upgrade --install cert-manager jetstack/cert-manager -n "$APP_NAMESPACE" --create-namespace --set crds.enabled=true --set nodeSelector."kubernetes\.io/os"=linux --set webhook.nodeSelector."kubernetes\.io/os"=linux --set cainjector.nodeSelector."kubernetes\.io/os"=linux --set startupapicheck.nodeSelector."kubernetes\.io/os"=linux
+          run "Wait for cert-manager CRDs" kubectl wait --for=condition=Established crd/clusterissuers.cert-manager.io --timeout=120s
+        else
+          log "cert-manager CRDs already present; skipping install."
+        fi
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
@@ -723,11 +725,10 @@ fi
       PLATFORM_OUTPUTS_S3_BUCKET = local.settings_bucket_enabled ? local.settings_bucket_name : ""
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
-      ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
-      TRAEFIK_NLB_SG_ID          = aws_security_group.traefik_nlb.id
-      APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
-      APP_RELEASE_NAME           = local.app_deploy_release_name
-      APP_NAMESPACE              = local.app_deploy_namespace
+        ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+        APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
+        APP_RELEASE_NAME           = local.app_deploy_release_name
+        APP_NAMESPACE              = local.app_deploy_namespace
     },
     try(var.db_init.environment, {}),
     local.db_init_secret_env
@@ -823,6 +824,26 @@ resource "aws_eks_access_policy_association" "platform_deployer" {
 
   cluster_name  = module.eks.cluster_name
   principal_arn = aws_iam_role.platform_deployer_task[0].arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
+resource "aws_eks_access_entry" "jumpbox" {
+  count = local.jumpbox_enabled ? 1 : 0
+
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.jumpbox_windows[0].iam_role_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "jumpbox" {
+  count = local.jumpbox_enabled ? 1 : 0
+
+  cluster_name  = module.eks.cluster_name
+  principal_arn = module.jumpbox_windows[0].iam_role_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
@@ -1030,6 +1051,34 @@ resource "aws_iam_policy" "jumpbox_settings" {
   tags   = local.jumpbox_tags
 }
 
+data "aws_iam_policy_document" "jumpbox_eks" {
+  count = local.jumpbox_enabled ? 1 : 0
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "eks:DescribeCluster"
+    ]
+    resources = [
+      "arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.eks.cluster_name}"
+    ]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["eks:ListClusters"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "jumpbox_eks" {
+  count = length(data.aws_iam_policy_document.jumpbox_eks) > 0 ? 1 : 0
+
+  name   = "${var.eks.cluster_name}-jumpbox-eks"
+  policy = data.aws_iam_policy_document.jumpbox_eks[0].json
+  tags   = local.jumpbox_tags
+}
+
 data "aws_iam_policy_document" "jumpbox_route53" {
   count = local.jumpbox_route53_enabled ? 1 : 0
 
@@ -1057,6 +1106,7 @@ locals {
     var.jumpbox.iam_policy_arns,
     length(aws_iam_policy.jumpbox_secrets) > 0 ? [aws_iam_policy.jumpbox_secrets[0].arn] : [],
     length(aws_iam_policy.jumpbox_settings) > 0 ? [aws_iam_policy.jumpbox_settings[0].arn] : [],
+    length(aws_iam_policy.jumpbox_eks) > 0 ? [aws_iam_policy.jumpbox_eks[0].arn] : [],
     length(aws_iam_policy.jumpbox_route53) > 0 ? [aws_iam_policy.jumpbox_route53[0].arn] : []
   )
 }

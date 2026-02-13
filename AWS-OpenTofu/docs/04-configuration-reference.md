@@ -120,9 +120,10 @@ Key fields:
 
 `app_deploy` enables app install/upgrade **inside the db_init task** (Stage E).
 The task uses the Profisee Helm repo and installs the chart with your Settings.yaml.
+App deploy runs only after the Traefik NLB hostname is available and the Route53 record update succeeds.
 
 Key fields:
-- `enabled` (default false)
+- `enabled` (default true)
 - `release_name` (default `profiseeplatform`)
 - `namespace` (default `profisee`)
 

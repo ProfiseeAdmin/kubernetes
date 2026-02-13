@@ -523,11 +523,12 @@ For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
 **Automatic (default):** The **db_init** Fargate task now runs Stage D after it
 finishes DB init. It:
 - Installs Traefik via Helm and waits for the NLB hostname.
-- Uses a **managed NLB security group** created by OpenTofu.
 - Logs the NLB DNS name in `/aws/ecs/<cluster-name>-db-init`.
 - Writes platform outputs to the App Settings S3 bucket:
   `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`.
 - Updates Route53 `route53.record_name` → NLB hostname (CNAME), if provided.
+After the NLB hostname is available **and** Route53 update succeeds, the task
+installs the app by default (see `app_deploy`).
 
 **Manual (optional, rerun):** From inside the VPC, you can re‑run the platform
 install script:
@@ -586,11 +587,11 @@ app, run it here instead of Stage D, using the completed `Settings.yaml`.
 
 **App deploy via db_init task (no extra scripts):**
 
-1) Enable app deploy in the config:
+1) App deploy is enabled by default. To disable it:
 
 ```json
 "app_deploy": {
-  "enabled": true,
+  "enabled": false,
   "release_name": "profiseeplatform",
   "namespace": "profisee"
 }

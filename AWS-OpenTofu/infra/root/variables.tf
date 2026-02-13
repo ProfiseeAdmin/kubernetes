@@ -114,7 +114,7 @@ variable "db_init" {
 
 variable "app_deploy" {
   type = object({
-    enabled      = optional(bool, false)
+    enabled      = optional(bool, true)
     release_name = optional(string, "profiseeplatform")
     namespace    = optional(string, "profisee")
   })
