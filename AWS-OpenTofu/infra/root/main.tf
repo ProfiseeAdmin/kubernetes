@@ -705,8 +705,30 @@ JSON
           log "cert-manager CRDs already present; skipping install."
         fi
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
+        helm repo remove profisee >/dev/null 2>&1 || true
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
+        repo_url=$(helm repo list 2>/tmp/db-init-step.log | awk '$1=="profisee"{print $2; exit}')
+        if [ -n "$repo_url" ]; then
+          log "Profisee helm repo URL: $repo_url"
+        else
+          log "Profisee helm repo URL: <not-found>"
+        fi
+        remote_version=$(curl -fsSL https://profiseeadmin.github.io/kubernetes/index.yaml 2>/tmp/db-init-step.log | awk '
+          /name:[[:space:]]*profisee-platform/ {in_chart=1; next}
+          in_chart && /version:[[:space:]]*/ {print $2; exit}
+        ')
+        if [ -n "$remote_version" ]; then
+          log "Profisee chart version (index.yaml): $remote_version"
+        else
+          log "Profisee chart version (index.yaml): <unknown>"
+        fi
+        repo_versions=$(helm search repo profisee/profisee-platform --versions 2>/tmp/db-init-step.log | awk 'NR>1{print $2}' | head -n 5 | tr '\n' ' ')
+        if [ -n "$repo_versions" ]; then
+          log "Profisee chart versions (helm cache top5): $repo_versions"
+        else
+          log "Profisee chart versions (helm cache top5): <none>"
+        fi
         chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/db-init-step.log | awk '/^version:/ {print $2; exit}')
         if [ -n "$chart_version" ]; then
           log "Profisee chart version (repo): $chart_version"

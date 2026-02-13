@@ -256,6 +256,29 @@ if (Test-Path -LiteralPath $settingsPath) {
 }
 
 # ---------------------------------------------------------------------------
+# Upload Settings.yaml to S3 for ECS-based app deployment
+# ---------------------------------------------------------------------------
+$dbInitCfgForSettings = Get-PropValue $cfg "db_init"
+$dbInitEnabledForSettings = Get-PropValue $dbInitCfgForSettings "enabled"
+$settingsBucketCfg = Get-PropValue $cfg "settings_bucket"
+$settingsBucketEnabled = Get-PropValue $settingsBucketCfg "enabled"
+if ($null -eq $settingsBucketEnabled) { $settingsBucketEnabled = $true }
+if ($dbInitEnabledForSettings -eq $true -and $settingsBucketEnabled -eq $true) {
+  if (Test-Path -LiteralPath $settingsPath) {
+    $uploadSettingsScript = Join-Path $resolvedRepoRoot "scripts\upload-settings.ps1"
+    if (-not (Test-Path -LiteralPath $uploadSettingsScript)) {
+      throw "upload-settings.ps1 not found: $uploadSettingsScript"
+    }
+
+    Write-Host "Uploading Settings.yaml to settings bucket..."
+    & $uploadSettingsScript -DeploymentName $DeploymentName -RepoRoot $resolvedRepoRoot
+    Write-Host "Settings.yaml uploaded."
+  } else {
+    Write-Host ("Settings.yaml not found; skipping S3 upload: {0}" -f $settingsPath)
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Auto-run DB init task (Fargate) when enabled
 # ---------------------------------------------------------------------------
 $dbInitCfg = Get-PropValue $cfg "db_init"
