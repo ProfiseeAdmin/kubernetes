@@ -738,6 +738,17 @@ else
 fi
 
 export KUBECONFIG=/tmp/kubeconfig
+windows_nodes=$(kubectl get nodes -l kubernetes.io/os=windows --no-headers 2>/dev/null | wc -l | tr -d ' ')
+if [ -n "$windows_nodes" ] && [ "$windows_nodes" -gt 0 ] 2>/dev/null; then
+  win_ipam_enabled=$(kubectl get configmap amazon-vpc-cni -n kube-system -o jsonpath='{.data.enable-windows-ipam}' 2>/dev/null || true)
+  if [ "$win_ipam_enabled" != "true" ]; then
+    run "Enable VPC CNI Windows IPAM" kubectl patch configmap amazon-vpc-cni -n kube-system --type merge -p '{"data":{"enable-windows-ipam":"true"}}'
+    run "Restart aws-node daemonset" kubectl -n kube-system rollout restart daemonset/aws-node
+    run "Wait for aws-node daemonset" kubectl -n kube-system rollout status daemonset/aws-node --timeout=300s
+  else
+    log "VPC CNI Windows IPAM already enabled."
+  fi
+fi
   log "Ensuring Traefik (NLB)..."
   need_traefik_upgrade=1
   if helm status traefik -n traefik >/dev/null 2>&1; then
