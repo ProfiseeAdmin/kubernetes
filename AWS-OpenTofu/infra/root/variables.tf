@@ -55,14 +55,14 @@ variable "app_ebs_volume_id" {
 
 variable "platform_deployer" {
   type = object({
-    enabled        = optional(bool, false)
-    image_uri      = optional(string)
-    cpu            = optional(number, 1024)
-    memory         = optional(number, 2048)
-    settings_key   = optional(string)
-    tags           = optional(map(string), {})
-    environment    = optional(map(string), {})
-    secret_arns    = optional(map(string), {})
+    enabled      = optional(bool, false)
+    image_uri    = optional(string)
+    cpu          = optional(number, 1024)
+    memory       = optional(number, 2048)
+    settings_key = optional(string)
+    tags         = optional(map(string), {})
+    environment  = optional(map(string), {})
+    secret_arns  = optional(map(string), {})
   })
   default     = {}
   description = "Fargate one-shot deployer for platform components (Traefik/addons)."
@@ -146,6 +146,7 @@ variable "eks" {
     cluster_name            = string
     cluster_version         = string
     authentication_mode     = optional(string, "API_AND_CONFIG_MAP")
+    install_ebs_csi_addon   = optional(bool, true)
     endpoint_public_access  = optional(bool, false)
     endpoint_private_access = optional(bool, true)
     enabled_cluster_log_types = optional(
@@ -176,25 +177,25 @@ variable "eks" {
 
 variable "rds_sqlserver" {
   type = object({
-    identifier                  = string
-    engine_version              = string
-    instance_class              = string
-    allocated_storage           = number
-    max_allocated_storage       = optional(number)
-    storage_type                = optional(string, "gp3")
-    iops                        = optional(number)
-    storage_encrypted           = optional(bool, true)
-    kms_key_arn                 = optional(string)
-    db_name                     = optional(string) # App DB name created by db_init (not the RDS initial DB)
-    master_username             = string
-    manage_master_user_password = optional(bool, true)
+    identifier                    = string
+    engine_version                = string
+    instance_class                = string
+    allocated_storage             = number
+    max_allocated_storage         = optional(number)
+    storage_type                  = optional(string, "gp3")
+    iops                          = optional(number)
+    storage_encrypted             = optional(bool, true)
+    kms_key_arn                   = optional(string)
+    db_name                       = optional(string) # App DB name created by db_init (not the RDS initial DB)
+    master_username               = string
+    manage_master_user_password   = optional(bool, true)
     master_user_secret_kms_key_id = optional(string)
-    allowed_security_group_ids  = optional(list(string), [])
-    backup_retention_days       = optional(number, 0)
-    multi_az                    = optional(bool, false)
-    publicly_accessible         = optional(bool, false)
-    deletion_protection         = optional(bool, false)
-    tags                        = optional(map(string), {})
+    allowed_security_group_ids    = optional(list(string), [])
+    backup_retention_days         = optional(number, 0)
+    multi_az                      = optional(bool, false)
+    publicly_accessible           = optional(bool, false)
+    deletion_protection           = optional(bool, false)
+    tags                          = optional(map(string), {})
   })
   description = "RDS SQL Server configuration."
 }
@@ -231,32 +232,32 @@ variable "secrets" {
 
 variable "acm" {
   type = object({
-    domain_name             = string
+    domain_name               = string
     subject_alternative_names = optional(list(string), [])
-    hosted_zone_id          = string
-    validation_method       = optional(string, "DNS")
-    create_route53_records  = optional(bool, true)
-    tags                    = optional(map(string), {})
+    hosted_zone_id            = string
+    validation_method         = optional(string, "DNS")
+    create_route53_records    = optional(bool, true)
+    tags                      = optional(map(string), {})
   })
   description = "ACM certificate configuration (us-east-1)."
 }
 
 variable "cloudfront" {
   type = object({
-    enabled                = optional(bool, true)
-    aliases                = optional(list(string), [])
-    origin_domain_name     = optional(string)
-    origin_id              = optional(string, "origin")
-    origin_protocol_policy = optional(string, "https-only")
-    origin_ssl_protocols   = optional(list(string), ["TLSv1.2"])
-    origin_read_timeout    = optional(number, 60)
+    enabled                  = optional(bool, true)
+    aliases                  = optional(list(string), [])
+    origin_domain_name       = optional(string)
+    origin_id                = optional(string, "origin")
+    origin_protocol_policy   = optional(string, "https-only")
+    origin_ssl_protocols     = optional(list(string), ["TLSv1.2"])
+    origin_read_timeout      = optional(number, 60)
     origin_keepalive_timeout = optional(number, 60)
-    origin_custom_headers  = optional(map(string), {})
-    price_class            = optional(string, "PriceClass_100")
-    web_acl_id             = optional(string)
-    enable_logging         = optional(bool, false)
-    logging_bucket         = optional(string)
-    tags                   = optional(map(string), {})
+    origin_custom_headers    = optional(map(string), {})
+    price_class              = optional(string, "PriceClass_100")
+    web_acl_id               = optional(string)
+    enable_logging           = optional(bool, false)
+    logging_bucket           = optional(string)
+    tags                     = optional(map(string), {})
   })
   description = "CloudFront distribution configuration."
 
@@ -292,20 +293,20 @@ variable "route53" {
 
 variable "jumpbox" {
   type = object({
-    enabled              = optional(bool, false)
-    name                 = optional(string, "jumpbox")
-    subnet_id            = optional(string)
-    instance_type        = optional(string, "m6i.large")
-    ami_id               = optional(string)
-    key_name             = optional(string)
-    iam_policy_arns      = optional(list(string), [])
-    assume_role_arn      = optional(string)
-    associate_public_ip  = optional(bool, false)
-    root_volume_size_gb  = optional(number, 80)
-    enable_rdp_ingress   = optional(bool, false)
-    allowed_rdp_cidrs    = optional(list(string), [])
-    user_data            = optional(string)
-    tags                 = optional(map(string), {})
+    enabled             = optional(bool, false)
+    name                = optional(string, "jumpbox")
+    subnet_id           = optional(string)
+    instance_type       = optional(string, "m6i.large")
+    ami_id              = optional(string)
+    key_name            = optional(string)
+    iam_policy_arns     = optional(list(string), [])
+    assume_role_arn     = optional(string)
+    associate_public_ip = optional(bool, false)
+    root_volume_size_gb = optional(number, 80)
+    enable_rdp_ingress  = optional(bool, false)
+    allowed_rdp_cidrs   = optional(list(string), [])
+    user_data           = optional(string)
+    tags                = optional(map(string), {})
   })
   default     = {}
   description = "Windows jumpbox configuration."

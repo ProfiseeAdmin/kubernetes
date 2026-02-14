@@ -16,6 +16,7 @@ locals {
   platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
   db_init_enabled                = try(var.db_init.enabled, false)
   db_init_tags                   = merge(var.tags, try(var.db_init.tags, {}))
+  ebs_csi_addon_enabled          = try(var.eks.install_ebs_csi_addon, true)
 }
 
 data "aws_caller_identity" "current" {}
@@ -93,6 +94,63 @@ module "eks" {
   linux_node_group          = var.eks.linux_node_group
   windows_node_group        = var.eks.windows_node_group
   tags                      = var.eks.tags
+}
+
+data "aws_iam_policy_document" "ebs_csi_assume" {
+  count = local.ebs_csi_addon_enabled ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  count = local.ebs_csi_addon_enabled ? 1 : 0
+
+  name               = "${var.eks.cluster_name}-ebs-csi-driver"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume[0].json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  count = local.ebs_csi_addon_enabled ? 1 : 0
+
+  role       = aws_iam_role.ebs_csi[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  count = local.ebs_csi_addon_enabled ? 1 : 0
+
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  service_account_role_arn    = aws_iam_role.ebs_csi[0].arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+
+  depends_on = [
+    module.eks,
+    aws_iam_role_policy_attachment.ebs_csi
+  ]
 }
 
 resource "aws_ecs_cluster" "platform_deployer" {
@@ -757,6 +815,8 @@ JSON
       elif [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
+        run "Wait for EBS CSI controller" kubectl -n kube-system wait --for=condition=Available deploy/ebs-csi-controller --timeout=600s
+        run "Wait for EBS CSI node daemonset" kubectl -n kube-system rollout status daemonset/ebs-csi-node --timeout=600s
         if ! kubectl get crd clusterissuers.cert-manager.io >/dev/null 2>&1; then
           run "Add Jetstack Helm repo" helm repo add jetstack https://charts.jetstack.io --force-update
           run "Update Helm repos" helm repo update
@@ -1322,6 +1382,8 @@ module "outputs_contract" {
     cluster_name                          = module.eks.cluster_name
     cluster_endpoint                      = module.eks.cluster_endpoint
     cluster_ca_data                       = module.eks.cluster_ca_data
+    ebs_csi_addon_arn                     = local.ebs_csi_addon_enabled ? aws_eks_addon.ebs_csi[0].arn : null
+    ebs_csi_addon_version                 = local.ebs_csi_addon_enabled ? aws_eks_addon.ebs_csi[0].addon_version : null
     rds_endpoint                          = module.rds_sqlserver.endpoint
     rds_port                              = module.rds_sqlserver.port
     rds_master_user_secret_arn            = module.rds_sqlserver.master_user_secret_arn

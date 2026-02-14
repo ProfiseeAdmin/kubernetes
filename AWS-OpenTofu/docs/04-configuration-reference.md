@@ -28,6 +28,7 @@ Key fields:
 
 Key fields:
 - `cluster_name`, `cluster_version`
+- `install_ebs_csi_addon` (default true; installs managed `aws-ebs-csi-driver`)
 - `endpoint_public_access` (default false)
 - `endpoint_private_access` (default true)
 - `linux_node_group`, `windows_node_group`

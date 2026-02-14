@@ -523,6 +523,7 @@ For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
 **Automatic (default):** The **db_init** Fargate task now runs Stage D after it
 finishes DB init. It:
 - Installs Traefik via Helm and waits for the NLB hostname.
+- Uses the Terraform-managed `aws-ebs-csi-driver` add-on and waits for CSI controller/node readiness before app install.
 - Logs the NLB DNS name in `/aws/ecs/<cluster-name>-db-init`.
 - Writes platform outputs to the App Settings S3 bucket:
   `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`.

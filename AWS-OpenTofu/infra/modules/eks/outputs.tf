@@ -23,6 +23,11 @@ output "oidc_provider_arn" {
   value       = aws_iam_openid_connect_provider.this.arn
 }
 
+output "cluster_oidc_issuer_url" {
+  description = "OIDC issuer URL for IAM role trust policies."
+  value       = aws_eks_cluster.this.identity[0].oidc[0].issuer
+}
+
 output "linux_node_group_name" {
   description = "Linux node group name."
   value       = aws_eks_node_group.linux.node_group_name
