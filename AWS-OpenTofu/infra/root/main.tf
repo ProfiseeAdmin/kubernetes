@@ -1,21 +1,21 @@
 locals {
-  jumpbox_enabled   = try(var.jumpbox.enabled, false)
-  jumpbox_name      = coalesce(try(var.jumpbox.name, null), "jumpbox")
-  jumpbox_subnet_id = coalesce(try(var.jumpbox.subnet_id, null), module.vpc.private_subnet_ids[0])
-  jumpbox_tags      = merge(var.tags, try(var.jumpbox.tags, {}))
-  app_ebs_enabled   = try(var.app_ebs.enabled, true)
-  app_ebs_az        = coalesce(try(var.app_ebs.availability_zone, null), var.vpc.azs[0])
-  app_ebs_tags      = merge(var.tags, try(var.app_ebs.tags, {}))
-  settings_bucket_enabled = try(var.settings_bucket.enabled, true)
-  settings_bucket_name    = try(var.settings_bucket.name, null)
-  settings_bucket_tags    = merge(var.tags, try(var.settings_bucket.tags, {}))
-  platform_deployer_enabled = try(var.platform_deployer.enabled, false)
-  platform_deployer_tags    = merge(var.tags, try(var.platform_deployer.tags, {}))
+  jumpbox_enabled                = try(var.jumpbox.enabled, false)
+  jumpbox_name                   = coalesce(try(var.jumpbox.name, null), "jumpbox")
+  jumpbox_subnet_id              = coalesce(try(var.jumpbox.subnet_id, null), module.vpc.private_subnet_ids[0])
+  jumpbox_tags                   = merge(var.tags, try(var.jumpbox.tags, {}))
+  app_ebs_enabled                = try(var.app_ebs.enabled, true)
+  app_ebs_az                     = coalesce(try(var.app_ebs.availability_zone, null), var.vpc.azs[0])
+  app_ebs_tags                   = merge(var.tags, try(var.app_ebs.tags, {}))
+  settings_bucket_enabled        = try(var.settings_bucket.enabled, true)
+  settings_bucket_name           = try(var.settings_bucket.name, null)
+  settings_bucket_tags           = merge(var.tags, try(var.settings_bucket.tags, {}))
+  platform_deployer_enabled      = try(var.platform_deployer.enabled, false)
+  platform_deployer_tags         = merge(var.tags, try(var.platform_deployer.tags, {}))
   platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
-  kubeconfig_s3_key = "kubeconfig/${var.eks.cluster_name}/kubeconfig"
-  platform_outputs_s3_key = "outputs/${var.eks.cluster_name}/platform.json"
-  db_init_enabled = try(var.db_init.enabled, false)
-  db_init_tags    = merge(var.tags, try(var.db_init.tags, {}))
+  kubeconfig_s3_key              = "kubeconfig/${var.eks.cluster_name}/kubeconfig"
+  platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
+  db_init_enabled                = try(var.db_init.enabled, false)
+  db_init_tags                   = merge(var.tags, try(var.db_init.tags, {}))
 }
 
 data "aws_caller_identity" "current" {}
@@ -80,19 +80,19 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "settings" {
 module "eks" {
   source = "../modules/eks"
 
-  cluster_name            = var.eks.cluster_name
-  cluster_version         = var.eks.cluster_version
-  authentication_mode     = var.eks.authentication_mode
-  vpc_id                  = module.vpc.vpc_id
-  private_subnet_ids      = module.vpc.private_subnet_ids
-  public_subnet_ids       = module.vpc.public_subnet_ids
-  endpoint_public_access  = var.eks.endpoint_public_access
-  endpoint_private_access = var.eks.endpoint_private_access
+  cluster_name              = var.eks.cluster_name
+  cluster_version           = var.eks.cluster_version
+  authentication_mode       = var.eks.authentication_mode
+  vpc_id                    = module.vpc.vpc_id
+  private_subnet_ids        = module.vpc.private_subnet_ids
+  public_subnet_ids         = module.vpc.public_subnet_ids
+  endpoint_public_access    = var.eks.endpoint_public_access
+  endpoint_private_access   = var.eks.endpoint_private_access
   enabled_cluster_log_types = var.eks.enabled_cluster_log_types
-  cluster_kms_key_arn        = var.eks.cluster_kms_key_arn
-  linux_node_group           = var.eks.linux_node_group
-  windows_node_group         = var.eks.windows_node_group
-  tags                       = var.eks.tags
+  cluster_kms_key_arn       = var.eks.cluster_kms_key_arn
+  linux_node_group          = var.eks.linux_node_group
+  windows_node_group        = var.eks.windows_node_group
+  tags                      = var.eks.tags
 }
 
 resource "aws_ecs_cluster" "platform_deployer" {
@@ -201,8 +201,8 @@ data "aws_iam_policy_document" "platform_deployer_task" {
   }
 
   statement {
-    effect = "Allow"
-    actions = ["kms:Decrypt"]
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
     resources = try(var.settings_bucket.kms_key_arn, null) != null ? [var.settings_bucket.kms_key_arn] : ["*"]
   }
 }
@@ -273,8 +273,8 @@ data "aws_iam_policy_document" "db_init_task" {
   }
 
   statement {
-    effect = "Allow"
-    actions = ["kms:Decrypt"]
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
     resources = try(var.rds_sqlserver.master_user_secret_kms_key_id, null) != null ? [var.rds_sqlserver.master_user_secret_kms_key_id] : ["*"]
   }
 
@@ -390,18 +390,18 @@ locals {
   platform_deployer_secret_env   = { for k, v in try(var.platform_deployer.secret_arns, {}) : "SECRET_${upper(k)}_ARN" => v }
   platform_deployer_env = merge(
     {
-      CLUSTER_NAME     = var.eks.cluster_name
-      AWS_REGION       = var.region
-      SETTINGS_S3_URI  = local.platform_deployer_settings_uri
+      CLUSTER_NAME       = var.eks.cluster_name
+      AWS_REGION         = var.region
+      SETTINGS_S3_URI    = local.platform_deployer_settings_uri
       SETTINGS_S3_BUCKET = local.settings_bucket_name
-      SETTINGS_S3_KEY  = local.platform_deployer_settings_key
+      SETTINGS_S3_KEY    = local.platform_deployer_settings_key
     },
     try(var.platform_deployer.environment, {}),
     local.platform_deployer_secret_env
   )
-  db_init_secret_env      = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
-  db_init_acr_secret_arn  = try(local.db_init_secret_arns["acr"], null)
-db_init_command = <<-EOT
+  db_init_secret_env     = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
+  db_init_acr_secret_arn = try(local.db_init_secret_arns["acr"], null)
+  db_init_command        = <<-EOT
 set -eo pipefail
 
 LOG_LEVEL="$${DB_INIT_LOG_LEVEL:-info}"
@@ -515,6 +515,39 @@ get_secret_json() {
   echo "$out"
 }
 
+get_secret_text() {
+  local arn="$1"
+  local label="$2"
+  local out
+  log_err "Reading secret $label..."
+  set +e
+  out=$(aws secretsmanager get-secret-value --secret-id "$arn" --region "$AWS_REGION" --query SecretString --output text --no-cli-pager 2>/tmp/secret.err)
+  local rc=$?
+  set -e
+  out=$(printf '%s' "$out" | sed '1s/^\xEF\xBB\xBF//')
+  local err
+  err=$(cat /tmp/secret.err 2>/dev/null || true)
+  if [ $rc -ne 0 ]; then
+    if [ -z "$err" ]; then err="<empty>"; fi
+    log_err "Failed to read secret $label ($arn): $err"
+    return 1
+  fi
+  echo "$out"
+}
+
+escape_sed_pattern() { printf '%s' "$1" | sed -e 's/[.[\*^$(){}?+|\\/]/\\&/g'; }
+escape_sed_replacement() { printf '%s' "$1" | sed -e 's/[\\/&]/\\&/g'; }
+replace_settings_placeholder() {
+  local file="$1"
+  local placeholder="$2"
+  local value="$3"
+  local p
+  local r
+  p=$(escape_sed_pattern "$placeholder")
+  r=$(escape_sed_replacement "$value")
+  sed -i "s/$p/$r/g" "$file"
+}
+
 MASTER_JSON=$(get_secret_json "$SECRET_RDS_MASTER_ARN" "master") || exit 1
 APP_JSON=$(get_secret_json "$SECRET_SQL_ARN" "app-sql") || exit 1
 
@@ -526,6 +559,34 @@ APP_PASS=$(echo "$APP_JSON" | jq -r '.password // empty')
 if [ -z "$MASTER_USER" ] || [ -z "$MASTER_PASS" ] || [ -z "$APP_USER" ] || [ -z "$APP_PASS" ]; then
   log "Missing username/password in Secrets Manager payloads."
   exit 1
+fi
+
+LICENSE_DATA=""
+if [ -n "$SECRET_LICENSE_ARN" ]; then
+  license_raw=$(get_secret_text "$SECRET_LICENSE_ARN" "license") || exit 1
+  LICENSE_DATA=$(printf '%s' "$license_raw" | tr -d '\r\n')
+fi
+
+ACR_USER=""
+ACR_PASS=""
+ACR_EMAIL=""
+ACR_AUTH=""
+if [ -n "$SECRET_ACR_ARN" ]; then
+  ACR_JSON=$(get_secret_json "$SECRET_ACR_ARN" "acr") || exit 1
+  ACR_USER=$(echo "$ACR_JSON" | jq -r '.username // empty')
+  ACR_PASS=$(echo "$ACR_JSON" | jq -r '.password // empty')
+  ACR_EMAIL=$(echo "$ACR_JSON" | jq -r '.email // empty')
+  ACR_AUTH=$(echo "$ACR_JSON" | jq -r '.auth // empty')
+fi
+
+OIDC_URL=""
+OIDC_CLIENT_ID=""
+OIDC_CLIENT_SECRET=""
+if [ -n "$SECRET_OIDC_ARN" ]; then
+  OIDC_JSON=$(get_secret_json "$SECRET_OIDC_ARN" "oidc") || exit 1
+  OIDC_URL=$(echo "$OIDC_JSON" | jq -r '.authority // empty')
+  OIDC_CLIENT_ID=$(echo "$OIDC_JSON" | jq -r '.client_id // empty')
+  OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | jq -r '.client_secret // empty')
 fi
 
 escape_sql_literal() { printf "%s" "$1" | sed "s/'/''/g"; }
@@ -705,6 +766,25 @@ JSON
           log "cert-manager CRDs already present; skipping install."
         fi
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
+        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERNAME' "$APP_USER"
+        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERPASSWORD' "$APP_PASS"
+        if [ -n "$ACR_USER" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRUSER' "$ACR_USER"; fi
+        if [ -n "$ACR_PASS" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRPASSWORD' "$ACR_PASS"; fi
+        if [ -n "$ACR_EMAIL" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACREMAIL' "$ACR_EMAIL"; fi
+        if [ -n "$ACR_AUTH" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRAUTH' "$ACR_AUTH"; fi
+        if [ -n "$OIDC_URL" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCURL' "$OIDC_URL"; fi
+        if [ -n "$OIDC_CLIENT_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$CLIENTID' "$OIDC_CLIENT_ID"; fi
+        if [ -n "$OIDC_CLIENT_SECRET" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCCLIENTSECRET' "$OIDC_CLIENT_SECRET"; fi
+        if [ -n "$LICENSE_DATA" ]; then
+          if printf '%s' "$LICENSE_DATA" | base64 -d >/dev/null 2>&1; then
+            replace_settings_placeholder /tmp/Settings.yaml '$LICENSEDATA' "$LICENSE_DATA"
+          else
+            log "License secret is not valid base64; cannot render licenseFileData."
+            exit 1
+          fi
+        fi
+        unresolved_count=$( (grep -o '\$[A-Za-z0-9_]*' /tmp/Settings.yaml || true) | sort -u | wc -l | tr -d ' ' )
+        log "Settings placeholder tokens remaining: $unresolved_count"
         helm repo remove profisee >/dev/null 2>&1 || true
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
@@ -747,22 +827,22 @@ JSON
   EOT
   db_init_env = merge(
     {
-      AWS_REGION            = var.region
-      CLUSTER_NAME          = var.eks.cluster_name
-      DB_ENDPOINT           = module.rds_sqlserver.endpoint
-      DB_NAME               = var.rds_sqlserver.db_name
-      SECRET_RDS_MASTER_ARN = module.rds_sqlserver.master_user_secret_arn
-      SETTINGS_S3_BUCKET    = local.settings_bucket_enabled ? local.settings_bucket_name : ""
-      SETTINGS_S3_KEY       = local.settings_bucket_enabled ? local.platform_deployer_settings_key : ""
-      KUBECONFIG_S3_BUCKET  = local.settings_bucket_enabled ? local.settings_bucket_name : ""
-      KUBECONFIG_S3_KEY     = local.settings_bucket_enabled ? local.kubeconfig_s3_key : ""
+      AWS_REGION                 = var.region
+      CLUSTER_NAME               = var.eks.cluster_name
+      DB_ENDPOINT                = module.rds_sqlserver.endpoint
+      DB_NAME                    = var.rds_sqlserver.db_name
+      SECRET_RDS_MASTER_ARN      = module.rds_sqlserver.master_user_secret_arn
+      SETTINGS_S3_BUCKET         = local.settings_bucket_enabled ? local.settings_bucket_name : ""
+      SETTINGS_S3_KEY            = local.settings_bucket_enabled ? local.platform_deployer_settings_key : ""
+      KUBECONFIG_S3_BUCKET       = local.settings_bucket_enabled ? local.settings_bucket_name : ""
+      KUBECONFIG_S3_KEY          = local.settings_bucket_enabled ? local.kubeconfig_s3_key : ""
       PLATFORM_OUTPUTS_S3_BUCKET = local.settings_bucket_enabled ? local.settings_bucket_name : ""
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
-        ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
-        APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
-        APP_RELEASE_NAME           = local.app_deploy_release_name
-        APP_NAMESPACE              = local.app_deploy_namespace
+      ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+      APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
+      APP_RELEASE_NAME           = local.app_deploy_release_name
+      APP_NAMESPACE              = local.app_deploy_namespace
     },
     try(var.db_init.environment, {}),
     local.db_init_secret_env
@@ -922,17 +1002,17 @@ module "rds_sqlserver" {
   master_user_secret_kms_key_id = var.rds_sqlserver.master_user_secret_kms_key_id
   vpc_id                        = module.vpc.vpc_id
   subnet_ids                    = module.vpc.private_subnet_ids
-  allowed_security_group_ids    = concat(
+  allowed_security_group_ids = concat(
     var.rds_sqlserver.allowed_security_group_ids,
     local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : [],
     local.platform_deployer_enabled ? [aws_security_group.platform_deployer[0].id] : [],
     local.db_init_enabled ? [aws_security_group.db_init[0].id] : []
   )
-  backup_retention_days         = var.rds_sqlserver.backup_retention_days
-  multi_az                      = var.rds_sqlserver.multi_az
-  publicly_accessible           = var.rds_sqlserver.publicly_accessible
-  deletion_protection           = var.rds_sqlserver.deletion_protection
-  tags                          = var.rds_sqlserver.tags
+  backup_retention_days = var.rds_sqlserver.backup_retention_days
+  multi_az              = var.rds_sqlserver.multi_az
+  publicly_accessible   = var.rds_sqlserver.publicly_accessible
+  deletion_protection   = var.rds_sqlserver.deletion_protection
+  tags                  = var.rds_sqlserver.tags
 }
 
 module "kms" {
@@ -953,33 +1033,33 @@ module "acm_use1" {
   source    = "../modules/acm_use1"
   providers = { aws = aws.use1 }
 
-  domain_name             = var.acm.domain_name
+  domain_name               = var.acm.domain_name
   subject_alternative_names = var.acm.subject_alternative_names
-  hosted_zone_id          = var.acm.hosted_zone_id
-  validation_method       = var.acm.validation_method
-  create_route53_records  = var.acm.create_route53_records
-  tags                    = var.acm.tags
+  hosted_zone_id            = var.acm.hosted_zone_id
+  validation_method         = var.acm.validation_method
+  create_route53_records    = var.acm.create_route53_records
+  tags                      = var.acm.tags
 }
 
 module "cloudfront" {
   count  = var.cloudfront.enabled ? 1 : 0
   source = "../modules/cloudfront"
 
-  enabled                   = var.cloudfront.enabled
-  aliases                   = var.cloudfront.aliases
-  acm_certificate_arn       = module.acm_use1.certificate_arn
-  origin_domain_name        = var.cloudfront.origin_domain_name
-  origin_id                 = var.cloudfront.origin_id
-  origin_protocol_policy    = var.cloudfront.origin_protocol_policy
-  origin_ssl_protocols      = var.cloudfront.origin_ssl_protocols
-  origin_read_timeout       = var.cloudfront.origin_read_timeout
-  origin_keepalive_timeout  = var.cloudfront.origin_keepalive_timeout
-  origin_custom_headers      = var.cloudfront.origin_custom_headers
-  price_class               = var.cloudfront.price_class
-  web_acl_id                = var.cloudfront.web_acl_id
-  enable_logging            = var.cloudfront.enable_logging
-  logging_bucket            = var.cloudfront.logging_bucket
-  tags                      = var.cloudfront.tags
+  enabled                  = var.cloudfront.enabled
+  aliases                  = var.cloudfront.aliases
+  acm_certificate_arn      = module.acm_use1.certificate_arn
+  origin_domain_name       = var.cloudfront.origin_domain_name
+  origin_id                = var.cloudfront.origin_id
+  origin_protocol_policy   = var.cloudfront.origin_protocol_policy
+  origin_ssl_protocols     = var.cloudfront.origin_ssl_protocols
+  origin_read_timeout      = var.cloudfront.origin_read_timeout
+  origin_keepalive_timeout = var.cloudfront.origin_keepalive_timeout
+  origin_custom_headers    = var.cloudfront.origin_custom_headers
+  price_class              = var.cloudfront.price_class
+  web_acl_id               = var.cloudfront.web_acl_id
+  enable_logging           = var.cloudfront.enable_logging
+  logging_bucket           = var.cloudfront.logging_bucket
+  tags                     = var.cloudfront.tags
 }
 
 module "route53" {
@@ -1006,7 +1086,7 @@ locals {
     try(var.rds_sqlserver.manage_master_user_password, true)
   )
   jumpbox_settings_enabled = local.jumpbox_enabled && local.settings_bucket_enabled
-  jumpbox_route53_enabled = local.jumpbox_enabled && try(var.route53.hosted_zone_id, "") != ""
+  jumpbox_route53_enabled  = local.jumpbox_enabled && try(var.route53.hosted_zone_id, "") != ""
 }
 
 data "aws_iam_policy_document" "jumpbox_secrets" {
@@ -1024,8 +1104,8 @@ data "aws_iam_policy_document" "jumpbox_secrets" {
   dynamic "statement" {
     for_each = try(var.rds_sqlserver.master_user_secret_kms_key_id, null) != null ? [var.rds_sqlserver.master_user_secret_kms_key_id] : []
     content {
-      effect = "Allow"
-      actions = ["kms:Decrypt"]
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
       resources = [statement.value]
     }
   }
@@ -1070,8 +1150,8 @@ data "aws_iam_policy_document" "jumpbox_settings" {
   dynamic "statement" {
     for_each = try(var.settings_bucket.kms_key_arn, null) != null ? [var.settings_bucket.kms_key_arn] : []
     content {
-      effect = "Allow"
-      actions = ["kms:Decrypt"]
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
       resources = [statement.value]
     }
   }
@@ -1177,7 +1257,7 @@ resource "aws_ebs_volume" "app_fileshare" {
   iops              = try(var.app_ebs.iops, null)
   throughput        = try(var.app_ebs.throughput, null)
   encrypted         = try(var.app_ebs.encrypted, true)
-  kms_key_id         = try(var.app_ebs.kms_key_id, null)
+  kms_key_id        = try(var.app_ebs.kms_key_id, null)
 
   tags = merge(
     local.app_ebs_tags,
@@ -1217,44 +1297,44 @@ module "outputs_contract" {
   source = "../modules/outputs_contract"
 
   outputs = {
-    region                     = var.region
-    use1_region                = var.use1_region
-    app_ebs_volume_id          = local.app_ebs_volume_id
-    settings_bucket_name       = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].bucket : null
-    settings_bucket_arn        = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].arn : null
-    settings_s3_key            = local.platform_deployer_settings_key
-    settings_s3_uri            = local.platform_deployer_settings_uri
-    kubeconfig_s3_key          = local.kubeconfig_s3_key
-    kubeconfig_s3_uri          = local.kubeconfig_s3_uri
-    platform_outputs_s3_key    = local.platform_outputs_s3_key
-    platform_outputs_s3_uri    = local.platform_outputs_s3_uri
+    region                                = var.region
+    use1_region                           = var.use1_region
+    app_ebs_volume_id                     = local.app_ebs_volume_id
+    settings_bucket_name                  = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].bucket : null
+    settings_bucket_arn                   = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].arn : null
+    settings_s3_key                       = local.platform_deployer_settings_key
+    settings_s3_uri                       = local.platform_deployer_settings_uri
+    kubeconfig_s3_key                     = local.kubeconfig_s3_key
+    kubeconfig_s3_uri                     = local.kubeconfig_s3_uri
+    platform_outputs_s3_key               = local.platform_outputs_s3_key
+    platform_outputs_s3_uri               = local.platform_outputs_s3_uri
     platform_deployer_cluster_arn         = local.platform_deployer_enabled ? aws_ecs_cluster.platform_deployer[0].arn : null
     platform_deployer_task_definition_arn = local.platform_deployer_enabled ? aws_ecs_task_definition.platform_deployer[0].arn : null
     platform_deployer_task_role_arn       = local.platform_deployer_enabled ? aws_iam_role.platform_deployer_task[0].arn : null
     platform_deployer_security_group_id   = local.platform_deployer_enabled ? aws_security_group.platform_deployer[0].id : null
-    db_init_cluster_arn         = local.db_init_enabled ? aws_ecs_cluster.db_init[0].arn : null
-    db_init_task_definition_arn = local.db_init_enabled ? aws_ecs_task_definition.db_init[0].arn : null
-    db_init_task_role_arn       = local.db_init_enabled ? aws_iam_role.db_init_task[0].arn : null
-    db_init_security_group_id   = local.db_init_enabled ? aws_security_group.db_init[0].id : null
-    vpc_id                     = module.vpc.vpc_id
-    public_subnet_ids          = module.vpc.public_subnet_ids
-    private_subnet_ids         = module.vpc.private_subnet_ids
-    cluster_name               = module.eks.cluster_name
-    cluster_endpoint           = module.eks.cluster_endpoint
-    cluster_ca_data            = module.eks.cluster_ca_data
-    rds_endpoint               = module.rds_sqlserver.endpoint
-    rds_port                   = module.rds_sqlserver.port
-    rds_master_user_secret_arn = module.rds_sqlserver.master_user_secret_arn
-    cloudfront_id              = var.cloudfront.enabled ? module.cloudfront[0].distribution_id : null
-    cloudfront_domain_name     = var.cloudfront.enabled ? module.cloudfront[0].distribution_domain_name : null
-    cloudfront_hosted_zone_id  = var.cloudfront.enabled ? module.cloudfront[0].hosted_zone_id : null
-    route53_record_fqdn        = var.cloudfront.enabled && var.route53.enabled ? module.route53[0].record_fqdn : null
-    acm_certificate_arn        = module.acm_use1.certificate_arn
-    jumpbox_instance_id        = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
-    jumpbox_private_ip         = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null
-    jumpbox_public_ip          = local.jumpbox_enabled ? module.jumpbox_windows[0].public_ip : null
-    jumpbox_security_group_id  = local.jumpbox_enabled ? module.jumpbox_windows[0].security_group_id : null
-    jumpbox_role_arn           = local.jumpbox_enabled ? module.jumpbox_windows[0].iam_role_arn : null
+    db_init_cluster_arn                   = local.db_init_enabled ? aws_ecs_cluster.db_init[0].arn : null
+    db_init_task_definition_arn           = local.db_init_enabled ? aws_ecs_task_definition.db_init[0].arn : null
+    db_init_task_role_arn                 = local.db_init_enabled ? aws_iam_role.db_init_task[0].arn : null
+    db_init_security_group_id             = local.db_init_enabled ? aws_security_group.db_init[0].id : null
+    vpc_id                                = module.vpc.vpc_id
+    public_subnet_ids                     = module.vpc.public_subnet_ids
+    private_subnet_ids                    = module.vpc.private_subnet_ids
+    cluster_name                          = module.eks.cluster_name
+    cluster_endpoint                      = module.eks.cluster_endpoint
+    cluster_ca_data                       = module.eks.cluster_ca_data
+    rds_endpoint                          = module.rds_sqlserver.endpoint
+    rds_port                              = module.rds_sqlserver.port
+    rds_master_user_secret_arn            = module.rds_sqlserver.master_user_secret_arn
+    cloudfront_id                         = var.cloudfront.enabled ? module.cloudfront[0].distribution_id : null
+    cloudfront_domain_name                = var.cloudfront.enabled ? module.cloudfront[0].distribution_domain_name : null
+    cloudfront_hosted_zone_id             = var.cloudfront.enabled ? module.cloudfront[0].hosted_zone_id : null
+    route53_record_fqdn                   = var.cloudfront.enabled && var.route53.enabled ? module.route53[0].record_fqdn : null
+    acm_certificate_arn                   = module.acm_use1.certificate_arn
+    jumpbox_instance_id                   = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
+    jumpbox_private_ip                    = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null
+    jumpbox_public_ip                     = local.jumpbox_enabled ? module.jumpbox_windows[0].public_ip : null
+    jumpbox_security_group_id             = local.jumpbox_enabled ? module.jumpbox_windows[0].security_group_id : null
+    jumpbox_role_arn                      = local.jumpbox_enabled ? module.jumpbox_windows[0].iam_role_arn : null
   }
 }
 
