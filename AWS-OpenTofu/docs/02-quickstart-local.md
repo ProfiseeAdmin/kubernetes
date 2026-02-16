@@ -524,7 +524,7 @@ For a jumpbox with no inbound RDP, use **Fleet Manager Remote Desktop**
 finishes DB init. It:
 - Installs Traefik via Helm and waits for the NLB hostname.
 - Uses the Terraform-managed `aws-ebs-csi-driver` add-on and waits for CSI controller/node readiness before app install.
-- If Windows nodes exist, enables `enable-windows-ipam=true` on `amazon-vpc-cni` so Windows pods can receive pod IP labels.
+- If Windows nodes exist, enables Windows IPAM on VPC CNI (`amazon-vpc-cni` ConfigMap and `aws-node` DaemonSet env) so Windows pods can receive pod IP labels.
 - Logs the NLB DNS name in `/aws/ecs/<cluster-name>-db-init`.
 - Writes platform outputs to the App Settings S3 bucket:
   `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`.

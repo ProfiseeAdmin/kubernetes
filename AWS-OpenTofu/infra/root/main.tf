@@ -740,9 +740,19 @@ fi
 export KUBECONFIG=/tmp/kubeconfig
 windows_nodes=$(kubectl get nodes -l kubernetes.io/os=windows --no-headers 2>/dev/null | wc -l | tr -d ' ')
 if [ -n "$windows_nodes" ] && [ "$windows_nodes" -gt 0 ] 2>/dev/null; then
-  win_ipam_enabled=$(kubectl get configmap amazon-vpc-cni -n kube-system -o jsonpath='{.data.enable-windows-ipam}' 2>/dev/null || true)
-  if [ "$win_ipam_enabled" != "true" ]; then
-    run "Enable VPC CNI Windows IPAM" kubectl patch configmap amazon-vpc-cni -n kube-system --type merge -p '{"data":{"enable-windows-ipam":"true"}}'
+  win_ipam_cm=$(kubectl get configmap amazon-vpc-cni -n kube-system -o jsonpath='{.data.enable-windows-ipam}' 2>/dev/null || true)
+  win_ipam_env=$(kubectl -n kube-system get daemonset aws-node -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name=='ENABLE_WINDOWS_IPAM')].value}" 2>/dev/null || true)
+  log "Windows CNI IPAM settings: configmap='$win_ipam_cm' daemonset='$win_ipam_env'"
+  need_cni_restart=0
+  if [ "$win_ipam_cm" != "true" ]; then
+    run "Enable VPC CNI Windows IPAM (ConfigMap)" kubectl patch configmap amazon-vpc-cni -n kube-system --type merge -p '{"data":{"enable-windows-ipam":"true"}}'
+    need_cni_restart=1
+  fi
+  if [ "$win_ipam_env" != "true" ]; then
+    run "Enable VPC CNI Windows IPAM (DaemonSet env)" kubectl -n kube-system set env daemonset/aws-node ENABLE_WINDOWS_IPAM=true
+    need_cni_restart=1
+  fi
+  if [ "$need_cni_restart" -eq 1 ]; then
     run "Restart aws-node daemonset" kubectl -n kube-system rollout restart daemonset/aws-node
     run "Wait for aws-node daemonset" kubectl -n kube-system rollout status daemonset/aws-node --timeout=300s
   else
