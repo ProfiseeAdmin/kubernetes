@@ -18,6 +18,12 @@ variable "private_subnet_ids" {
   description = "Private subnet IDs for EKS node groups."
 }
 
+variable "windows_subnet_ids" {
+  type        = list(string)
+  default     = []
+  description = "Optional subnet IDs for Windows node group. Defaults to private_subnet_ids."
+}
+
 variable "public_subnet_ids" {
   type        = list(string)
   default     = []

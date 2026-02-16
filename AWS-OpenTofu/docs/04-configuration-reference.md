@@ -85,6 +85,9 @@ Key fields:
 - `availability_zone` (defaults to first VPC AZ)
 - `encrypted`, `kms_key_id`
 
+When `app_ebs` is used, OpenTofu automatically constrains Windows node group
+subnets to the same AZ as the app EBS volume to avoid attach zone mismatches.
+
 ## App Settings S3 bucket
 
 `settings_bucket` controls the S3 bucket used to store `Settings.yaml`.

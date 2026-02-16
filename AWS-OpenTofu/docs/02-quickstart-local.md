@@ -264,6 +264,8 @@ fills **non‑secret** app settings. It keeps placeholders for secrets
 (license, ACR creds, OIDC client details, TLS cert/key, app SQL creds), and
 writes them to `secrets/seed-secrets.json`. After `tofu-apply`, the script will
 update `Settings.yaml` with the RDS endpoint and the app EBS volume ID.
+OpenTofu also aligns Windows node-group subnets to the app EBS AZ to avoid
+`InvalidVolume.ZoneMismatch` attach errors.
 
 Stage B collects **two categories** of input:
 - **Infra** (VPC/EKS/RDS/ACM/Route53/CloudFront/jumpbox)

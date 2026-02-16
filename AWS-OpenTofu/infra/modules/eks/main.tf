@@ -153,7 +153,7 @@ resource "aws_eks_node_group" "windows" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.cluster_name}-windows"
   node_role_arn   = aws_iam_role.windows_nodes.arn
-  subnet_ids      = var.private_subnet_ids
+  subnet_ids      = length(var.windows_subnet_ids) > 0 ? var.windows_subnet_ids : var.private_subnet_ids
   ami_type        = local.windows_ami_type
   capacity_type   = var.windows_node_group.capacity_type
   disk_size       = var.windows_node_group.disk_size

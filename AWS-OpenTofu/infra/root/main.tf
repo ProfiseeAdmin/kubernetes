@@ -4,7 +4,7 @@ locals {
   jumpbox_subnet_id              = coalesce(try(var.jumpbox.subnet_id, null), module.vpc.private_subnet_ids[0])
   jumpbox_tags                   = merge(var.tags, try(var.jumpbox.tags, {}))
   app_ebs_enabled                = try(var.app_ebs.enabled, true)
-  app_ebs_az                     = coalesce(try(var.app_ebs.availability_zone, null), var.vpc.azs[0])
+  app_ebs_az                     = coalesce(try(var.app_ebs.availability_zone, null), try(data.aws_ebs_volume.app_fileshare_existing[0].availability_zone, null), var.vpc.azs[0])
   app_ebs_tags                   = merge(var.tags, try(var.app_ebs.tags, {}))
   settings_bucket_enabled        = try(var.settings_bucket.enabled, true)
   settings_bucket_name           = try(var.settings_bucket.name, null)
@@ -20,6 +20,15 @@ locals {
 }
 
 data "aws_caller_identity" "current" {}
+
+data "aws_ebs_volume" "app_fileshare_existing" {
+  count = local.app_ebs_enabled || var.app_ebs_volume_id == null || var.app_ebs_volume_id == "" ? 0 : 1
+
+  filter {
+    name   = "volume-id"
+    values = [var.app_ebs_volume_id]
+  }
+}
 
 module "vpc" {
   source = "../modules/vpc"
@@ -37,6 +46,19 @@ module "vpc" {
   private_subnet_tags  = var.vpc.private_subnet_tags
   vpc_tags             = var.vpc.vpc_tags
   tags                 = var.vpc.tags
+}
+
+data "aws_subnet" "private" {
+  for_each = toset(module.vpc.private_subnet_ids)
+
+  id = each.value
+}
+
+locals {
+  windows_node_subnet_ids = sort([
+    for subnet_id, subnet in data.aws_subnet.private : subnet_id
+    if subnet.availability_zone == local.app_ebs_az
+  ])
 }
 
 resource "aws_s3_bucket" "settings" {
@@ -86,6 +108,7 @@ module "eks" {
   authentication_mode       = var.eks.authentication_mode
   vpc_id                    = module.vpc.vpc_id
   private_subnet_ids        = module.vpc.private_subnet_ids
+  windows_subnet_ids        = length(local.windows_node_subnet_ids) > 0 ? local.windows_node_subnet_ids : module.vpc.private_subnet_ids
   public_subnet_ids         = module.vpc.public_subnet_ids
   endpoint_public_access    = var.eks.endpoint_public_access
   endpoint_private_access   = var.eks.endpoint_private_access
@@ -1381,6 +1404,8 @@ module "outputs_contract" {
     region                                = var.region
     use1_region                           = var.use1_region
     app_ebs_volume_id                     = local.app_ebs_volume_id
+    app_ebs_availability_zone             = local.app_ebs_az
+    windows_node_subnet_ids               = length(local.windows_node_subnet_ids) > 0 ? local.windows_node_subnet_ids : module.vpc.private_subnet_ids
     settings_bucket_name                  = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].bucket : null
     settings_bucket_arn                   = local.settings_bucket_enabled ? aws_s3_bucket.settings[0].arn : null
     settings_s3_key                       = local.platform_deployer_settings_key
