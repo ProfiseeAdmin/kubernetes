@@ -1106,12 +1106,13 @@ module "rds_sqlserver" {
   master_user_secret_kms_key_id = var.rds_sqlserver.master_user_secret_kms_key_id
   vpc_id                        = module.vpc.vpc_id
   subnet_ids                    = module.vpc.private_subnet_ids
-  allowed_security_group_ids = concat(
+  allowed_security_group_ids = distinct(concat(
     var.rds_sqlserver.allowed_security_group_ids,
+    [module.eks.cluster_security_group_id],
     local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : [],
     local.platform_deployer_enabled ? [aws_security_group.platform_deployer[0].id] : [],
     local.db_init_enabled ? [aws_security_group.db_init[0].id] : []
-  )
+  ))
   backup_retention_days = var.rds_sqlserver.backup_retention_days
   multi_az              = var.rds_sqlserver.multi_az
   publicly_accessible   = var.rds_sqlserver.publicly_accessible
