@@ -83,6 +83,20 @@ function Normalize-RdsIdentifier([string]$Value) {
   return $v
 }
 
+function Normalize-RuntimeSqlMode([string]$Value) {
+  if (-not $Value) { return "rds_dbadmin" }
+  $v = $Value.Trim().ToLower()
+  switch ($v) {
+    "rds_dbadmin" { return "rds_dbadmin" }
+    "dbadmin" { return "rds_dbadmin" }
+    "master" { return "rds_dbadmin" }
+    "dedicated_db_user" { return "dedicated_db_user" }
+    "dedicated" { return "dedicated_db_user" }
+    "db_user" { return "dedicated_db_user" }
+    default { return "rds_dbadmin" }
+  }
+}
+
 function Coerce-List([string]$Label, $Value) {
   if ($null -eq $Value) { return ,@() }
   if ($Value -is [string]) {
@@ -197,6 +211,17 @@ if (-not (Test-Path -LiteralPath $examplePath)) {
   Ensure-ObjectProperty $json.route53 "enabled" $true | Out-Null
   Ensure-ObjectProperty $json.route53 "hosted_zone_id" $null | Out-Null
   Ensure-ObjectProperty $json.route53 "record_name" $null | Out-Null
+  Ensure-ObjectProperty $json "db_init" @{} | Out-Null
+  $dbInit = $json.db_init
+  Ensure-ObjectProperty $dbInit "enabled" $true | Out-Null
+  Ensure-ObjectProperty $dbInit "image_uri" $defaultDbInitImage | Out-Null
+  Ensure-ObjectProperty $dbInit "cpu" 512 | Out-Null
+  Ensure-ObjectProperty $dbInit "memory" 1024 | Out-Null
+  Ensure-ObjectProperty $dbInit "environment" ([pscustomobject]@{}) | Out-Null
+  $dbInitEnv = $dbInit.environment
+  $runtimeSqlMode = Normalize-RuntimeSqlMode (Get-PropValue $dbInitEnv "RUNTIME_SQL_MODE")
+  Ensure-ObjectProperty $dbInitEnv "RUNTIME_SQL_MODE" $runtimeSqlMode | Out-Null
+  $dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
 
   if (-not $NoPrompt) {
     $json.region = Read-Value "Primary region" $json.region
@@ -219,13 +244,6 @@ if (-not (Test-Path -LiteralPath $examplePath)) {
   } else {
   }
   $settingsBucket.kms_key_arn = Read-Value "App Settings bucket KMS key ARN (optional)" $settingsBucket.kms_key_arn
-
-  Ensure-ObjectProperty $json "db_init" @{} | Out-Null
-  $dbInit = $json.db_init
-  Ensure-ObjectProperty $dbInit "enabled" $true | Out-Null
-  Ensure-ObjectProperty $dbInit "image_uri" $defaultDbInitImage | Out-Null
-  Ensure-ObjectProperty $dbInit "cpu" 512 | Out-Null
-  Ensure-ObjectProperty $dbInit "memory" 1024 | Out-Null
 
   $dbInit.enabled = $true
 
@@ -323,6 +341,7 @@ if ($ForceDestroySettingsBucket) {
   Ensure-ObjectProperty $settingsBucket "force_destroy" $true | Out-Null
   $settingsBucket.force_destroy = $true
 }
+$dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
 
 Save-Config $configPath $json
 
@@ -429,6 +448,12 @@ if (-not $sqlName -and $sqlEndpointFromOutputs) {
 
 if (-not $NoPrompt) {
   $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
+  $runtimeSqlMode = Normalize-RuntimeSqlMode (Read-Value "Runtime SQL identity mode (rds_dbadmin|dedicated_db_user)" $runtimeSqlMode)
+  if ($runtimeSqlMode -eq "rds_dbadmin") {
+    Write-Host "Note: App SQL username/password entered below are created/stored now but runtime currently uses RDS dbadmin."
+  } else {
+    Write-Host "Note: dedicated_db_user selected. If deployment still needs dbadmin runtime rights, switch back to rds_dbadmin."
+  }
   $sqlUsername = Read-ValueMasked "App SQL username (not RDS master)" $sqlUsername
   $sqlPassword = Read-ValueMasked "App SQL password" $sqlPassword
   $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
@@ -502,6 +527,9 @@ if (-not $NoPrompt) {
     }
   }
 }
+
+$dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
+Save-Config $configPath $json
 
 $licenseRaw = Read-FileRaw $licensePath
 if (-not $licenseRaw) {

@@ -34,7 +34,9 @@
   },
   "db_init": {
     "enabled": true,
-    "environment": {},
+    "environment": {
+      "RUNTIME_SQL_MODE": "rds_dbadmin"
+    },
     "secret_arns": {}
   },
     "app_deploy": {

@@ -642,6 +642,29 @@ if [ -z "$MASTER_USER" ] || [ -z "$MASTER_PASS" ] || [ -z "$APP_USER" ] || [ -z 
   exit 1
 fi
 
+runtime_sql_mode="$RUNTIME_SQL_MODE"
+if [ -z "$runtime_sql_mode" ]; then runtime_sql_mode="rds_dbadmin"; fi
+runtime_sql_user="$MASTER_USER"
+runtime_sql_pass="$MASTER_PASS"
+case "$runtime_sql_mode" in
+  dedicated_db_user)
+    runtime_sql_user="$APP_USER"
+    runtime_sql_pass="$APP_PASS"
+    ;;
+  rds_dbadmin)
+    runtime_sql_user="$MASTER_USER"
+    runtime_sql_pass="$MASTER_PASS"
+    ;;
+  *)
+    log "Unknown RUNTIME_SQL_MODE '$runtime_sql_mode'; defaulting to rds_dbadmin."
+    runtime_sql_mode="rds_dbadmin"
+    runtime_sql_user="$MASTER_USER"
+    runtime_sql_pass="$MASTER_PASS"
+    ;;
+esac
+log "Runtime SQL identity mode: $runtime_sql_mode (runtime user: $runtime_sql_user)."
+log "Dedicated app SQL login '$APP_USER' will be created/updated for future dedicated mode use."
+
 LICENSE_DATA=""
 if [ -n "$SECRET_LICENSE_ARN" ]; then
   license_raw=$(get_secret_text "$SECRET_LICENSE_ARN" "license") || exit 1
@@ -870,8 +893,8 @@ JSON
           log "cert-manager CRDs already present; skipping install."
         fi
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
-        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERNAME' "$APP_USER"
-        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERPASSWORD' "$APP_PASS"
+        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERNAME' "$runtime_sql_user"
+        replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERPASSWORD' "$runtime_sql_pass"
         if [ -n "$ACR_USER" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRUSER' "$ACR_USER"; fi
         if [ -n "$ACR_PASS" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRPASSWORD' "$ACR_PASS"; fi
         if [ -n "$ACR_EMAIL" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACREMAIL' "$ACR_EMAIL"; fi
@@ -944,6 +967,7 @@ JSON
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
       ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+      RUNTIME_SQL_MODE           = "rds_dbadmin"
       APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
       APP_RELEASE_NAME           = local.app_deploy_release_name
       APP_NAMESPACE              = local.app_deploy_namespace

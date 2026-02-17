@@ -118,7 +118,10 @@ Key fields:
 - `enabled` (required; set to true)
 - `image_uri` (default: `profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest`; tools pre‑installed)
 - `cpu`, `memory`
+- `environment.RUNTIME_SQL_MODE` (`rds_dbadmin` default, `dedicated_db_user` optional)
 - `secret_arns` (map of secrets for the container to retrieve)
+
+`scripts/new-deployment.ps1` writes `db_init.environment.RUNTIME_SQL_MODE` for you.
 
 ## App deploy (db_init task)
 

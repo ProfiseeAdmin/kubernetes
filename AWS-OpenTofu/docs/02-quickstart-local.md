@@ -327,7 +327,8 @@ values are written to `secrets/seed-secrets.json` and **not** injected into
 App settings prompts (stored in `secrets/seed-secrets.json`):
 - **SQL Server endpoint** (optional, filled after apply)
 - **SQL database name** (app DB created by db_init)
-- **App SQL username / password** (required; not the RDS master)
+- **Runtime SQL identity mode** (`rds_dbadmin` default; `dedicated_db_user` optional)
+- **App SQL username / password** (required; created/stored now for dedicated mode; default runtime uses `rds_dbadmin`)
 - **Use Let’s Encrypt**
 - **SuperAdmin email / Infra admin email**
 - **Web app name (path)**
@@ -338,6 +339,9 @@ App settings prompts (stored in `secrets/seed-secrets.json`):
 - **ACR repository name / image tag / registry**
 - **ACR username / password / auth / email**
 - **TLS cert/key paths** (manual TLS only)
+
+To switch runtime SQL identity later, rerun `scripts/new-deployment.ps1` and change
+the **Runtime SQL identity mode** prompt.
 
 Edit `customer-deployments/acme-prod/config.auto.tfvars.json` using
 `deployments/_template/config.auto.tfvars.json.example` as a baseline.
