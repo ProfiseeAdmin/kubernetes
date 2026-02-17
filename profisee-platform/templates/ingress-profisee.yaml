@@ -19,11 +19,11 @@ spec:
     http:
       paths:
       {{- if .Values.profiseeRunTime.isPaaS }}
-      - path: /(.*)
+      - path: /
       {{- else }}
-      - path: /{{.Values.profiseeRunTime.webAppName}}/?(.*)$
+      - path: /{{.Values.profiseeRunTime.webAppName}}
       {{- end }}
-        pathType: ImplementationSpecific
+        pathType: Prefix
         backend:
           service:
             name: profisee-service
