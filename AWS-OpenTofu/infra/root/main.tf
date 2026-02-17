@@ -902,6 +902,10 @@ JSON
         if [ -n "$OIDC_URL" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCURL' "$OIDC_URL"; fi
         if [ -n "$OIDC_CLIENT_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$CLIENTID' "$OIDC_CLIENT_ID"; fi
         if [ -n "$OIDC_CLIENT_SECRET" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCCLIENTSECRET' "$OIDC_CLIENT_SECRET"; fi
+        # Optional multi-line blocks: default to valid empty payloads when not provided.
+        replace_settings_placeholder /tmp/Settings.yaml '$OIDCFileData' '{}'
+        replace_settings_placeholder /tmp/Settings.yaml '$TLSCERT' ''
+        replace_settings_placeholder /tmp/Settings.yaml '$TLSKEY' ''
         if [ -n "$LICENSE_DATA" ]; then
           if printf '%s' "$LICENSE_DATA" | base64 -d >/dev/null 2>&1; then
             replace_settings_placeholder /tmp/Settings.yaml '$LICENSEDATA' "$LICENSE_DATA"
@@ -910,8 +914,12 @@ JSON
             exit 1
           fi
         fi
-        unresolved_count=$( (grep -o '\$[A-Za-z0-9_]*' /tmp/Settings.yaml || true) | sort -u | wc -l | tr -d ' ' )
+        unresolved_tokens=$( (grep -o '\$[A-Za-z0-9_]*' /tmp/Settings.yaml || true) | sort -u | tr '\n' ' ' )
+        unresolved_count=$(printf '%s' "$unresolved_tokens" | awk '{print NF}')
         log "Settings placeholder tokens remaining: $unresolved_count"
+        if [ "$unresolved_count" -gt 0 ] 2>/dev/null; then
+          log "Unresolved placeholders: $unresolved_tokens"
+        fi
         helm repo remove profisee >/dev/null 2>&1 || true
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
