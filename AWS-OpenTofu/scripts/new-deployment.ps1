@@ -9,15 +9,42 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-Write-Host "Note: RDS identifier must be lowercase letters, numbers, and hyphens, and start with a letter."
-Write-Host "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
-Write-Host "      This script will normalize identifiers and coerce lists before writing the config."
+function Write-Note([string]$Message) {
+  Write-Host ""
+  Write-Host $Message -ForegroundColor Yellow
+  Write-Host ""
+}
+
+function Write-InputFormatLegend() {
+  Write-Host ""
+  Write-Host "Note: Information collected will be presented in the following format: " -ForegroundColor Yellow -NoNewline
+  Write-Host "in white" -ForegroundColor White -NoNewline
+  Write-Host ", the parameter that needs a value/answer; " -ForegroundColor Yellow -NoNewline
+  Write-Host "in green" -ForegroundColor Green -NoNewline
+  Write-Host ", your selected value from a prior run; in yellow, a note that requires your attention." -ForegroundColor Yellow
+  Write-Host ""
+}
+
+Write-InputFormatLegend
+Write-Note "Note: RDS identifier must be lowercase letters, numbers, and hyphens, and start with a letter."
+Write-Note "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
+Write-Note "Note: This script normalizes identifiers and converts lists to proper JSON arrays before writing the config."
 
 $defaultDbInitImage = "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
 
+function Read-PromptWithDefault([string]$Label, [string]$DefaultText) {
+  if ($null -ne $DefaultText -and $DefaultText -ne "") {
+    Write-Host ("{0} [" -f $Label) -NoNewline
+    Write-Host $DefaultText -NoNewline -ForegroundColor Green
+    Write-Host "]:" -NoNewline
+    return Read-Host
+  }
+  return Read-Host ("{0}:" -f $Label)
+}
+
 function Read-Value([string]$Label, $Current) {
-  $display = if ($null -eq $Current -or $Current -eq "") { "" } else { " [$Current]" }
-  $input = Read-Host ("{0}{1}" -f $Label, $display)
+  $defaultText = if ($null -eq $Current -or $Current -eq "") { "" } else { [string]$Current }
+  $input = Read-PromptWithDefault $Label $defaultText
   if ($input -eq "") { return $Current }
   return $input
 }
@@ -31,29 +58,33 @@ function Mask-Secret([string]$Value, [int]$Prefix = 3) {
 
 function Read-ValueMasked([string]$Label, $Current) {
   $masked = Mask-Secret $Current
-  $display = if ($null -eq $masked -or $masked -eq "") { "" } else { " [$masked]" }
-  $input = Read-Host ("{0}{1}" -f $Label, $display)
+  $defaultText = if ($null -eq $masked -or $masked -eq "") { "" } else { $masked }
+  $input = Read-PromptWithDefault $Label $defaultText
   if ($input -eq "") { return $Current }
   return $input
 }
 
 function Read-List([string]$Label, $Current) {
   $currentText = if ($null -eq $Current) { "" } elseif ($Current -is [string]) { $Current } else { ($Current -join ",") }
-  $input = Read-Host ("{0} [{1}]" -f $Label, $currentText)
+  $input = Read-PromptWithDefault $Label $currentText
   if ($input -eq "") { return $Current }
   $list = @($input -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" })
   return ,$list
 }
 
 function Read-Number([string]$Label, $Current) {
-  $input = Read-Host ("{0} [{1}]" -f $Label, $Current)
+  $defaultText = if ($null -eq $Current -or $Current -eq "") { "" } else { [string]$Current }
+  $input = Read-PromptWithDefault $Label $defaultText
   if ($input -eq "") { return $Current }
   return [int]$input
 }
 
 function Read-Bool([string]$Label, $Current) {
   $defaultText = if ($Current) { "y" } else { "n" }
-  $input = Read-Host ("{0} [y/n, default {1}]" -f $Label, $defaultText)
+  Write-Host ("{0} [y/n, default " -f $Label) -NoNewline
+  Write-Host $defaultText -NoNewline -ForegroundColor Green
+  Write-Host "]:" -NoNewline
+  $input = Read-Host
   if ($input -eq "") { return $Current }
   return ($input.ToLower() -in @("y", "yes", "true", "1"))
 }
@@ -159,8 +190,10 @@ function Try-Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
   if (-not (Test-Path -LiteralPath $BackendConfigPath)) { return $null }
   Push-Location $InfraRoot
   try {
-    tofu init "-backend-config=$BackendConfigPath" | Out-Null
-    return tofu output -json outputs_contract | ConvertFrom-Json
+    tofu init "-backend-config=$BackendConfigPath" 2>$null | Out-Null
+    $raw = tofu output -json outputs_contract 2>$null
+    if (-not $raw) { return $null }
+    return $raw | ConvertFrom-Json
   } catch {
     return $null
   } finally {
@@ -200,6 +233,28 @@ $configPath = Join-Path $targetDir "config.auto.tfvars.json"
 
 if (-not (Test-Path -LiteralPath $examplePath)) {
   throw "Template config not found: $examplePath"
+}
+
+$settingsUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/master/Azure-ARM/Settings.yaml"
+$settingsPath = Join-Path $targetDir "Settings.yaml"
+$settingsDownloadJob = $null
+try {
+  $settingsDownloadJob = Start-Job -ScriptBlock {
+    param($Url, $Path)
+    try {
+      Invoke-WebRequest -Uri $Url -OutFile $Path -ErrorAction Stop | Out-Null
+      [pscustomobject]@{ Success = $true; Error = "" }
+    } catch {
+      [pscustomobject]@{ Success = $false; Error = $_.Exception.Message }
+    }
+  } -ArgumentList $settingsUrl, $settingsPath
+} catch {
+  try {
+    Invoke-WebRequest -Uri $settingsUrl -OutFile $settingsPath -ErrorAction Stop | Out-Null
+    Write-Host ("Downloaded Settings.yaml to: {0}" -f $settingsPath)
+  } catch {
+    throw "Failed to download Settings.yaml from $settingsUrl"
+  }
 }
 
   if (-not (Test-Path -LiteralPath $configPath)) {
@@ -353,13 +408,13 @@ Save-Config $configPath $json
 # ---------------------------------------------------------------------------
 # Settings.yaml (Azure-ARM base) download + replacement
 # ---------------------------------------------------------------------------
-$settingsUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/master/Azure-ARM/Settings.yaml"
-$settingsPath = Join-Path $targetDir "Settings.yaml"
-
-try {
-  Invoke-WebRequest -Uri $settingsUrl -OutFile $settingsPath | Out-Null
+if ($null -ne $settingsDownloadJob) {
+  $settingsDownloadResult = Receive-Job -Job $settingsDownloadJob -Wait -AutoRemoveJob
+  if (-not $settingsDownloadResult.Success) {
+    throw "Failed to download Settings.yaml from ${settingsUrl}: $($settingsDownloadResult.Error)"
+  }
   Write-Host ("Downloaded Settings.yaml to: {0}" -f $settingsPath)
-} catch {
+} elseif (-not (Test-Path -LiteralPath $settingsPath)) {
   throw "Failed to download Settings.yaml from $settingsUrl"
 }
 
@@ -467,16 +522,23 @@ if (-not $sqlName -and $sqlEndpointFromOutputs) {
 }
 
 if (-not $NoPrompt) {
-  $sqlName = Read-Value "SQL Server endpoint (leave blank to fill after tofu-apply)" $sqlName
+  $sqlName = Read-Value "SQL Server endpoint (leave blank, it'll auto-fill after tofu-apply)" $sqlName
+  Write-Note "Note: App SQL username/password are collected and stored now. In rds_dbadmin mode they are not used at runtime. In the future, Profisee will switch to a database-level user and the RDS admin account will no longer be required for deployment."
   $runtimeSqlMode = Normalize-RuntimeSqlMode (Read-Value "Runtime SQL identity mode (rds_dbadmin|dedicated_db_user)" $runtimeSqlMode)
-  if ($runtimeSqlMode -eq "rds_dbadmin") {
-    Write-Host "Note: App SQL username/password entered below are created/stored now but runtime currently uses RDS dbadmin."
-  } else {
-    Write-Host "Note: dedicated_db_user selected. If deployment still needs dbadmin runtime rights, switch back to rds_dbadmin."
+  if ($runtimeSqlMode -eq "dedicated_db_user") {
+    Write-Note "Note: dedicated_db_user selected. If deployment still needs dbadmin runtime rights, switch back to rds_dbadmin."
   }
   $sqlUsername = Read-ValueMasked "App SQL username (not RDS master)" $sqlUsername
   $sqlPassword = Read-ValueMasked "App SQL password" $sqlPassword
   $useLetsEncrypt = Read-Bool "Use Let's Encrypt (recommended)" $useLetsEncrypt
+  if ($useLetsEncrypt) {
+    $useOwnTls = $false
+    $tlsCertPath = ""
+    $tlsKeyPath = ""
+    $tlsCert = $null
+    $tlsKey = $null
+    Write-Note "Let's Encrypt selected; custom TLS cert prompts are skipped."
+  }
   $adminAccount = Read-Value "Profisee SuperAdmin email" $adminAccount
   $infraAdminAccount = Read-Value "Infra admin account email (default to SuperAdmin)" $adminAccount
   if (-not $infraAdminAccount -or $infraAdminAccount -eq "") { $infraAdminAccount = $adminAccount }
@@ -513,6 +575,8 @@ if (-not $NoPrompt) {
     }
   }
 
+  $identityTenantLabel = if ($oidcProvider -match "okta") { "Okta tenant ID" } else { "Entra tenant ID" }
+
   $usePurview = Read-Bool "Use Purview" $usePurview
   if ($usePurview) {
     $purviewAtlasEndpoint = Read-Value "Purview Atlas Endpoint (https://.../catalog)" $purviewAtlasEndpoint
@@ -520,15 +584,17 @@ if (-not $NoPrompt) {
     if ($oidcTenantId) {
       $sameTenantDefault = $true
       if ($purviewTenantId -and $purviewTenantId -ne $oidcTenantId) { $sameTenantDefault = $false }
-      $useSamePurviewTenant = Read-Bool "Use same tenant ID as Auth tenant ID" $sameTenantDefault
+      $useSamePurviewTenant = Read-Bool ("Use same tenant ID as {0}" -f $identityTenantLabel) $sameTenantDefault
       if ($useSamePurviewTenant) {
         $purviewTenantId = $oidcTenantId
       } else {
         $purviewTenantId = Read-ValueMasked "Purview Tenant ID" $purviewTenantId
       }
     } else {
+      Write-Host ("No {0} available from OIDC settings; enter Purview Tenant ID." -f $identityTenantLabel)
       $purviewTenantId = Read-ValueMasked "Purview Tenant ID" $purviewTenantId
     }
+    Write-Host ("Purview Tenant ID set as: {0}" -f (Mask-Secret $purviewTenantId))
     $purviewClientId = Read-ValueMasked "Purview Application Registration Client ID" $purviewClientId
     $purviewClientSecret = Read-ValueMasked "Purview Application Registration Client Secret" $purviewClientSecret
   } else {
@@ -549,18 +615,20 @@ if (-not $NoPrompt) {
   $acrAuth = Read-ValueMasked "ACR auth" $acrAuth
   $acrEmail = Read-Value "ACR email" $acrEmail
 
-  $useOwnTls = Read-Bool "Use your own TLS cert (no internal CA certs)" $useOwnTls
-  if ($useOwnTls) {
-    $tlsCertPath = Read-Value "Path to TLS cert PEM" ""
-    $tlsKeyPath = Read-Value "Path to TLS key PEM" ""
-    if ($tlsCertPath -and (Test-Path -LiteralPath $tlsCertPath)) {
-      $tlsCert = Get-Content -Raw -Path $tlsCertPath
+  if (-not $useLetsEncrypt) {
+    $useOwnTls = $true
+    $tlsCertPath = Read-Value "Path to TLS cert PEM" $tlsCertPath
+    $tlsKeyPath = Read-Value "Path to TLS key PEM" $tlsKeyPath
+    if (-not $tlsCertPath -or -not (Test-Path -LiteralPath $tlsCertPath)) {
+      throw "Use Let's Encrypt is disabled, so a valid TLS cert PEM path is required."
     }
-    if ($tlsKeyPath -and (Test-Path -LiteralPath $tlsKeyPath)) {
-      $tlsKey = Get-Content -Raw -Path $tlsKeyPath
+    if (-not $tlsKeyPath -or -not (Test-Path -LiteralPath $tlsKeyPath)) {
+      throw "Use Let's Encrypt is disabled, so a valid TLS key PEM path is required."
     }
-    if ($tlsCert -and $tlsKey) {
-      $useLetsEncrypt = $false
+    $tlsCert = Get-Content -Raw -Path $tlsCertPath
+    $tlsKey = Get-Content -Raw -Path $tlsKeyPath
+    if (-not $tlsCert -or -not $tlsKey) {
+      throw "Use Let's Encrypt is disabled, but TLS cert/key content could not be read."
     }
   }
 }
@@ -587,7 +655,7 @@ Save-Config $configPath $json
 
 $licenseRaw = Read-FileRaw $licensePath
 if (-not $licenseRaw) {
-  Write-Host ("Note: license file not found at {0}. Place your license file there as license.txt." -f $licensePath)
+  Write-Note ("Note: license file not found at {0}. Place your license file there as license.txt." -f $licensePath)
 }
 
 if (-not $NoPrompt) {
@@ -683,7 +751,9 @@ $settingsContent = Replace-Token $settingsContent "KEYVAULTRESOURCEGROUP" ""
 $settingsContent = Replace-Token $settingsContent "AZURESUBSCRIPTIONID" ""
 $settingsContent = Replace-Token $settingsContent "AZURETENANTID" ""
 $settingsContent = Replace-Token $settingsContent "KUBERNETESCLIENTID" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWURL" (if ($usePurview) { $purviewAtlasEndpoint } else { "" })
+$purviewUrlValue = ""
+if ($usePurview) { $purviewUrlValue = $purviewAtlasEndpoint }
+$settingsContent = Replace-Token $settingsContent "PURVIEWURL" $purviewUrlValue
 if (-not $usePurview) {
   $settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
   $settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""

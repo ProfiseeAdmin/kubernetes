@@ -16,6 +16,7 @@ locals {
   platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
   db_init_enabled                = try(var.db_init.enabled, false)
   db_init_tags                   = merge(var.tags, try(var.db_init.tags, {}))
+  vpc_cni_addon_enabled          = try(var.eks.install_vpc_cni_addon, true)
   ebs_csi_addon_enabled          = try(var.eks.install_ebs_csi_addon, true)
 }
 
@@ -48,17 +49,11 @@ module "vpc" {
   tags                 = var.vpc.tags
 }
 
-data "aws_subnet" "private" {
-  for_each = toset(module.vpc.private_subnet_ids)
-
-  id = each.value
-}
-
 locals {
-  windows_node_subnet_ids = sort([
-    for subnet_id, subnet in data.aws_subnet.private : subnet_id
-    if subnet.availability_zone == local.app_ebs_az
-  ])
+  windows_node_subnet_ids = [
+    for idx, az in var.vpc.azs : module.vpc.private_subnet_ids[idx]
+    if az == local.app_ebs_az
+  ]
 }
 
 resource "aws_s3_bucket" "settings" {
@@ -160,6 +155,21 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
+resource "aws_eks_addon" "vpc_cni" {
+  count = local.vpc_cni_addon_enabled ? 1 : 0
+
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "vpc-cni"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  configuration_values = jsonencode({
+    enableWindowsIpam = "true"
+  })
+  tags = var.tags
+
+  depends_on = [module.eks]
+}
+
 resource "aws_eks_addon" "ebs_csi" {
   count = local.ebs_csi_addon_enabled ? 1 : 0
 
@@ -172,6 +182,7 @@ resource "aws_eks_addon" "ebs_csi" {
 
   depends_on = [
     module.eks,
+    aws_eks_addon.vpc_cni,
     aws_iam_role_policy_attachment.ebs_csi
   ]
 }
@@ -629,6 +640,17 @@ replace_settings_placeholder() {
   sed -i "s/$p/$r/g" "$file"
 }
 
+# Set a YAML scalar under a specific top-level section (best-effort, no external yq dependency).
+set_yaml_scalar_in_section() {
+  local file="$1"
+  local section="$2"
+  local key="$3"
+  local value="$4"
+  local r
+  r=$(escape_sed_replacement "$value")
+  sed -i "/^$section:/,/^[^[:space:]]/ s|^\([[:space:]]*$key:[[:space:]]*\).*|\1\"$r\"|" "$file"
+}
+
 MASTER_JSON=$(get_secret_json "$SECRET_RDS_MASTER_ARN" "master") || exit 1
 APP_JSON=$(get_secret_json "$SECRET_SQL_ARN" "app-sql") || exit 1
 
@@ -948,6 +970,9 @@ JSON
           log "cert-manager CRDs already present; skipping install."
         fi
         run "Download Settings.yaml" aws s3 cp "s3://$SETTINGS_S3_BUCKET/$SETTINGS_S3_KEY" /tmp/Settings.yaml
+        # Always stamp SQL server/database from live runtime values, even if Settings.yaml has blanks.
+        set_yaml_scalar_in_section /tmp/Settings.yaml "sqlServer" "name" "$DB_ENDPOINT"
+        set_yaml_scalar_in_section /tmp/Settings.yaml "sqlServer" "databaseName" "$DB_NAME"
         replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERNAME' "$runtime_sql_user"
         replace_settings_placeholder /tmp/Settings.yaml '$SQLUSERPASSWORD' "$runtime_sql_pass"
         if [ -n "$ACR_USER" ]; then replace_settings_placeholder /tmp/Settings.yaml '$ACRUSER' "$ACR_USER"; fi
@@ -1198,13 +1223,13 @@ module "rds_sqlserver" {
   master_user_secret_kms_key_id = var.rds_sqlserver.master_user_secret_kms_key_id
   vpc_id                        = module.vpc.vpc_id
   subnet_ids                    = module.vpc.private_subnet_ids
-  allowed_security_group_ids = distinct(concat(
+  allowed_security_group_ids = concat(
     var.rds_sqlserver.allowed_security_group_ids,
     [module.eks.cluster_security_group_id],
     local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : [],
     local.platform_deployer_enabled ? [aws_security_group.platform_deployer[0].id] : [],
     local.db_init_enabled ? [aws_security_group.db_init[0].id] : []
-  ))
+  )
   backup_retention_days = var.rds_sqlserver.backup_retention_days
   multi_az              = var.rds_sqlserver.multi_az
   publicly_accessible   = var.rds_sqlserver.publicly_accessible

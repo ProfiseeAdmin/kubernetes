@@ -146,6 +146,7 @@ variable "eks" {
     cluster_name            = string
     cluster_version         = string
     authentication_mode     = optional(string, "API_AND_CONFIG_MAP")
+    install_vpc_cni_addon   = optional(bool, true)
     install_ebs_csi_addon   = optional(bool, true)
     endpoint_public_access  = optional(bool, false)
     endpoint_private_access = optional(bool, true)
