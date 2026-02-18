@@ -693,6 +693,22 @@ if [ -n "$SECRET_OIDC_ARN" ]; then
   OIDC_CLIENT_SECRET=$(echo "$OIDC_JSON" | jq -r '.client_secret // empty')
 fi
 
+PURVIEW_COLLECTION_ID=""
+PURVIEW_TENANT_ID=""
+PURVIEW_CLIENT_ID=""
+PURVIEW_CLIENT_SECRET=""
+if [ -n "$SECRET_PURVIEW_ARN" ]; then
+  PURVIEW_JSON=$(get_secret_json "$SECRET_PURVIEW_ARN" "purview") || exit 1
+  PURVIEW_COLLECTION_ID=$(echo "$PURVIEW_JSON" | jq -r '.collection_id // empty')
+  PURVIEW_TENANT_ID=$(echo "$PURVIEW_JSON" | jq -r '.tenant_id // empty')
+  PURVIEW_CLIENT_ID=$(echo "$PURVIEW_JSON" | jq -r '.client_id // empty')
+  PURVIEW_CLIENT_SECRET=$(echo "$PURVIEW_JSON" | jq -r '.client_secret // empty')
+  if [ -z "$PURVIEW_COLLECTION_ID" ] || [ -z "$PURVIEW_TENANT_ID" ] || [ -z "$PURVIEW_CLIENT_ID" ] || [ -z "$PURVIEW_CLIENT_SECRET" ]; then
+    log "Purview secret is missing one or more required fields (collection_id, tenant_id, client_id, client_secret)."
+    exit 1
+  fi
+fi
+
 escape_sql_literal() { printf "%s" "$1" | sed "s/'/''/g"; }
 escape_sql_bracket() { printf "%s" "$1" | sed "s/]/]]/g"; }
 
@@ -941,6 +957,10 @@ JSON
         if [ -n "$OIDC_URL" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCURL' "$OIDC_URL"; fi
         if [ -n "$OIDC_CLIENT_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$CLIENTID' "$OIDC_CLIENT_ID"; fi
         if [ -n "$OIDC_CLIENT_SECRET" ]; then replace_settings_placeholder /tmp/Settings.yaml '$OIDCCLIENTSECRET' "$OIDC_CLIENT_SECRET"; fi
+        if [ -n "$PURVIEW_COLLECTION_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$PURVIEWCOLLECTIONID' "$PURVIEW_COLLECTION_ID"; fi
+        if [ -n "$PURVIEW_TENANT_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$PURVIEWTENANTID' "$PURVIEW_TENANT_ID"; fi
+        if [ -n "$PURVIEW_CLIENT_ID" ]; then replace_settings_placeholder /tmp/Settings.yaml '$PURVIEWCLIENTID' "$PURVIEW_CLIENT_ID"; fi
+        if [ -n "$PURVIEW_CLIENT_SECRET" ]; then replace_settings_placeholder /tmp/Settings.yaml '$PURVIEWCLIENTSECRET' "$PURVIEW_CLIENT_SECRET"; fi
         # Optional multi-line blocks: default to valid empty payloads when not provided.
         replace_settings_placeholder /tmp/Settings.yaml '$OIDCFileData' '{}'
         replace_settings_placeholder /tmp/Settings.yaml '$TLSCERT' ''

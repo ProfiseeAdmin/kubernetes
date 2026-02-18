@@ -335,6 +335,9 @@ App settings prompts (stored in `secrets/seed-secrets.json`):
 - **OIDC provider** (Entra or Okta)
 - **Entra tenant ID** or **Okta authority URL**
 - **OIDC client ID / client secret**
+- **Use Purview** (`y/n`)
+- **Purview Atlas Endpoint** (`https://.../catalog`)
+- **Purview Collection ID / Tenant ID / App Client ID / App Client Secret** (stored as secrets; resolved during db_init when Purview is enabled)
 - **Cluster node count (app pods)**
 - **ACR repository name / image tag / registry**
 - **ACR username / password / auth / email**

@@ -125,6 +125,18 @@ function Read-SecretValue([string]$Label) {
   return Read-Host $Label
 }
 
+function To-BoolOrDefault($Value, [bool]$Default) {
+  if ($null -eq $Value -or $Value -eq "") { return $Default }
+  try { return [System.Convert]::ToBoolean($Value) } catch { return $Default }
+}
+
+function Get-PropValue($obj, [string]$Name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties[$Name]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
 function Ensure-ObjectProperty($obj, [string]$Name, $DefaultValue) {
   $prop = $obj.PSObject.Properties[$Name]
   if ($null -eq $prop) {
@@ -416,6 +428,34 @@ if ($oidcClientId -or $oidcClientSecret) {
   } | ConvertTo-Json -Depth 4
   $secretName = "$Prefix/oidc"
   $secretArns.oidc = Put-Secret $secretName $oidcPayload $Region
+}
+
+# Purview secrets (collection/tenant/client credentials)
+$seedPurview = if ($seed) { Get-PropValue $seed "purview" } else { $null }
+$usePurview = To-BoolOrDefault (Get-PropValue $seedPurview "use_purview") $false
+if ($usePurview) {
+  $purviewCollectionId = Get-PropValue $seedPurview "collection_id"
+  $purviewTenantId = Get-PropValue $seedPurview "tenant_id"
+  $purviewClientId = Get-PropValue $seedPurview "client_id"
+  $purviewClientSecret = Get-PropValue $seedPurview "client_secret"
+
+  if (-not $purviewCollectionId) { $purviewCollectionId = Read-Value "Purview Collection ID" "" }
+  if (-not $purviewTenantId) { $purviewTenantId = Read-Value "Purview Tenant ID" "" }
+  if (-not $purviewClientId) { $purviewClientId = Read-Value "Purview Application Registration Client ID" "" }
+  if (-not $purviewClientSecret) { $purviewClientSecret = Read-SecretValue "Purview Application Registration Client Secret" }
+
+  if (-not $purviewCollectionId -or -not $purviewTenantId -or -not $purviewClientId -or -not $purviewClientSecret) {
+    throw "Purview is enabled, but one or more required Purview secret values are missing."
+  }
+
+  $purviewPayload = @{
+    collection_id = $purviewCollectionId
+    tenant_id     = $purviewTenantId
+    client_id     = $purviewClientId
+    client_secret = $purviewClientSecret
+  } | ConvertTo-Json -Depth 4
+  $secretName = "$Prefix/purview"
+  $secretArns.purview = Put-Secret $secretName $purviewPayload $Region
 }
 
 # TLS cert/key (manual) - driven by seed file, no extra prompt

@@ -58,6 +58,11 @@ function Read-Bool([string]$Label, $Current) {
   return ($input.ToLower() -in @("y", "yes", "true", "1"))
 }
 
+function To-BoolOrDefault($Value, [bool]$Default) {
+  if ($null -eq $Value -or $Value -eq "") { return $Default }
+  try { return [System.Convert]::ToBoolean($Value) } catch { return $Default }
+}
+
 function Get-PropValue($obj, [string]$Name) {
   if ($null -eq $obj) { return $null }
   $prop = $obj.PSObject.Properties[$Name]
@@ -413,6 +418,12 @@ $tlsCert = $null
 $tlsKey = $null
 $tlsCertPath = $null
 $tlsKeyPath = $null
+$usePurview = $false
+$purviewAtlasEndpoint = $null
+$purviewCollectionId = $null
+$purviewTenantId = $null
+$purviewClientId = $null
+$purviewClientSecret = $null
 
 if (Test-Path -LiteralPath $seedPath) {
   try {
@@ -435,6 +446,15 @@ if (Test-Path -LiteralPath $seedPath) {
     if ($seedDefaults.oidc.client_secret) { $oidcClientSecret = $seedDefaults.oidc.client_secret }
     if ($seedDefaults.oidc.authority) { $oidcUrl = $seedDefaults.oidc.authority }
     if ($seedDefaults.oidc.tenant_id) { $oidcTenantId = $seedDefaults.oidc.tenant_id }
+    $seedPurview = Get-PropValue $seedDefaults "purview"
+    if ($seedPurview) {
+      $usePurview = To-BoolOrDefault (Get-PropValue $seedPurview "use_purview") $false
+      $purviewAtlasEndpoint = Get-PropValue $seedPurview "atlas_endpoint"
+      $purviewCollectionId = Get-PropValue $seedPurview "collection_id"
+      $purviewTenantId = Get-PropValue $seedPurview "tenant_id"
+      $purviewClientId = Get-PropValue $seedPurview "client_id"
+      $purviewClientSecret = Get-PropValue $seedPurview "client_secret"
+    }
     if ($seedDefaults.tls.cert_path) { $tlsCertPath = $seedDefaults.tls.cert_path }
     if ($seedDefaults.tls.key_path) { $tlsKeyPath = $seedDefaults.tls.key_path }
   } catch {
@@ -493,6 +513,32 @@ if (-not $NoPrompt) {
     }
   }
 
+  $usePurview = Read-Bool "Use Purview" $usePurview
+  if ($usePurview) {
+    $purviewAtlasEndpoint = Read-Value "Purview Atlas Endpoint (https://.../catalog)" $purviewAtlasEndpoint
+    $purviewCollectionId = Read-ValueMasked "Purview Collection ID" $purviewCollectionId
+    if ($oidcTenantId) {
+      $sameTenantDefault = $true
+      if ($purviewTenantId -and $purviewTenantId -ne $oidcTenantId) { $sameTenantDefault = $false }
+      $useSamePurviewTenant = Read-Bool "Use same tenant ID as Auth tenant ID" $sameTenantDefault
+      if ($useSamePurviewTenant) {
+        $purviewTenantId = $oidcTenantId
+      } else {
+        $purviewTenantId = Read-ValueMasked "Purview Tenant ID" $purviewTenantId
+      }
+    } else {
+      $purviewTenantId = Read-ValueMasked "Purview Tenant ID" $purviewTenantId
+    }
+    $purviewClientId = Read-ValueMasked "Purview Application Registration Client ID" $purviewClientId
+    $purviewClientSecret = Read-ValueMasked "Purview Application Registration Client Secret" $purviewClientSecret
+  } else {
+    $purviewAtlasEndpoint = ""
+    $purviewCollectionId = ""
+    $purviewTenantId = ""
+    $purviewClientId = ""
+    $purviewClientSecret = ""
+  }
+
   $podCount = Read-Value "Cluster node count (app pods)" $podCount
 
   $acrRepoName = Read-Value "ACR repository name" $acrRepoName
@@ -524,6 +570,14 @@ if (-not $NoPrompt) {
   if ($dbInitCfgCheck -and $dbInitCfgCheck.enabled -eq $true) {
     if (-not $sqlUsername -or -not $sqlPassword) {
       throw "App SQL username/password are required when db_init is enabled."
+    }
+  }
+  if ($usePurview) {
+    if (-not $purviewAtlasEndpoint -or -not $purviewCollectionId -or -not $purviewTenantId -or -not $purviewClientId -or -not $purviewClientSecret) {
+      throw "Purview is enabled, but one or more required Purview values are missing."
+    }
+    if ($purviewAtlasEndpoint -notmatch "/catalog/?$") {
+      Write-Host "Warning: Purview Atlas Endpoint does not end with '/catalog'."
     }
   }
 }
@@ -563,6 +617,14 @@ if (-not $NoPrompt) {
       authority     = $oidcUrl
       client_id     = $oidcClientId
       client_secret = $oidcClientSecret
+    }
+    purview = @{
+      use_purview   = $usePurview
+      atlas_endpoint = $purviewAtlasEndpoint
+      collection_id = $purviewCollectionId
+      tenant_id     = $purviewTenantId
+      client_id     = $purviewClientId
+      client_secret = $purviewClientSecret
     }
     tls = @{
       cert_path = $tlsCertPath
@@ -621,11 +683,13 @@ $settingsContent = Replace-Token $settingsContent "KEYVAULTRESOURCEGROUP" ""
 $settingsContent = Replace-Token $settingsContent "AZURESUBSCRIPTIONID" ""
 $settingsContent = Replace-Token $settingsContent "AZURETENANTID" ""
 $settingsContent = Replace-Token $settingsContent "KUBERNETESCLIENTID" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWURL" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTID" ""
-$settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTSECRET" ""
+$settingsContent = Replace-Token $settingsContent "PURVIEWURL" (if ($usePurview) { $purviewAtlasEndpoint } else { "" })
+if (-not $usePurview) {
+  $settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTSECRET" ""
+}
 
 # Force cloud provider flags for AWS
 $settingsContent = $settingsContent -replace '(?m)^(\s*azure:\s*\r?\n\s*isProvider:\s*)true', '${1}false'
