@@ -866,6 +866,45 @@ JSON
     log "Route53 details not set; skipping DNS update."
   fi
 
+  if [ -n "$ROUTE53_RECORD_NAME" ]; then
+    coredns_host=$(printf '%s' "$ROUTE53_RECORD_NAME" | sed 's/\.$//')
+    log "Ensuring CoreDNS rewrite in coredns Corefile: $coredns_host -> traefik.traefik.svc.cluster.local"
+    current_corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/tmp/db-init-step.log || true)
+    if [ -z "$current_corefile" ]; then
+      log "FAILED: Read CoreDNS Corefile"
+      sed -n '1,120p' /tmp/db-init-step.log || true
+      exit 1
+    fi
+    updated_corefile=$(printf '%s\n' "$current_corefile" | awk -v host="$coredns_host" '
+      BEGIN {
+        line = "    rewrite name exact " host " traefik.traefik.svc.cluster.local"
+        inserted = 0
+      }
+      $0 ~ /^[[:space:]]*rewrite name exact .* traefik\.traefik\.svc\.cluster\.local$/ { next }
+      $0 ~ /^[[:space:]]*forward[[:space:]]+\.[[:space:]]+/ && !inserted {
+        print line
+        inserted = 1
+      }
+      { print }
+      END {
+        if (!inserted) { print line }
+      }
+    ')
+    if [ "$updated_corefile" != "$current_corefile" ]; then
+      printf '%s' "$updated_corefile" > /tmp/coredns-Corefile
+      cat > /tmp/coredns-patch.json <<JSON
+{"data":{"Corefile":$(jq -Rs . /tmp/coredns-Corefile)}}
+JSON
+      run "Patch CoreDNS Corefile" kubectl -n kube-system patch configmap coredns --type merge --patch-file /tmp/coredns-patch.json
+      run "Restart CoreDNS" kubectl -n kube-system rollout restart deployment/coredns
+      run "Wait for CoreDNS rollout" kubectl -n kube-system rollout status deployment/coredns --timeout=300s
+    else
+      log "CoreDNS rewrite already present; skipping CoreDNS patch."
+    fi
+  else
+    log "Skipping CoreDNS rewrite (ROUTE53_RECORD_NAME not set)."
+  fi
+
       if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
         cat > /tmp/platform.json <<JSON
 {"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
@@ -923,7 +962,7 @@ JSON
         helm repo remove profisee >/dev/null 2>&1 || true
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
-        repo_url=$(helm repo list 2>/tmp/db-init-step.log | awk '$1=="profisee"{print $2; exit}')
+        repo_url=$(helm repo list 2>/tmp/db-init-step.log | awk '$1=="profisee"{v=$2} END{print v}')
         if [ -n "$repo_url" ]; then
           log "Profisee helm repo URL: $repo_url"
         else
@@ -931,27 +970,28 @@ JSON
         fi
         remote_version=$(curl -fsSL https://profiseeadmin.github.io/kubernetes/index.yaml 2>/tmp/db-init-step.log | awk '
           /name:[[:space:]]*profisee-platform/ {in_chart=1; next}
-          in_chart && /version:[[:space:]]*/ {print $2; exit}
+          in_chart && /version:[[:space:]]*/ && v=="" {v=$2}
+          END{print v}
         ')
         if [ -n "$remote_version" ]; then
           log "Profisee chart version (index.yaml): $remote_version"
         else
           log "Profisee chart version (index.yaml): <unknown>"
         fi
-        repo_versions=$(helm search repo profisee/profisee-platform --versions 2>/tmp/db-init-step.log | awk 'NR>1{print $2}' | head -n 5 | tr '\n' ' ')
+        repo_versions=$(helm search repo profisee/profisee-platform --versions 2>/tmp/db-init-step.log | awk 'NR>1 && c<5 {printf "%s ", $2; c++}')
         if [ -n "$repo_versions" ]; then
           log "Profisee chart versions (helm cache top5): $repo_versions"
         else
           log "Profisee chart versions (helm cache top5): <none>"
         fi
-        chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/db-init-step.log | awk '/^version:/ {print $2; exit}')
+        chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/db-init-step.log | awk '/^version:/ {v=$2} END{print v}')
         if [ -n "$chart_version" ]; then
           log "Profisee chart version (repo): $chart_version"
         else
           log "Profisee chart version (repo): <unknown>"
         fi
         run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" profisee/profisee-platform -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
-        installed_version=$(helm get metadata "$APP_RELEASE_NAME" -n "$APP_NAMESPACE" 2>/dev/null | awk '/^VERSION:/ {print $2; exit}')
+        installed_version=$(helm get metadata "$APP_RELEASE_NAME" -n "$APP_NAMESPACE" 2>/dev/null | awk '/^VERSION:/ {v=$2} END{print v}')
         if [ -n "$installed_version" ]; then
           log "Profisee chart version (installed): $installed_version"
         else

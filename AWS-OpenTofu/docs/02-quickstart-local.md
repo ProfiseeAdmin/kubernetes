@@ -535,6 +535,7 @@ finishes DB init. It:
 - Writes platform outputs to the App Settings S3 bucket:
   `s3://<settings-bucket>/outputs/<cluster-name>/platform.json`.
 - Updates Route53 `route53.record_name` → NLB hostname (CNAME), if provided.
+- Patches `kube-system/coredns` Corefile with rewrite for `route53.record_name` → `traefik.traefik.svc.cluster.local` and rolls CoreDNS.
 After the NLB hostname is available **and** Route53 update succeeds, the task
 installs the app by default (see `app_deploy`).
 
