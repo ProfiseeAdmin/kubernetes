@@ -651,6 +651,82 @@ set_yaml_scalar_in_section() {
   sed -i "/^$section:/,/^[^[:space:]]/ s|^\([[:space:]]*$key:[[:space:]]*\).*|\1\"$r\"|" "$file"
 }
 
+normalize_dns_name() {
+  local v="$1"
+  v=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')
+  v=$(printf '%s' "$v" | sed 's/\.$//')
+  printf '%s' "$v"
+}
+
+wait_for_public_cname() {
+  local fqdn="$1"
+  local expected_target="$2"
+  local timeout_seconds="$DB_INIT_DNS_WAIT_SECONDS"
+  local sleep_seconds="$DB_INIT_DNS_WAIT_SLEEP_SECONDS"
+  local success_needed="$DB_INIT_DNS_SUCCESS_CHECKS"
+  local stabilize_seconds="$DB_INIT_DNS_STABILIZE_SECONDS"
+  if [ -z "$timeout_seconds" ]; then timeout_seconds="900"; fi
+  if [ -z "$sleep_seconds" ]; then sleep_seconds="15"; fi
+  if [ -z "$success_needed" ]; then success_needed="2"; fi
+  if [ -z "$stabilize_seconds" ]; then stabilize_seconds="120"; fi
+
+  local fqdn_norm
+  local expected_norm
+  fqdn_norm=$(normalize_dns_name "$fqdn")
+  expected_norm=$(normalize_dns_name "$expected_target")
+
+  log "Waiting for public DNS CNAME $fqdn_norm -> $expected_norm (google + cloudflare)..."
+  local start_ts
+  local consecutive_ok
+  start_ts=$(date +%s)
+  consecutive_ok=0
+  while true; do
+    local g_resp g_status g_cname
+    local cf_resp cf_status cf_cname
+    local g_ok cf_ok
+    g_resp=$(curl -fsSL --max-time 10 "https://dns.google/resolve?name=$fqdn_norm&type=CNAME" 2>/tmp/db-init-step.log || true)
+    g_status=$(printf '%s' "$g_resp" | jq -r '.Status // empty' 2>/dev/null || true)
+    g_cname=$(printf '%s' "$g_resp" | jq -r '.Answer[]? | select(.type==5) | .data' 2>/dev/null | head -n1 || true)
+    g_cname=$(normalize_dns_name "$g_cname")
+
+    cf_resp=$(curl -fsSL --max-time 10 -H "accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name=$fqdn_norm&type=CNAME" 2>>/tmp/db-init-step.log || true)
+    cf_status=$(printf '%s' "$cf_resp" | jq -r '.Status // empty' 2>/dev/null || true)
+    cf_cname=$(printf '%s' "$cf_resp" | jq -r '.Answer[]? | select(.type==5) | .data' 2>/dev/null | head -n1 || true)
+    cf_cname=$(normalize_dns_name "$cf_cname")
+
+    g_ok=0
+    cf_ok=0
+    if [ -n "$g_cname" ] && [ "$g_cname" = "$expected_norm" ]; then g_ok=1; fi
+    if [ -n "$cf_cname" ] && [ "$cf_cname" = "$expected_norm" ]; then cf_ok=1; fi
+
+    if [ "$g_ok" -eq 1 ] && [ "$cf_ok" -eq 1 ]; then
+      consecutive_ok=$((consecutive_ok + 1))
+      log "Public DNS check passed ($consecutive_ok/$success_needed): google=$g_cname cloudflare=$cf_cname"
+      if [ "$consecutive_ok" -ge "$success_needed" ]; then
+        if [ "$stabilize_seconds" -gt 0 ] 2>/dev/null; then
+          log "DNS propagated across resolvers; waiting $stabilize_seconds s for cache stabilization..."
+          sleep "$stabilize_seconds"
+        fi
+        log "Public DNS is propagated: $fqdn_norm -> $expected_norm"
+        return 0
+      fi
+    else
+      consecutive_ok=0
+    fi
+
+    local now_ts
+    now_ts=$(date +%s)
+    if [ $((now_ts - start_ts)) -ge "$timeout_seconds" ]; then
+      log "Timed out waiting for DNS propagation."
+      log "Last public DNS check: google(status=$g_status,cname=$g_cname) cloudflare(status=$cf_status,cname=$cf_cname) expected=$expected_norm"
+      return 1
+    fi
+
+    log "Public DNS not ready yet: google(status=$g_status,cname=$g_cname) cloudflare(status=$cf_status,cname=$cf_cname); retrying in $sleep_seconds s..."
+    sleep "$sleep_seconds"
+  done
+}
+
 MASTER_JSON=$(get_secret_json "$SECRET_RDS_MASTER_ARN" "master") || exit 1
 APP_JSON=$(get_secret_json "$SECRET_SQL_ARN" "app-sql") || exit 1
 
@@ -956,9 +1032,12 @@ JSON
         log "Skipping app deploy (Traefik NLB hostname missing)."
       elif [ "$r53_updated" -ne 1 ]; then
         log "Skipping app deploy (Route53 not updated)."
+      elif [ -z "$ROUTE53_RECORD_NAME" ]; then
+        log "Skipping app deploy (Route53 record name missing)."
       elif [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
+        run "Wait for public DNS propagation" wait_for_public_cname "$ROUTE53_RECORD_NAME" "$lb_host"
         run "Wait for EBS CSI controller" kubectl -n kube-system wait --for=condition=Available deploy/ebs-csi-controller --timeout=600s
         run "Wait for EBS CSI node daemonset" kubectl -n kube-system rollout status daemonset/ebs-csi-node --timeout=600s
         if ! kubectl get crd clusterissuers.cert-manager.io >/dev/null 2>&1; then
