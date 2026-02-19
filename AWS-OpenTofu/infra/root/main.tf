@@ -971,13 +971,28 @@ done
   log "Traefik NLB DNS: $lb_host"
 
   r53_updated=0
+  route53_changed=0
   if [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
-    log "Updating Route53 CNAME $ROUTE53_RECORD_NAME -> $lb_host"
-    cat > /tmp/route53.json <<JSON
+    record_name_dot="$ROUTE53_RECORD_NAME"
+    case "$record_name_dot" in
+      *.) ;;
+      *) record_name_dot="$record_name_dot." ;;
+    esac
+    current_cname=$(aws route53 list-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --output json 2>/tmp/db-init-step.log | jq -r --arg n "$record_name_dot" '.ResourceRecordSets[]? | select(.Type=="CNAME" and .Name==$n) | .ResourceRecords[0].Value // empty' | head -n1 || true)
+    current_norm=$(normalize_dns_name "$current_cname")
+    desired_norm=$(normalize_dns_name "$lb_host")
+    if [ -n "$current_norm" ] && [ "$current_norm" = "$desired_norm" ]; then
+      log "Route53 CNAME already points to $lb_host; skipping update."
+      r53_updated=1
+    else
+      log "Updating Route53 CNAME $ROUTE53_RECORD_NAME -> $lb_host"
+      cat > /tmp/route53.json <<JSON
 {"Comment":"Profisee Traefik NLB","Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"$ROUTE53_RECORD_NAME","Type":"CNAME","TTL":60,"ResourceRecords":[{"Value":"$lb_host"}]}}]}
 JSON
-    run "Update Route53 record" aws route53 change-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --change-batch file:///tmp/route53.json
-    r53_updated=1
+      run "Update Route53 record" aws route53 change-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --change-batch file:///tmp/route53.json
+      r53_updated=1
+      route53_changed=1
+    fi
   else
     log "Route53 details not set; skipping DNS update."
   fi
@@ -1039,7 +1054,17 @@ JSON
       elif [ -z "$SETTINGS_S3_BUCKET" ] || [ -z "$SETTINGS_S3_KEY" ]; then
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
-        run "Wait for public DNS propagation" wait_for_public_cname "$ROUTE53_RECORD_NAME" "$lb_host"
+        skip_dns_wait=0
+        if [ "$route53_changed" -eq 0 ] 2>/dev/null; then
+          cert_ready=$(kubectl get certificate -n "$APP_NAMESPACE" profisee-tls-ingress -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+          if [ "$cert_ready" = "True" ]; then
+            log "TLS cert already issued and Route53 unchanged; skipping public DNS propagation wait."
+            skip_dns_wait=1
+          fi
+        fi
+        if [ "$skip_dns_wait" -eq 0 ]; then
+          run "Wait for public DNS propagation" wait_for_public_cname "$ROUTE53_RECORD_NAME" "$lb_host"
+        fi
         run "Wait for EBS CSI controller" kubectl -n kube-system wait --for=condition=Available deploy/ebs-csi-controller --timeout=600s
         run "Wait for EBS CSI node daemonset" kubectl -n kube-system rollout status daemonset/ebs-csi-node --timeout=600s
         if ! kubectl get crd clusterissuers.cert-manager.io >/dev/null 2>&1; then
