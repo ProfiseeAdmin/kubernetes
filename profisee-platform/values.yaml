@@ -84,15 +84,16 @@ cloud:
       managedIdentity:
         name: ""
         clientId: ""
-      purview:
-        tenantId: "$PURVIEWTENANTID"
-        url: "$PURVIEWURL"
-        collectionId: "$PURVIEWCOLLECTIONID"
-        clientId: "$PURVIEWCLIENTID"
-        clientSecret: "$PURVIEWCLIENTSECRET"
     aws:
       isProvider: false
       ebsVolumeId: ""
     google:
       isProvider: false
       gceVolumeName: ""
+integrations:
+  purview:
+    tenantId: "$PURVIEWTENANTID"
+    url: "$PURVIEWURL"
+    collectionId: "$PURVIEWCOLLECTIONID"
+    clientId: "$PURVIEWCLIENTID"
+    clientSecret: "$PURVIEWCLIENTSECRET"

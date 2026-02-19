@@ -235,7 +235,7 @@ if (-not (Test-Path -LiteralPath $examplePath)) {
   throw "Template config not found: $examplePath"
 }
 
-$settingsUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/master/Azure-ARM/Settings.yaml"
+$settingsUrl = "https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/Azure-ARM/Settings.yaml"
 $settingsPath = Join-Path $targetDir "Settings.yaml"
 $settingsDownloadJob = $null
 try {
@@ -248,6 +248,7 @@ try {
       [pscustomobject]@{ Success = $false; Error = $_.Exception.Message }
     }
   } -ArgumentList $settingsUrl, $settingsPath
+  Write-Host ("Downloading Settings.yaml in background: {0}" -f $settingsPath)
 } catch {
   try {
     Invoke-WebRequest -Uri $settingsUrl -OutFile $settingsPath -ErrorAction Stop | Out-Null
@@ -413,7 +414,6 @@ if ($null -ne $settingsDownloadJob) {
   if (-not $settingsDownloadResult.Success) {
     throw "Failed to download Settings.yaml from ${settingsUrl}: $($settingsDownloadResult.Error)"
   }
-  Write-Host ("Downloaded Settings.yaml to: {0}" -f $settingsPath)
 } elseif (-not (Test-Path -LiteralPath $settingsPath)) {
   throw "Failed to download Settings.yaml from $settingsUrl"
 }
@@ -753,13 +753,6 @@ $settingsContent = Replace-Token $settingsContent "AZURETENANTID" ""
 $settingsContent = Replace-Token $settingsContent "KUBERNETESCLIENTID" ""
 $purviewUrlValue = ""
 if ($usePurview) { $purviewUrlValue = $purviewAtlasEndpoint }
-$settingsContent = Replace-Token $settingsContent "PURVIEWURL" $purviewUrlValue
-if (-not $usePurview) {
-  $settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
-  $settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""
-  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTID" ""
-  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTSECRET" ""
-}
 
 # Force cloud provider flags for AWS
 $settingsContent = $settingsContent -replace '(?m)^(\s*azure:\s*\r?\n\s*isProvider:\s*)true', '${1}false'
@@ -767,6 +760,15 @@ $settingsContent = $settingsContent -replace '(?m)^(\s*aws:\s*\r?\n\s*isProvider
 
 # Make EBS volume explicit placeholder for later update
 $settingsContent = $settingsContent -replace '(?m)^(\s*ebsVolumeId:\s*).*$','$1"$EBSVOLUMEID"'
+
+# Apply Purview token replacement.
+$settingsContent = Replace-Token $settingsContent "PURVIEWURL" $purviewUrlValue
+if (-not $usePurview) {
+  $settingsContent = Replace-Token $settingsContent "PURVIEWTENANTID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCOLLECTIONID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTID" ""
+  $settingsContent = Replace-Token $settingsContent "PURVIEWCLIENTSECRET" ""
+}
 
 [System.IO.File]::WriteAllText($settingsPath, $settingsContent, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host ("Wrote settings: {0}" -f $settingsPath)
@@ -782,3 +784,4 @@ if ($SeedSecrets) {
   }
   & $seedScript -DeploymentName $DeploymentName -RepoRoot $resolvedRepoRoot -UpdateConfig
 }
+
