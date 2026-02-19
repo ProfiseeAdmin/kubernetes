@@ -434,6 +434,7 @@ if ($oidcClientId -or $oidcClientSecret) {
 $seedPurview = if ($seed) { Get-PropValue $seed "purview" } else { $null }
 $usePurview = To-BoolOrDefault (Get-PropValue $seedPurview "use_purview") $false
 if ($usePurview) {
+  $purviewAtlasEndpoint = Get-PropValue $seedPurview "atlas_endpoint"
   $purviewCollectionId = Get-PropValue $seedPurview "collection_id"
   $purviewTenantId = Get-PropValue $seedPurview "tenant_id"
   $purviewClientId = Get-PropValue $seedPurview "client_id"
@@ -449,6 +450,7 @@ if ($usePurview) {
   }
 
   $purviewPayload = @{
+    atlas_endpoint = $purviewAtlasEndpoint
     collection_id = $purviewCollectionId
     tenant_id     = $purviewTenantId
     client_id     = $purviewClientId
