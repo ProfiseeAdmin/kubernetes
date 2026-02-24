@@ -90,6 +90,15 @@ function Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
   return $script:cachedOutputs
 }
 
+function Read-JsonFileOrNull([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $null }
+  try {
+    return Get-Content -Raw -Path $Path | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
 # If the user changed the deploy role name, derive it from config when possible.
 try {
   $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
@@ -363,6 +372,91 @@ if ($dbInitEnabled -eq $true) {
     if ($elapsed -ge ($maxWaitMinutes * 60)) {
       Write-Host "DB init task still running. Check status in ECS console."
       break
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Auto-wire CloudFront origin (Traefik NLB) and apply edge resources
+# ---------------------------------------------------------------------------
+$cloudfrontCfg = Get-PropValue $cfg "cloudfront"
+$cloudfrontEnabled = Get-PropValue $cloudfrontCfg "enabled"
+if ($cloudfrontEnabled -eq $true) {
+  $settingsBucketCfg = Get-PropValue $cfg "settings_bucket"
+  $settingsBucketName = Get-PropValue $settingsBucketCfg "name"
+  $clusterCfg = Get-PropValue $cfg "eks"
+  $clusterName = Get-PropValue $clusterCfg "cluster_name"
+  $regionForPlatformOut = Get-PropValue $cfg "region"
+  if (-not $regionForPlatformOut -or $regionForPlatformOut -eq "") { $regionForPlatformOut = "us-east-1" }
+  $platformOut = $null
+
+  $localPlatformOutPath = Join-Path $deploymentPath "outputs\platform.json"
+  $platformOut = Read-JsonFileOrNull $localPlatformOutPath
+
+  if (-not $platformOut -and $settingsBucketName -and $clusterName) {
+    $platformKey = "outputs/$clusterName/platform.json"
+    $tmpPlatformPath = New-TemporaryFile
+    try {
+      & aws s3 cp ("s3://{0}/{1}" -f $settingsBucketName, $platformKey) $tmpPlatformPath --region $regionForPlatformOut | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        $platformOut = Read-JsonFileOrNull $tmpPlatformPath
+      }
+    } finally {
+      Remove-Item -LiteralPath $tmpPlatformPath -ErrorAction SilentlyContinue
+    }
+  }
+
+  $nlbDns = Get-PropValue $platformOut "traefik_nlb_dns"
+  if (-not $nlbDns -or $nlbDns -eq "") {
+    Write-Host "CloudFront wiring skipped (Traefik NLB DNS not found yet)."
+  } else {
+    $edgeConfigChanged = $false
+    $currentOrigin = Get-PropValue $cloudfrontCfg "origin_domain_name"
+    if (-not $currentOrigin -or $currentOrigin -eq "" -or $currentOrigin -ne $nlbDns) {
+      $cfg.cloudfront.origin_domain_name = $nlbDns
+      $edgeConfigChanged = $true
+      Write-Host ("CloudFront origin set to Traefik NLB: {0}" -f $nlbDns)
+    }
+
+    $currentAliases = @()
+    $aliasesValue = Get-PropValue $cloudfrontCfg "aliases"
+    if ($aliasesValue) { $currentAliases = @($aliasesValue) }
+    if ($currentAliases.Count -eq 0) {
+      $route53Cfg = Get-PropValue $cfg "route53"
+      $recordName = Get-PropValue $route53Cfg "record_name"
+      if ($recordName -and $recordName -ne "") {
+        $cfg.cloudfront.aliases = @($recordName)
+        $edgeConfigChanged = $true
+        Write-Host ("CloudFront aliases defaulted to Route53 record: {0}" -f $recordName)
+      }
+    }
+
+    if ($edgeConfigChanged) {
+      [System.IO.File]::WriteAllText($varFile, ($cfg | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
+      Write-Host ("Updated CloudFront config in {0}" -f $varFile)
+
+      Push-Location $infraRoot
+      try {
+        tofu init "-backend-config=$backendConfig"
+
+        $edgeApplyArgs = @("apply", "-var-file=$varFile")
+        if ($ExtraVarFile) {
+          $edgeApplyArgs += "-var-file=$ExtraVarFile"
+        }
+        if ($AutoApprove) {
+          $edgeApplyArgs += "-auto-approve"
+        }
+
+        Write-Host "Applying CloudFront/Route53 changes..."
+        tofu @edgeApplyArgs
+        if ($LASTEXITCODE -ne 0) {
+          throw "OpenTofu edge apply failed (exit code $LASTEXITCODE)."
+        }
+      } finally {
+        Pop-Location
+      }
+    } else {
+      Write-Host "CloudFront already wired; skipping edge apply."
     }
   }
 }

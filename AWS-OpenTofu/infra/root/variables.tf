@@ -260,15 +260,7 @@ variable "cloudfront" {
     logging_bucket           = optional(string)
     tags                     = optional(map(string), {})
   })
-  description = "CloudFront distribution configuration."
-
-  validation {
-    condition = !var.cloudfront.enabled || (
-      var.cloudfront.origin_domain_name != null &&
-      var.cloudfront.origin_domain_name != ""
-    )
-    error_message = "cloudfront.origin_domain_name is required when cloudfront.enabled is true."
-  }
+  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after db_init/Traefik."
 }
 
 variable "route53" {

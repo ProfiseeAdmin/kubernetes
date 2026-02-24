@@ -12,7 +12,8 @@ param(
   [string]$WorkDir = "C:\ProfiseeDeploy",
 
   # For parity/reference as you requested
-  [string]$SettingsYamlUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/Azure-ARM/Settings.yaml"
+  [string]$SettingsYamlUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/Azure-ARM/Settings.yaml",
+  [string]$NginxConfUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/WinServerContainers/nginx-config/nginx.conf"
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +25,69 @@ function SecureToPlain([Security.SecureString]$s){
   $b=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
   try{[Runtime.InteropServices.Marshal]::PtrToStringAuto($b)} finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)}
 }
+function Read-Required([string]$prompt){
+  do { $v = Read-Host $prompt } while([string]::IsNullOrWhiteSpace($v))
+  return $v
+}
+function Read-RequiredSecret([string]$prompt){
+  do { $v = SecureToPlain (Read-Host $prompt -AsSecureString) } while([string]::IsNullOrWhiteSpace($v))
+  return $v
+}
+function Parse-SemVer([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return $null }
+  $m = [regex]::Match($value,'(\d+\.\d+\.\d+)')
+  if(-not $m.Success){ return $null }
+  try { return [version]$m.Groups[1].Value } catch { return $null }
+}
+function Is-SameOrNewer([string]$installed,[string]$latest){
+  $installedVer = Parse-SemVer $installed
+  $latestVer = Parse-SemVer $latest
+  if($null -eq $installedVer -or $null -eq $latestVer){ return $false }
+  return $installedVer -ge $latestVer
+}
+function Ensure-PathContains([string[]]$entries){
+  $mp = [Environment]::GetEnvironmentVariable("Path","Machine")
+  foreach($p in $entries){
+    if($mp -notlike "*$p*"){ $mp = "$mp;$p" }
+  }
+  [Environment]::SetEnvironmentVariable("Path",$mp,"Machine")
+  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+}
+function Get-ContainerdLocalVersion {
+  $exe = "$env:ProgramFiles\containerd\containerd.exe"
+  if(-not(Test-Path $exe)){ return $null }
+  try{
+    $txt = (& $exe --version 2>&1 | Out-String)
+    $m = [regex]::Match($txt,'v(\d+\.\d+\.\d+)')
+    if($m.Success){ return $m.Groups[1].Value }
+  } catch {}
+  return $null
+}
+function Get-NerdctlLocalVersion {
+  $exe = "$env:ProgramFiles\nerdctl\nerdctl.exe"
+  if(-not(Test-Path $exe)){ return $null }
+  try{
+    $txt = (& $exe --version 2>&1 | Out-String)
+    $m = [regex]::Match($txt,'(\d+\.\d+\.\d+)')
+    if($m.Success){ return $m.Groups[1].Value }
+  } catch {}
+  return $null
+}
+function Get-WindowsCniLocalVersion {
+  $marker = "$env:ProgramFiles\containerd\cni\bin\wcni.version"
+  if(Test-Path $marker){
+    $v = (Get-Content -Raw -Path $marker).Trim()
+    if(-not [string]::IsNullOrWhiteSpace($v)){ return $v }
+  }
+
+  $natExe = "$env:ProgramFiles\containerd\cni\bin\nat.exe"
+  if(Test-Path $natExe){
+    $fv = (Get-Item $natExe).VersionInfo.FileVersion
+    $m = [regex]::Match($fv,'(\d+\.\d+\.\d+)')
+    if($m.Success){ return $m.Groups[1].Value }
+  }
+  return $null
+}
 function Get-LatestGitHubRelease([string]$owner,[string]$repo,[string]$fallback){
   try{
     $r = Invoke-RestMethod -Headers @{ "User-Agent"="ProfiseeDeploy" } -Uri "https://api.github.com/repos/$owner/$repo/releases/latest"
@@ -33,6 +97,32 @@ function Get-LatestGitHubRelease([string]$owner,[string]$repo,[string]$fallback)
 function Stop-ServiceIfExists([string]$name){
   $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
   if($svc -and $svc.Status -ne "Stopped"){ Stop-Service -Name $name -Force }
+}
+function Ensure-ContainerdService([switch]$ForceRestart){
+  $containerdExe = "$env:ProgramFiles\containerd\containerd.exe"
+  if(-not(Test-Path $containerdExe)){ throw "containerd.exe not found at $containerdExe" }
+
+  $cfgPath = "$env:ProgramFiles\containerd\config.toml"
+  if(-not(Test-Path $cfgPath)){
+    & $containerdExe config default | Out-File $cfgPath -Encoding ascii
+  }
+
+  $svc = Get-Service -Name "containerd" -ErrorAction SilentlyContinue
+  if(-not $svc){
+    & $containerdExe --register-service | Out-Null
+    $svc = Get-Service -Name "containerd" -ErrorAction SilentlyContinue
+  }
+  if(-not $svc){ throw "containerd service could not be registered." }
+
+  if($ForceRestart){
+    if($svc.Status -eq "Running"){
+      Restart-Service containerd -Force
+    } else {
+      Start-Service containerd
+    }
+    return
+  }
+  if($svc.Status -ne "Running"){ Start-Service containerd }
 }
 function Install-ContainersFeature {
   Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
@@ -50,35 +140,43 @@ function Install-ContainerdAndNerdctl {
 
   $containerdVer = Get-LatestGitHubRelease "containerd" "containerd" "2.2.1"
   $nerdctlVer    = Get-LatestGitHubRelease "containerd" "nerdctl"    "2.2.1"
+  $localContainerdVer = Get-ContainerdLocalVersion
+  $localNerdctlVer = Get-NerdctlLocalVersion
   $arch = "amd64"
+  $containerdUpdated = $false
 
-  Stop-ServiceIfExists "containerd"
-
-  $cTgz = Join-Path $WorkDir "containerd-$containerdVer-windows-$arch.tar.gz"
-  Invoke-WebRequest -Uri "https://github.com/containerd/containerd/releases/download/v$containerdVer/containerd-$containerdVer-windows-$arch.tar.gz" -OutFile $cTgz
-  Push-Location $WorkDir
-  tar.exe -xvf $cTgz | Out-Null
-  Copy-Item -Path ".\bin" -Destination "$env:ProgramFiles\containerd" -Recurse -Force
-  Pop-Location
-
-  $nTgz = Join-Path $WorkDir "nerdctl-$nerdctlVer-windows-$arch.tar.gz"
-  Invoke-WebRequest -Uri "https://github.com/containerd/nerdctl/releases/download/v$nerdctlVer/nerdctl-$nerdctlVer-windows-$arch.tar.gz" -OutFile $nTgz
-  Push-Location $WorkDir
-  tar.exe -xvf $nTgz | Out-Null
-  Copy-Item -Path ".\nerdctl.exe" -Destination "$env:ProgramFiles\nerdctl\nerdctl.exe" -Force
-  Pop-Location
-
-  # PATH
-  $mp = [Environment]::GetEnvironmentVariable("Path","Machine")
-  foreach($p in @("$env:ProgramFiles\containerd","$env:ProgramFiles\nerdctl")){
-    if($mp -notlike "*$p*"){ $mp = "$mp;$p" }
+  if(Is-SameOrNewer $localContainerdVer $containerdVer){
+    Write-Host "containerd local version $localContainerdVer is current (latest $containerdVer). Skipping install."
+  } else {
+    Write-Host "Updating containerd from '$localContainerdVer' to '$containerdVer'"
+    Stop-ServiceIfExists "containerd"
+    $cTgz = Join-Path $WorkDir "containerd-$containerdVer-windows-$arch.tar.gz"
+    $cExtract = Join-Path $WorkDir "containerd-extract"
+    if(Test-Path $cExtract){ Remove-Item $cExtract -Recurse -Force }
+    Ensure-Dir $cExtract
+    Invoke-WebRequest -Uri "https://github.com/containerd/containerd/releases/download/v$containerdVer/containerd-$containerdVer-windows-$arch.tar.gz" -OutFile $cTgz
+    tar.exe -xvf $cTgz -C $cExtract | Out-Null
+    Copy-Item -Path (Join-Path $cExtract "bin\*") -Destination "$env:ProgramFiles\containerd" -Recurse -Force
+    Remove-Item $cExtract -Recurse -Force
+    $containerdUpdated = $true
   }
-  [Environment]::SetEnvironmentVariable("Path",$mp,"Machine")
-  $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 
-  & "$env:ProgramFiles\containerd\containerd.exe" config default | Out-File "$env:ProgramFiles\containerd\config.toml" -Encoding ascii
-  try { & "$env:ProgramFiles\containerd\containerd.exe" --register-service | Out-Null } catch {}
-  Start-Service containerd
+  if(Is-SameOrNewer $localNerdctlVer $nerdctlVer){
+    Write-Host "nerdctl local version $localNerdctlVer is current (latest $nerdctlVer). Skipping install."
+  } else {
+    Write-Host "Updating nerdctl from '$localNerdctlVer' to '$nerdctlVer'"
+    $nTgz = Join-Path $WorkDir "nerdctl-$nerdctlVer-windows-$arch.tar.gz"
+    $nExtract = Join-Path $WorkDir "nerdctl-extract"
+    if(Test-Path $nExtract){ Remove-Item $nExtract -Recurse -Force }
+    Ensure-Dir $nExtract
+    Invoke-WebRequest -Uri "https://github.com/containerd/nerdctl/releases/download/v$nerdctlVer/nerdctl-$nerdctlVer-windows-$arch.tar.gz" -OutFile $nTgz
+    tar.exe -xvf $nTgz -C $nExtract | Out-Null
+    Copy-Item -Path (Join-Path $nExtract "nerdctl.exe") -Destination "$env:ProgramFiles\nerdctl\nerdctl.exe" -Force
+    Remove-Item $nExtract -Recurse -Force
+  }
+
+  Ensure-PathContains @("$env:ProgramFiles\containerd","$env:ProgramFiles\nerdctl")
+  Ensure-ContainerdService -ForceRestart:$containerdUpdated
 }
 
 function Ensure-HnsModule {
@@ -95,13 +193,19 @@ function Install-WindowsNatCni_Latest {
   Ensure-Dir "$env:ProgramFiles\containerd\cni\conf"
 
   $wcniVer = Get-LatestGitHubRelease "microsoft" "windows-container-networking" "0.3.2"
+  $localWcniVer = Get-WindowsCniLocalVersion
   $zipName = "windows-container-networking-cni-amd64-v$wcniVer.zip"
   $zipUrl  = "https://github.com/microsoft/windows-container-networking/releases/download/v$wcniVer/$zipName"
   $zipPath = Join-Path $WorkDir $zipName
 
-  Write-Host "Downloading Windows CNI (windows-container-networking) $wcniVer from $zipUrl"
-  Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-  Expand-Archive -Path $zipPath -DestinationPath "$env:ProgramFiles\containerd\cni\bin" -Force
+  if(Is-SameOrNewer $localWcniVer $wcniVer){
+    Write-Host "Windows CNI local version $localWcniVer is current (latest $wcniVer). Skipping install."
+  } else {
+    Write-Host "Updating Windows CNI from '$localWcniVer' to '$wcniVer'"
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+    Expand-Archive -Path $zipPath -DestinationPath "$env:ProgramFiles\containerd\cni\bin" -Force
+    Set-Content -Path "$env:ProgramFiles\containerd\cni\bin\wcni.version" -Value $wcniVer -Encoding ascii -Force
+  }
 
   Ensure-HnsModule
   $existing = Get-HnsNetwork | Where-Object Name -eq "nat" -ErrorAction SilentlyContinue
@@ -135,6 +239,32 @@ function Download-SettingsYamlTemplate {
   Invoke-WebRequest -Uri $SettingsYamlUrl -OutFile $dst
   Write-Host "Downloaded Settings.yaml template to $dst"
 }
+function Download-NginxConfTemplate([int]$upstreamPort,[string]$webAppName,[string]$certFileName,[string]$keyFileName){
+  Ensure-Dir $WorkDir
+  Ensure-Dir "$NginxRoot\conf"
+  Ensure-Dir "$NginxRoot\logs"
+
+  $tmp = Join-Path $WorkDir "nginx.conf.downloaded"
+  $dst = Join-Path $NginxRoot "conf\nginx.conf"
+
+  Invoke-WebRequest -Uri $NginxConfUrl -OutFile $tmp
+  $conf = Get-Content -Raw -Path $tmp
+  if([string]::IsNullOrWhiteSpace($conf)){ throw "Downloaded nginx.conf is empty from: $NginxConfUrl" }
+
+  # Keep repo as source of truth while applying run-time values.
+  $conf = [regex]::Replace($conf,'server\s+127\.0\.0\.1:\d+;',"server 127.0.0.1:$upstreamPort;",1)
+  $conf = [regex]::Replace($conf,'ssl_certificate\s+[^;]+;',"ssl_certificate     c:/nginx/conf/certs/$certFileName;",1)
+  $conf = [regex]::Replace($conf,'ssl_certificate_key\s+[^;]+;',"ssl_certificate_key c:/nginx/conf/certs/$keyFileName;",1)
+  if($conf -notmatch 'location\s*=\s*/\s*\{'){
+    $needle = "        location = /healthz {"
+    if($conf.Contains($needle)){
+      $conf = $conf.Replace($needle, "        location = / { return 302 /$webAppName/; }`r`n`r`n$needle")
+    }
+  }
+
+  Set-Content -Path $dst -Value $conf -Encoding ascii -Force
+  Write-Host "Downloaded nginx.conf to $dst from $NginxConfUrl"
+}
 
 function Get-NginxStableVersion {
   $dl = Invoke-WebRequest -Uri "https://nginx.org/en/download.html" -UseBasicParsing
@@ -144,16 +274,37 @@ function Get-NginxStableVersion {
   if($html -match 'nginx/Windows-(\d+\.\d+\.\d+)'){ return $Matches[1] }
   throw "Could not parse nginx stable version from nginx.org."
 }
+function Get-NginxLocalVersion {
+  $exe = "$NginxRoot\nginx.exe"
+  if(-not(Test-Path $exe)){ return $null }
+  try{
+    $txt = (& $exe -v 2>&1 | Out-String)
+    $m = [regex]::Match($txt,'nginx/(\d+\.\d+\.\d+)')
+    if($m.Success){ return $m.Groups[1].Value }
+  } catch {}
+  return $null
+}
 
 function Install-NginxStable {
-  $ver = Get-NginxStableVersion
-  $zip = Join-Path $WorkDir "nginx-$ver.zip"
-  Invoke-WebRequest -Uri "https://nginx.org/download/nginx-$ver.zip" -OutFile $zip
+  $latestVer = Get-NginxStableVersion
+  $localVer = Get-NginxLocalVersion
+  if(Is-SameOrNewer $localVer $latestVer){
+    Write-Host "nginx local version $localVer is current (latest $latestVer). Skipping install."
+    Ensure-Dir "$NginxRoot\conf\certs"
+    Ensure-Dir "$NginxRoot\logs"
+    return
+  }
 
+  Write-Host "Updating nginx from '$localVer' to '$latestVer'"
+  $zip = Join-Path $WorkDir "nginx-$latestVer.zip"
+  Invoke-WebRequest -Uri "https://nginx.org/download/nginx-$latestVer.zip" -OutFile $zip
+
+  try { & "$NginxRoot\nginx.exe" -s stop 2>$null | Out-Null } catch {}
   if(Test-Path $NginxRoot){ Remove-Item $NginxRoot -Recurse -Force }
   Expand-Archive -Path $zip -DestinationPath (Split-Path $NginxRoot -Parent) -Force
-  Move-Item -Path (Join-Path (Split-Path $NginxRoot -Parent) "nginx-$ver") -Destination $NginxRoot -Force
+  Move-Item -Path (Join-Path (Split-Path $NginxRoot -Parent) "nginx-$latestVer") -Destination $NginxRoot -Force
   Ensure-Dir "$NginxRoot\conf\certs"
+  Ensure-Dir "$NginxRoot\logs"
 }
 
 function Assert-PemFile([string]$path,[string]$kind){
@@ -167,7 +318,7 @@ function Assert-PemFile([string]$path,[string]$kind){
   }
 }
 
-function Write-NginxConf([int]$upstreamPort,[string]$webAppName){
+function Write-NginxConf([int]$upstreamPort,[string]$webAppName,[string]$certFileName,[string]$keyFileName){
 @"
 worker_processes auto;
 
@@ -194,9 +345,9 @@ http {
 
     log_not_found off;
 
-    log_format main '\$remote_addr - \$remote_user [\$time_local] "\$request" '
-                    '\$status \$body_bytes_sent "\$http_referer" '
-                    '"\$http_user_agent" "\$http_x_forwarded_for"';
+    log_format main '`$remote_addr - `$remote_user [`$time_local] "`$request" '
+                    '`$status `$body_bytes_sent "`$http_referer" '
+                    '"`$http_user_agent" "`$http_x_forwarded_for"';
 
     access_log logs/access.log main;
     error_log  logs/error.log notice;
@@ -222,18 +373,18 @@ http {
         image/x-icon
         font/opentype;
 
-    map \$http_upgrade \$connection_upgrade { default upgrade; "" close; }
+    map `$http_upgrade `$connection_upgrade { default upgrade; "" close; }
 
     upstream profisee_upstream { server 127.0.0.1:$upstreamPort; keepalive 32; }
 
-    server { listen 80; server_name _; return 301 https://\$host\$request_uri; }
+    server { listen 80; server_name _; return 301 https://`$host`$request_uri; }
 
     server {
         listen 443 ssl;
         server_name _;
 
-        ssl_certificate     c:/nginx/conf/certs/site.crt;
-        ssl_certificate_key c:/nginx/conf/certs/site.key;
+        ssl_certificate     c:/nginx/conf/certs/$certFileName;
+        ssl_certificate_key c:/nginx/conf/certs/$keyFileName;
 
         # convenience: / -> /<webAppName>/
         location = / { return 302 /$webAppName/; }
@@ -242,14 +393,14 @@ http {
 
         location / {
             proxy_http_version 1.1;
-            proxy_set_header Host                \$host;
-            proxy_set_header X-Real-IP           \$remote_addr;
-            proxy_set_header X-Forwarded-For     \$proxy_add_x_forwarded_for;
+            proxy_set_header Host                `$host;
+            proxy_set_header X-Real-IP           `$remote_addr;
+            proxy_set_header X-Forwarded-For     `$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto   https;
-            proxy_set_header X-Forwarded-Host    \$host;
+            proxy_set_header X-Forwarded-Host    `$host;
             proxy_set_header X-Forwarded-Port    443;
-            proxy_set_header Upgrade             \$http_upgrade;
-            proxy_set_header Connection          \$connection_upgrade;
+            proxy_set_header Upgrade             `$http_upgrade;
+            proxy_set_header Connection          `$connection_upgrade;
 
             proxy_connect_timeout 60s;
             proxy_send_timeout    600s;
@@ -268,7 +419,15 @@ http {
 
 function Start-Nginx {
   $exe = "$NginxRoot\nginx.exe"
-  & $exe -t | Out-Null
+  if(-not(Test-Path $exe)){ throw "nginx executable not found at: $exe" }
+
+  $prefix = "$NginxRoot\"
+  $confPath = Join-Path $NginxRoot "conf\nginx.conf"
+  if(-not(Test-Path $confPath)){ throw "nginx config file not found at: $confPath" }
+  Ensure-Dir "$NginxRoot\logs"
+
+  & $exe -t -p $prefix -c "conf/nginx.conf" | Out-Null
+  if($LASTEXITCODE -ne 0){ throw "nginx configuration test failed (prefix: $prefix, config: conf/nginx.conf)." }
 
   try {
     if(-not(Get-NetFirewallRule -DisplayName "NGINX HTTP" -ErrorAction SilentlyContinue)){
@@ -279,8 +438,8 @@ function Start-Nginx {
     }
   } catch {}
 
-  & $exe -s stop 2>$null | Out-Null
-  Start-Process -FilePath $exe -WorkingDirectory $NginxRoot | Out-Null
+  & $exe -s stop -p $prefix 2>$null | Out-Null
+  Start-Process -FilePath $exe -WorkingDirectory $NginxRoot -ArgumentList @("-p",$prefix,"-c","conf/nginx.conf") | Out-Null
 }
 
 function Nerdctl([string[]]$args){
@@ -305,50 +464,67 @@ if([string]::IsNullOrWhiteSpace($acrRegistry)){ $acrRegistry = "profisee.azurecr
 $acrRepo = Read-Host "Repository [profiseeplatform]"
 if([string]::IsNullOrWhiteSpace($acrRepo)){ $acrRepo = "profiseeplatform" }
 
-do { $acrTag = Read-Host "Image tag (e.g. 2025r4-153319-win22) [REQUIRED]" } while([string]::IsNullOrWhiteSpace($acrTag))
+do { $acrTag = Read-Host "Image tag (e.g. 2025r4.0-153319-win22) [REQUIRED]" } while([string]::IsNullOrWhiteSpace($acrTag))
 
 $image = "$acrRegistry/$acrRepo`:$acrTag"
 
 # ---- REQUIRED PEMs (refuse to run without) ----
 Write-Host ""
-$pemCert = Read-Host "Path to TLS CERT PEM for nginx (site.crt) [REQUIRED]"
-$pemKey  = Read-Host "Path to TLS KEY  PEM for nginx (site.key) [REQUIRED]"
+$pemCert = Read-Host "Path to TLS CERT file for nginx (.crt or .pem; PEM-encoded) [REQUIRED]"
+$pemKey  = Read-Host "Path to TLS KEY file for nginx (.key or .pem; PEM-encoded) [REQUIRED]"
 Assert-PemFile $pemCert "Certificate"
 Assert-PemFile $pemKey  "PrivateKey"
-Copy-Item $pemCert "$NginxRoot\conf\certs\site.crt" -Force
-Copy-Item $pemKey  "$NginxRoot\conf\certs\site.key" -Force
+
+$certExt = [IO.Path]::GetExtension($pemCert)
+if([string]::IsNullOrWhiteSpace($certExt)){ $certExt = ".pem" }
+$keyExt = [IO.Path]::GetExtension($pemKey)
+if([string]::IsNullOrWhiteSpace($keyExt)){ $keyExt = ".key" }
+
+$nginxCertFile = "site-cert$certExt"
+$nginxKeyFile  = "site-key$keyExt"
+
+if($nginxCertFile -ieq $nginxKeyFile){
+  throw "TLS cert/key destination filenames resolved to the same file ($nginxCertFile). Refusing to continue."
+}
+
+Copy-Item $pemCert "$NginxRoot\conf\certs\$nginxCertFile" -Force
+Copy-Item $pemKey  "$NginxRoot\conf\certs\$nginxKeyFile" -Force
 
 # ---- Prompts for EXACT Profisee env vars you provided ----
 Write-Host ""
-$webAppName = Read-Host "ProfiseeWebAppName (used in URL path: https://FQDN/$($webAppName))"
-if([string]::IsNullOrWhiteSpace($webAppName)){ throw "ProfiseeWebAppName is required." }
+$webAppName = Read-Required "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)"
 
-Write-NginxConf -upstreamPort $HostAppPort -webAppName $webAppName
+try {
+  Download-NginxConfTemplate -upstreamPort $HostAppPort -webAppName $webAppName -certFileName $nginxCertFile -keyFileName $nginxKeyFile
+} catch {
+  Write-Warning "Failed to download nginx.conf from $NginxConfUrl. Falling back to built-in template. Error: $($_.Exception.Message)"
+  Write-NginxConf -upstreamPort $HostAppPort -webAppName $webAppName -certFileName $nginxCertFile -keyFileName $nginxKeyFile
+}
 Start-Nginx
 
 Write-Host ""
-$sqlServer = Read-Host "ProfiseeSqlServer (e.g. xxx.database.windows.net)"
-$sqlDb     = Read-Host "ProfiseeSqlDatabase"
-$sqlUser   = Read-Host "ProfiseeSqlUserName"
-$sqlPass   = SecureToPlain (Read-Host "ProfiseeSqlPassword" -AsSecureString)
+$sqlServer = Read-Required "ProfiseeSqlServer (e.g. xxx.database.windows.net)"
+$sqlDb     = Read-Required "ProfiseeSqlDatabase"
+$sqlUser   = Read-Required "ProfiseeSqlUserName"
+$sqlPass   = Read-RequiredSecret "ProfiseeSqlPassword"
 
 Write-Host ""
-$repoLocation = Read-Host "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)"
-$repoUser     = Read-Host "ProfiseeAttachmentRepositoryUserName"
-$repoPass     = SecureToPlain (Read-Host "ProfiseeAttachmentRepositoryUserPassword" -AsSecureString)
+$repoLocation = Read-Required "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)"
+$repoUser     = Read-Required "ProfiseeAttachmentRepositoryUserName"
+$repoPass     = Read-RequiredSecret "ProfiseeAttachmentRepositoryUserPassword"
 $repoLogon    = Read-Host "ProfiseeAttachmentRepositoryLogonType [NewCredentials]"
 if([string]::IsNullOrWhiteSpace($repoLogon)){ $repoLogon = "NewCredentials" }
 
 Write-Host ""
-$adminAccount = Read-Host "ProfiseeAdminAccount (email/username)"
-$externalUrl  = Read-Host "ProfiseeExternalDNSUrl (e.g. https://something.com)"
+$adminAccount = Read-Required "ProfiseeAdminAccount (email/username)"
+$externalUrl  = Read-Required "ProfiseeExternalDNSUrl (e.g. https://something.com)"
 
 Write-Host ""
 $oidcProvider = Read-Host "ProfiseeOidcName (Entra/Okta) [Entra]"
 if([string]::IsNullOrWhiteSpace($oidcProvider)){ $oidcProvider="Entra" }
-$oidcAuthority = Read-Host "ProfiseeOidcAuthority"
-$oidcClientId  = Read-Host "ProfiseeOidcClientId"
-$oidcSecret    = SecureToPlain (Read-Host "ProfiseeOidcClientSecret" -AsSecureString)
+$oidcAuthority = Read-Required "ProfiseeOidcAuthority"
+$oidcClientId  = Read-Required "ProfiseeOidcClientId"
+$oidcSecret    = Read-RequiredSecret "ProfiseeOidcClientSecret"
 
 if($oidcProvider.ToLower() -eq "entra"){
   $oidcUsernameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
@@ -371,11 +547,11 @@ do { $cpuLimit = Read-Host "CPU limit for container (--cpus), e.g. 2 [REQUIRED]"
 do { $memLimit = Read-Host "Memory limit for container (--memory), e.g. 8G [REQUIRED]" } while([string]::IsNullOrWhiteSpace($memLimit))
 
 Write-Host ""
-Write-Host "ACR login + auth (auth is asked, not computed)"
-$acrUser = Read-Host "ACR username"
-$acrPw   = SecureToPlain (Read-Host "ACR password" -AsSecureString)
-$acrAuth = Read-Host "ACR auth (base64 of username:password) [REQUIRED]"
-if([string]::IsNullOrWhiteSpace($acrAuth)){ throw "ACR auth is required (per your requirement). Refusing to proceed." }
+Write-Host "ACR login (auth is computed automatically when needed)"
+$acrUser = Read-Required "ACR username"
+$acrPw   = Read-RequiredSecret "ACR password"
+# Computed for Settings.yaml parity/reference (nerdctl login uses --password-stdin).
+$acrAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$acrUser`:$acrPw"))
 
 Write-Host ""
 $oidcJsonSource = Read-Host "Path to local OIDC JSON file for c:\data\oidc.json (blank = create {})"
@@ -430,6 +606,9 @@ $envMap = @{
   "ProfiseeWebAppName"                          = $webAppName
 }
 
+$envListPath = Join-Path $WorkDir "container-env-vars.txt"
+$envMap.Keys | Sort-Object | Set-Content -Path $envListPath -Encoding ascii -Force
+
 $args = @(
   "run","-d",
   "--name",$ContainerName,
@@ -455,3 +634,4 @@ Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
 Write-Host "Container is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
 Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
+Write-Host "Container env var key list written to: $envListPath"

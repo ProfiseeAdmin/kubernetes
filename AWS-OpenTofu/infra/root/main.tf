@@ -14,6 +14,8 @@ locals {
   platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
   kubeconfig_s3_key              = "kubeconfig/${var.eks.cluster_name}/kubeconfig"
   platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
+  cloudfront_origin_domain_name  = trimspace(coalesce(try(var.cloudfront.origin_domain_name, null), ""))
+  cloudfront_deployed            = try(var.cloudfront.enabled, false) && local.cloudfront_origin_domain_name != ""
   db_init_enabled                = try(var.db_init.enabled, false)
   db_init_tags                   = merge(var.tags, try(var.db_init.tags, {}))
   vpc_cni_addon_enabled          = try(var.eks.install_vpc_cni_addon, true)
@@ -1375,13 +1377,13 @@ module "acm_use1" {
 }
 
 module "cloudfront" {
-  count  = var.cloudfront.enabled ? 1 : 0
+  count  = local.cloudfront_deployed ? 1 : 0
   source = "../modules/cloudfront"
 
-  enabled                  = var.cloudfront.enabled
+  enabled                  = local.cloudfront_deployed
   aliases                  = var.cloudfront.aliases
   acm_certificate_arn      = module.acm_use1.certificate_arn
-  origin_domain_name       = var.cloudfront.origin_domain_name
+  origin_domain_name       = local.cloudfront_origin_domain_name
   origin_id                = var.cloudfront.origin_id
   origin_protocol_policy   = var.cloudfront.origin_protocol_policy
   origin_ssl_protocols     = var.cloudfront.origin_ssl_protocols
@@ -1396,7 +1398,7 @@ module "cloudfront" {
 }
 
 module "route53" {
-  count  = var.cloudfront.enabled && var.route53.enabled ? 1 : 0
+  count  = local.cloudfront_deployed && var.route53.enabled ? 1 : 0
   source = "../modules/route53"
 
   hosted_zone_id         = var.route53.hosted_zone_id
@@ -1662,10 +1664,10 @@ module "outputs_contract" {
     rds_endpoint                          = module.rds_sqlserver.endpoint
     rds_port                              = module.rds_sqlserver.port
     rds_master_user_secret_arn            = module.rds_sqlserver.master_user_secret_arn
-    cloudfront_id                         = var.cloudfront.enabled ? module.cloudfront[0].distribution_id : null
-    cloudfront_domain_name                = var.cloudfront.enabled ? module.cloudfront[0].distribution_domain_name : null
-    cloudfront_hosted_zone_id             = var.cloudfront.enabled ? module.cloudfront[0].hosted_zone_id : null
-    route53_record_fqdn                   = var.cloudfront.enabled && var.route53.enabled ? module.route53[0].record_fqdn : null
+    cloudfront_id                         = local.cloudfront_deployed ? module.cloudfront[0].distribution_id : null
+    cloudfront_domain_name                = local.cloudfront_deployed ? module.cloudfront[0].distribution_domain_name : null
+    cloudfront_hosted_zone_id             = local.cloudfront_deployed ? module.cloudfront[0].hosted_zone_id : null
+    route53_record_fqdn                   = local.cloudfront_deployed && var.route53.enabled ? module.route53[0].record_fqdn : null
     acm_certificate_arn                   = module.acm_use1.certificate_arn
     jumpbox_instance_id                   = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
     jumpbox_private_ip                    = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null

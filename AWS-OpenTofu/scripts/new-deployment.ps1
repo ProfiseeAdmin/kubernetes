@@ -268,6 +268,9 @@ try {
   Ensure-ObjectProperty $json.cloudfront "aliases" @() | Out-Null
   Ensure-ObjectProperty $json.cloudfront "origin_domain_name" $null | Out-Null
   Ensure-ObjectProperty $json.cloudfront "origin_custom_headers" @{} | Out-Null
+  if ($json.cloudfront.origin_domain_name -eq "nlb-abc123.us-east-1.elb.amazonaws.com") {
+    $json.cloudfront.origin_domain_name = $null
+  }
   Ensure-ObjectProperty $json "route53" @{} | Out-Null
   Ensure-ObjectProperty $json.route53 "enabled" $true | Out-Null
   Ensure-ObjectProperty $json.route53 "hosted_zone_id" $null | Out-Null
@@ -438,6 +441,10 @@ $externalDnsName = $json.route53.record_name
 if (-not $externalDnsName -or $externalDnsName -eq "") { $externalDnsName = $json.acm.domain_name }
 if ($externalDnsName -and $externalDnsName.StartsWith("*.")) {
   $externalDnsName = $externalDnsName.Substring(2)
+}
+$cloudfrontAliases = @($json.cloudfront.aliases)
+if ($cloudfrontAliases.Count -eq 0 -and $externalDnsName) {
+  $json.cloudfront.aliases = @($externalDnsName)
 }
 $externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { "" }
 
