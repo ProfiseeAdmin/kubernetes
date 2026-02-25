@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-25.11"
+$script:DeployScriptVersion = "2026-02-25.12"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -603,6 +603,103 @@ function Test-Base64String([string]$value){
     return $false
   }
 }
+function Stage-RootCaCertificateForContainer([string]$sourcePath,[string]$destinationPath){
+  if([string]::IsNullOrWhiteSpace($sourcePath)){ throw "Root CA cert source path is required." }
+  if(-not (Test-Path -LiteralPath $sourcePath)){ throw "Root CA cert file not found: $sourcePath" }
+  if([string]::IsNullOrWhiteSpace($destinationPath)){ throw "Root CA cert destination path is required." }
+  Ensure-Dir (Split-Path -Path $destinationPath -Parent)
+
+  $raw = ""
+  try {
+    $raw = Get-Content -Raw -LiteralPath $sourcePath -ErrorAction Stop
+  } catch {
+    $raw = ""
+  }
+
+  if(-not [string]::IsNullOrWhiteSpace($raw) -and $raw -match "BEGIN CERTIFICATE"){
+    $pemMatch = [regex]::Match(
+      $raw,
+      "-----BEGIN CERTIFICATE-----(?<body>.*?)-----END CERTIFICATE-----",
+      [System.Text.RegularExpressions.RegexOptions]::Singleline
+    )
+    if($pemMatch.Success){
+      try {
+        $b64 = ($pemMatch.Groups["body"].Value -replace "\s","")
+        $bytes = [Convert]::FromBase64String($b64)
+        [IO.File]::WriteAllBytes($destinationPath,$bytes)
+        return
+      } catch {}
+    }
+  }
+
+  Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+}
+function Get-DockerImageStartupTokens([string]$image){
+  if([string]::IsNullOrWhiteSpace($image)){ throw "Image is required to resolve startup command." }
+  $inspectLines = @()
+  & docker image inspect $image 2>&1 | Tee-Object -Variable inspectLines | Out-Null
+  $inspectText = (($inspectLines | ForEach-Object { [string]$_ }) -join "`n")
+  if($LASTEXITCODE -ne 0){
+    if([string]::IsNullOrWhiteSpace($inspectText)){ $inspectText = "docker image inspect failed for '$image'." }
+    throw $inspectText
+  }
+  if([string]::IsNullOrWhiteSpace($inspectText)){
+    throw "docker image inspect returned empty output for '$image'."
+  }
+
+  try {
+    $inspectObj = $inspectText | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw "Failed to parse docker image inspect output for '$image'. Error: $($_.Exception.Message)"
+  }
+
+  $item = if($inspectObj -is [array]){
+    if($inspectObj.Count -gt 0){ $inspectObj[0] } else { $null }
+  } else {
+    $inspectObj
+  }
+  if($null -eq $item){ throw "docker image inspect returned no records for '$image'." }
+
+  $tokens = @()
+  if($item.PSObject.Properties.Name -contains "Config" -and $item.Config){
+    $config = $item.Config
+    if($config.PSObject.Properties.Name -contains "Entrypoint" -and $config.Entrypoint){
+      foreach($t in @($config.Entrypoint)){
+        if($null -ne $t -and -not [string]::IsNullOrWhiteSpace([string]$t)){ $tokens += [string]$t }
+      }
+    }
+    if($config.PSObject.Properties.Name -contains "Cmd" -and $config.Cmd){
+      foreach($t in @($config.Cmd)){
+        if($null -ne $t -and -not [string]::IsNullOrWhiteSpace([string]$t)){ $tokens += [string]$t }
+      }
+    }
+  }
+  return ,$tokens
+}
+function Get-ContainerBootstrapCommand([string]$startupCommandBase64,[string]$rootCaContainerPath){
+  if([string]::IsNullOrWhiteSpace($startupCommandBase64)){ return "" }
+  $safeStartupB64 = $startupCommandBase64.Replace("'","''")
+  $safeRootPath = if([string]::IsNullOrWhiteSpace($rootCaContainerPath)){ "" } else { $rootCaContainerPath.Replace("'","''") }
+
+  return @"
+`$ErrorActionPreference = 'Stop'
+`$certPath = '$safeRootPath'
+if(-not [string]::IsNullOrWhiteSpace(`$certPath) -and (Test-Path -LiteralPath `$certPath)){
+  Import-Certificate -FilePath `$certPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+  Write-Host "Imported Root CA cert into LocalMachine\Root from `$certPath."
+}
+`$startupJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('$safeStartupB64'))
+`$startupTokens = ConvertFrom-Json -InputObject `$startupJson
+if(`$startupTokens -isnot [System.Array]){ `$startupTokens = @(`$startupTokens) }
+if(`$startupTokens.Count -lt 1){ throw 'No startup command resolved from image metadata.' }
+`$exe = [string]`$startupTokens[0]
+`$startupArgs = @()
+if(`$startupTokens.Count -gt 1){
+  for(`$i = 1; `$i -lt `$startupTokens.Count; `$i++){ `$startupArgs += [string]`$startupTokens[`$i] }
+}
+& `$exe @startupArgs
+"@
+}
 function Resolve-RepositoryMountSource([string]$repoLocation){
   if([string]::IsNullOrWhiteSpace($repoLocation)){
     throw "ProfiseeAttachmentRepositoryLocation is required."
@@ -657,6 +754,8 @@ function Build-ContainerRunArgs(
   [string]$memoryLimit,
   [hashtable]$envMap,
   [string]$image,
+  [string]$startupCommandBase64,
+  [string]$rootCaContainerPath,
   [switch]$IncludeResourceLimits,
   [switch]$IncludeIsolation,
   [switch]$IncludeNetwork,
@@ -696,7 +795,12 @@ function Build-ContainerRunArgs(
     $args += @("-e","$k=$v")
   }
 
-  $args += @($image)
+  if(-not [string]::IsNullOrWhiteSpace($startupCommandBase64)){
+    $bootstrapCommand = Get-ContainerBootstrapCommand -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $rootCaContainerPath
+    $args += @("--entrypoint","powershell.exe",$image,"-NoProfile","-ExecutionPolicy","Bypass","-Command",$bootstrapCommand)
+  } else {
+    $args += @($image)
+  }
   return ,$args
 }
 function Remove-ContainerIfExists([string]$name){
@@ -844,6 +948,33 @@ $pemKey  = Read-WithHistory -state $customerInputState -key "TlsKeyPath" -prompt
 Assert-PemFile $pemCert "Certificate"
 Assert-PemFile $pemKey  "PrivateKey"
 
+$caCertType = ""
+while([string]::IsNullOrWhiteSpace($caCertType)){
+  $enteredCaType = Read-WithHistory -state $customerInputState -key "ContainerCaCertType" -prompt "Certificate trust type for container HTTPS hostname/URL (Internal/Public)" -defaultValue "Internal" -Required
+  $normalizedCaType = $enteredCaType.Trim().ToLowerInvariant()
+  if($normalizedCaType -eq "internal"){
+    $caCertType = "Internal"
+  } elseif($normalizedCaType -eq "public"){
+    $caCertType = "Public"
+  } else {
+    Write-Warning "Please enter either 'Internal' or 'Public'."
+    continue
+  }
+  Set-StateInput -state $customerInputState -key "ContainerCaCertType" -value $caCertType
+  Persist-CustomerInputState -state $customerInputState
+}
+
+$rootCaCertSourcePath = ""
+if($caCertType -eq "Internal"){
+  $rootCaCertSourcePath = Read-WithHistory -state $customerInputState -key "ContainerRootCaCertPath" -prompt "Path to Root CA cert for internal hostname/URL chain (.cer/.crt/.pem)" -Required
+  if(-not (Test-Path -LiteralPath $rootCaCertSourcePath)){
+    throw "Root CA cert file not found: $rootCaCertSourcePath"
+  }
+} else {
+  Set-StateInput -state $customerInputState -key "ContainerRootCaCertPath" -value ""
+  Persist-CustomerInputState -state $customerInputState
+}
+
 $certExt = [IO.Path]::GetExtension($pemCert)
 if([string]::IsNullOrWhiteSpace($certExt)){ $certExt = ".pem" }
 $keyExt = [IO.Path]::GetExtension($pemKey)
@@ -978,6 +1109,14 @@ if([string]::IsNullOrWhiteSpace($oidcJsonSource)){
   Copy-Item $oidcJsonSource $hostOidcJson -Force
 }
 
+$containerRootCaPath = ""
+if(-not [string]::IsNullOrWhiteSpace($rootCaCertSourcePath)){
+  $containerRootCaPath = "c:\data\root-ca.cer"
+  $hostRootCaPath = Join-Path $hostDataDir "root-ca.cer"
+  Stage-RootCaCertificateForContainer -sourcePath $rootCaCertSourcePath -destinationPath $hostRootCaPath
+  Write-Host "Root CA cert staged for container trust: $hostRootCaPath -> $containerRootCaPath"
+}
+
 $containerLicenseFile = "c:\data\profisee.plic"
 $hostLicenseFile = Join-Path $hostDataDir "profisee.plic"
 $licenseString = ""
@@ -1033,6 +1172,17 @@ while(-not $imagePulled){
     }
     throw
   }
+}
+
+$startupCommandBase64 = ""
+if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
+  $startupTokens = Get-DockerImageStartupTokens -image $image
+  if($startupTokens.Count -lt 1){
+    throw "Image '$image' does not define an entrypoint/cmd to execute after Root CA injection."
+  }
+  $startupJson = ConvertTo-Json -InputObject $startupTokens -Compress
+  $startupCommandBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($startupJson))
+  Write-Host "Container startup bootstrap enabled: Root CA import runs before app startup."
 }
 
 $resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
@@ -1168,7 +1318,7 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
     Write-Warning $attempt.Message
   }
 
-  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
+  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $containerRootCaPath -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
 
   try {
     DockerCli $attemptArgs
@@ -1216,6 +1366,9 @@ if($runUsedPortMapping){
 }
 Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
+if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
+  Write-Host "Root CA cert injected at container startup from: $containerRootCaPath (store: Cert:\LocalMachine\Root)"
+}
 Write-Host "Container env var key list written to: $envListPath"
 Write-Host "Customer input state saved to: $customerInputStatePath"
 Write-Host ""
