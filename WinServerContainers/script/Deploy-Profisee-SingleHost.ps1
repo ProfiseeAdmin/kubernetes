@@ -33,6 +33,136 @@ function Read-RequiredSecret([string]$prompt){
   do { $v = SecureToPlain (Read-Host $prompt -AsSecureString) } while([string]::IsNullOrWhiteSpace($v))
   return $v
 }
+function New-CustomerInputState {
+  return [pscustomobject]@{
+    Inputs = @{}
+    Secrets = @{}
+  }
+}
+function Load-CustomerInputState([string]$path){
+  if(-not(Test-Path $path)){ return New-CustomerInputState }
+  try {
+    $loaded = Import-Clixml -Path $path
+    if($null -eq $loaded){ return New-CustomerInputState }
+
+    $state = New-CustomerInputState
+    if($loaded.PSObject.Properties.Name -contains "Inputs" -and $loaded.Inputs){
+      if($loaded.Inputs -is [hashtable]){
+        foreach($k in $loaded.Inputs.Keys){ $state.Inputs[$k] = [string]$loaded.Inputs[$k] }
+      } else {
+        foreach($p in $loaded.Inputs.PSObject.Properties){ $state.Inputs[$p.Name] = [string]$p.Value }
+      }
+    }
+    if($loaded.PSObject.Properties.Name -contains "Secrets" -and $loaded.Secrets){
+      if($loaded.Secrets -is [hashtable]){
+        foreach($k in $loaded.Secrets.Keys){ $state.Secrets[$k] = $loaded.Secrets[$k] }
+      } else {
+        foreach($p in $loaded.Secrets.PSObject.Properties){ $state.Secrets[$p.Name] = $p.Value }
+      }
+    }
+    return $state
+  } catch {
+    Write-Warning "Could not load prior customer input state from $path. Starting fresh. Error: $($_.Exception.Message)"
+    return New-CustomerInputState
+  }
+}
+function Save-CustomerInputState([object]$state,[string]$path){
+  Ensure-Dir (Split-Path $path -Parent)
+  Export-Clixml -InputObject $state -Path $path -Force
+}
+function Get-StateInput([object]$state,[string]$key){
+  if($state -and $state.Inputs -and $state.Inputs.ContainsKey($key)){ return [string]$state.Inputs[$key] }
+  return $null
+}
+function Get-StateSecret([object]$state,[string]$key){
+  if(-not($state -and $state.Secrets -and $state.Secrets.ContainsKey($key))){ return $null }
+  $v = $state.Secrets[$key]
+  if($null -eq $v){ return $null }
+  if($v -is [Security.SecureString]){ return SecureToPlain $v }
+  return [string]$v
+}
+function Set-StateInput([object]$state,[string]$key,[string]$value){
+  $state.Inputs[$key] = $value
+}
+function Set-StateSecret([object]$state,[string]$key,[string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){
+    if($state.Secrets.ContainsKey($key)){ $state.Secrets.Remove($key) | Out-Null }
+    return
+  }
+  $state.Secrets[$key] = ConvertTo-SecureString $value -AsPlainText -Force
+}
+function Mask-SecretPreview([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return "" }
+  $prefixLen = [Math]::Min(3,$value.Length)
+  $prefix = $value.Substring(0,$prefixLen)
+  $maskLen = [Math]::Max(0,$value.Length - $prefixLen)
+  return ($prefix + ("*" * $maskLen))
+}
+function Show-PreviousCustomerValue([string]$label,[string]$value,[switch]$Sensitive){
+  if([string]::IsNullOrWhiteSpace($value)){ return }
+  $display = $value
+  if($Sensitive){ $display = Mask-SecretPreview $value }
+  Write-Host "Customer value from prior run: $label = $display" -ForegroundColor Green
+}
+function Read-WithHistory(
+  [object]$state,
+  [string]$key,
+  [string]$prompt,
+  [string]$defaultValue = "",
+  [switch]$Required,
+  [switch]$SensitiveDisplay
+){
+  $previous = Get-StateInput $state $key
+  Show-PreviousCustomerValue -label $key -value $previous -Sensitive:$SensitiveDisplay
+
+  $effectiveDefault = $defaultValue
+  if(-not [string]::IsNullOrWhiteSpace($previous)){ $effectiveDefault = $previous }
+
+  while($true){
+    if($SensitiveDisplay){
+      if([string]::IsNullOrWhiteSpace($effectiveDefault)){
+        $entered = Read-Host $prompt
+      } else {
+        $entered = Read-Host "$prompt (press Enter to reuse previous value)"
+      }
+    } else {
+      if([string]::IsNullOrWhiteSpace($effectiveDefault)){
+        $entered = Read-Host $prompt
+      } else {
+        $entered = Read-Host "$prompt [$effectiveDefault]"
+      }
+    }
+
+    if([string]::IsNullOrWhiteSpace($entered)){ $value = $effectiveDefault } else { $value = $entered }
+    if($Required -and [string]::IsNullOrWhiteSpace($value)){ continue }
+
+    Set-StateInput -state $state -key $key -value $value
+    return $value
+  }
+}
+function Read-SecretWithHistory(
+  [object]$state,
+  [string]$key,
+  [string]$prompt,
+  [switch]$Required
+){
+  $previous = Get-StateSecret $state $key
+  Show-PreviousCustomerValue -label $key -value $previous -Sensitive
+
+  while($true){
+    if([string]::IsNullOrWhiteSpace($previous)){
+      $entered = SecureToPlain (Read-Host $prompt -AsSecureString)
+    } else {
+      $entered = SecureToPlain (Read-Host "$prompt (press Enter to reuse previous value)" -AsSecureString)
+    }
+
+    if([string]::IsNullOrWhiteSpace($entered)){ $value = $previous } else { $value = $entered }
+    if($Required -and [string]::IsNullOrWhiteSpace($value)){ continue }
+
+    Set-StateSecret -state $state -key $key -value $value
+    return $value
+  }
+}
 function Parse-SemVer([string]$value){
   if([string]::IsNullOrWhiteSpace($value)){ return $null }
   $m = [regex]::Match($value,'(\d+\.\d+\.\d+)')
@@ -449,6 +579,9 @@ function Nerdctl([string[]]$args){
 
 # ---------------- MAIN ----------------
 Ensure-Dir $WorkDir
+$customerInputStatePath = Join-Path $WorkDir "customer-input-state.clixml"
+$customerInputState = Load-CustomerInputState $customerInputStatePath
+
 Install-ContainersFeature
 Install-ContainerdAndNerdctl
 Install-WindowsNatCni_Latest
@@ -458,20 +591,16 @@ Download-SettingsYamlTemplate
 # ---- Ask image (no static) ----
 Write-Host ""
 Write-Host "Profisee image selection"
-$acrRegistry = Read-Host "ACR registry [profisee.azurecr.io]"
-if([string]::IsNullOrWhiteSpace($acrRegistry)){ $acrRegistry = "profisee.azurecr.io" }
-
-$acrRepo = Read-Host "Repository [profiseeplatform]"
-if([string]::IsNullOrWhiteSpace($acrRepo)){ $acrRepo = "profiseeplatform" }
-
-do { $acrTag = Read-Host "Image tag (e.g. 2025r4.0-153319-win22) [REQUIRED]" } while([string]::IsNullOrWhiteSpace($acrTag))
+$acrRegistry = Read-WithHistory -state $customerInputState -key "AcrRegistry" -prompt "ACR registry" -defaultValue "profisee.azurecr.io" -Required
+$acrRepo     = Read-WithHistory -state $customerInputState -key "AcrRepository" -prompt "Repository" -defaultValue "profiseeplatform" -Required
+$acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-153319-win22)" -defaultValue "2025r4.0-153319-win22" -Required
 
 $image = "$acrRegistry/$acrRepo`:$acrTag"
 
 # ---- REQUIRED PEMs (refuse to run without) ----
 Write-Host ""
-$pemCert = Read-Host "Path to TLS CERT file for nginx (.crt or .pem; PEM-encoded) [REQUIRED]"
-$pemKey  = Read-Host "Path to TLS KEY file for nginx (.key or .pem; PEM-encoded) [REQUIRED]"
+$pemCert = Read-WithHistory -state $customerInputState -key "TlsCertPath" -prompt "Path to TLS CERT file for nginx (.crt or .pem; PEM-encoded)" -Required
+$pemKey  = Read-WithHistory -state $customerInputState -key "TlsKeyPath" -prompt "Path to TLS KEY file for nginx (.key or .pem; PEM-encoded)" -Required
 Assert-PemFile $pemCert "Certificate"
 Assert-PemFile $pemKey  "PrivateKey"
 
@@ -492,7 +621,7 @@ Copy-Item $pemKey  "$NginxRoot\conf\certs\$nginxKeyFile" -Force
 
 # ---- Prompts for EXACT Profisee env vars you provided ----
 Write-Host ""
-$webAppName = Read-Required "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)"
+$webAppName = Read-WithHistory -state $customerInputState -key "ProfiseeWebAppName" -prompt "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)" -Required
 
 try {
   Download-NginxConfTemplate -upstreamPort $HostAppPort -webAppName $webAppName -certFileName $nginxCertFile -keyFileName $nginxKeyFile
@@ -503,28 +632,31 @@ try {
 Start-Nginx
 
 Write-Host ""
-$sqlServer = Read-Required "ProfiseeSqlServer (e.g. xxx.database.windows.net)"
-$sqlDb     = Read-Required "ProfiseeSqlDatabase"
-$sqlUser   = Read-Required "ProfiseeSqlUserName"
-$sqlPass   = Read-RequiredSecret "ProfiseeSqlPassword"
+$sqlServer = Read-WithHistory -state $customerInputState -key "ProfiseeSqlServer" -prompt "ProfiseeSqlServer (e.g. xxx.database.windows.net)" -Required
+$sqlDb     = Read-WithHistory -state $customerInputState -key "ProfiseeSqlDatabase" -prompt "ProfiseeSqlDatabase" -Required
+$sqlUser   = Read-WithHistory -state $customerInputState -key "ProfiseeSqlUserName" -prompt "ProfiseeSqlUserName" -Required
+$sqlPass   = Read-SecretWithHistory -state $customerInputState -key "ProfiseeSqlPassword" -prompt "ProfiseeSqlPassword" -Required
 
 Write-Host ""
-$repoLocation = Read-Required "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)"
-$repoUser     = Read-Required "ProfiseeAttachmentRepositoryUserName"
-$repoPass     = Read-RequiredSecret "ProfiseeAttachmentRepositoryUserPassword"
-$repoLogon    = Read-Host "ProfiseeAttachmentRepositoryLogonType [NewCredentials]"
-if([string]::IsNullOrWhiteSpace($repoLogon)){ $repoLogon = "NewCredentials" }
+$repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)" -Required
+$repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required -SensitiveDisplay
+$repoPass     = Read-SecretWithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserPassword" -prompt "ProfiseeAttachmentRepositoryUserPassword" -Required
+$repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -prompt "ProfiseeAttachmentRepositoryLogonType" -defaultValue "NewCredentials" -Required
 
 Write-Host ""
-$adminAccount = Read-Required "ProfiseeAdminAccount (email/username)"
-$externalUrl  = Read-Required "ProfiseeExternalDNSUrl (e.g. https://something.com)"
+$adminAccount = Read-WithHistory -state $customerInputState -key "ProfiseeAdminAccount" -prompt "ProfiseeAdminAccount (email/username)" -Required
+$externalUrl  = Read-WithHistory -state $customerInputState -key "ProfiseeExternalDNSUrl" -prompt "ProfiseeExternalDNSUrl (e.g. https://something.com)" -Required
 
 Write-Host ""
-$oidcProvider = Read-Host "ProfiseeOidcName (Entra/Okta) [Entra]"
-if([string]::IsNullOrWhiteSpace($oidcProvider)){ $oidcProvider="Entra" }
-$oidcAuthority = Read-Required "ProfiseeOidcAuthority"
-$oidcClientId  = Read-Required "ProfiseeOidcClientId"
-$oidcSecret    = Read-RequiredSecret "ProfiseeOidcClientSecret"
+$oidcProvider  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcName" -prompt "ProfiseeOidcName (Entra/Okta)" -defaultValue "Entra" -Required
+$oidcAuthority = Read-WithHistory -state $customerInputState -key "ProfiseeOidcAuthority" -prompt "ProfiseeOidcAuthority (auth tenant id/authority URL)" -Required -SensitiveDisplay
+$oidcClientId  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcClientId" -prompt "ProfiseeOidcClientId" -Required -SensitiveDisplay
+$oidcSecret    = Read-SecretWithHistory -state $customerInputState -key "ProfiseeOidcClientSecret" -prompt "ProfiseeOidcClientSecret" -Required
+
+Write-Host ""
+$purviewTenantId = Read-WithHistory -state $customerInputState -key "ProfiseePurviewTenantId" -prompt "ProfiseePurviewTenantId (optional)" -SensitiveDisplay
+$purviewClientId = Read-WithHistory -state $customerInputState -key "ProfiseePurviewClientId" -prompt "ProfiseePurviewClientId (optional)" -SensitiveDisplay
+$purviewClientSecret = Read-SecretWithHistory -state $customerInputState -key "ProfiseePurviewClientSecret" -prompt "ProfiseePurviewClientSecret (optional)"
 
 if($oidcProvider.ToLower() -eq "entra"){
   $oidcUsernameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
@@ -543,18 +675,19 @@ if($oidcProvider.ToLower() -eq "entra"){
 }
 
 Write-Host ""
-do { $cpuLimit = Read-Host "CPU limit for container (--cpus), e.g. 2 [REQUIRED]" } while([string]::IsNullOrWhiteSpace($cpuLimit))
-do { $memLimit = Read-Host "Memory limit for container (--memory), e.g. 8G [REQUIRED]" } while([string]::IsNullOrWhiteSpace($memLimit))
+$cpuLimit = Read-WithHistory -state $customerInputState -key "ContainerCpuLimit" -prompt "CPU limit for container (--cpus), e.g. 2" -defaultValue "2" -Required
+$memLimit = Read-WithHistory -state $customerInputState -key "ContainerMemoryLimit" -prompt "Memory limit for container (--memory), e.g. 8G" -defaultValue "8G" -Required
 
 Write-Host ""
 Write-Host "ACR login (auth is computed automatically when needed)"
-$acrUser = Read-Required "ACR username"
-$acrPw   = Read-RequiredSecret "ACR password"
+$acrUser = Read-WithHistory -state $customerInputState -key "AcrUserName" -prompt "ACR username" -Required
+$acrPw   = Read-SecretWithHistory -state $customerInputState -key "AcrPassword" -prompt "ACR password" -Required
 # Computed for Settings.yaml parity/reference (nerdctl login uses --password-stdin).
 $acrAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$acrUser`:$acrPw"))
 
 Write-Host ""
-$oidcJsonSource = Read-Host "Path to local OIDC JSON file for c:\data\oidc.json (blank = create {})"
+$oidcJsonSource = Read-WithHistory -state $customerInputState -key "OidcJsonSourcePath" -prompt "Path to local OIDC JSON file for c:\data\oidc.json (blank = create {})"
+Save-CustomerInputState -state $customerInputState -path $customerInputStatePath
 
 $hostDataDir = Join-Path $WorkDir "data"
 Ensure-Dir $hostDataDir
@@ -597,6 +730,10 @@ $envMap = @{
   "ProfiseeOidcUserIdClaim"                     = $oidcUserIdClaim
   "ProfiseeOidcUsernameClaim"                   = $oidcUsernameClaim
 
+  "ProfiseePurviewTenantId"                     = $purviewTenantId
+  "ProfiseePurviewClientId"                     = $purviewClientId
+  "ProfiseePurviewClientSecret"                 = $purviewClientSecret
+
   "ProfiseeSqlDatabase"                         = $sqlDb
   "ProfiseeSqlPassword"                         = $sqlPass
   "ProfiseeSqlServer"                           = $sqlServer
@@ -635,3 +772,4 @@ Write-Host "Container is mapped host 127.0.0.1:$HostAppPort -> container :80 (in
 Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 Write-Host "Container env var key list written to: $envListPath"
+Write-Host "Customer input state saved to: $customerInputStatePath"
