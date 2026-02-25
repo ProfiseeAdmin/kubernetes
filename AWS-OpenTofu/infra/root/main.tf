@@ -14,10 +14,12 @@ locals {
   platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
   kubeconfig_s3_key              = "kubeconfig/${var.eks.cluster_name}/kubeconfig"
   platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
-  cloudfront_origin_domain_name  = trimspace(coalesce(try(var.cloudfront.origin_domain_name, null), ""))
+  cloudfront_origin_domain_raw   = try(var.cloudfront.origin_domain_name, null)
+  cloudfront_origin_domain_name  = local.cloudfront_origin_domain_raw == null ? "" : trimspace(local.cloudfront_origin_domain_raw)
   cloudfront_deployed            = try(var.cloudfront.enabled, false) && local.cloudfront_origin_domain_name != ""
-  db_init_enabled                = try(var.db_init.enabled, false)
-  db_init_tags                   = merge(var.tags, try(var.db_init.tags, {}))
+  db_init_cfg                    = var.db_init
+  db_init_enabled                = try(local.db_init_cfg.enabled, false)
+  db_init_tags                   = merge(var.tags, try(local.db_init_cfg.tags, {}))
   vpc_cni_addon_enabled          = try(var.eks.install_vpc_cni_addon, true)
   ebs_csi_addon_enabled          = try(var.eks.install_ebs_csi_addon, true)
 }
@@ -310,7 +312,7 @@ resource "aws_iam_role_policy" "platform_deployer_task" {
 }
 
 locals {
-  db_init_secret_arns = length(try(var.db_init.secret_arns, {})) > 0 ? var.db_init.secret_arns : try(var.platform_deployer.secret_arns, {})
+  db_init_secret_arns = length(try(local.db_init_cfg.secret_arns, {})) > 0 ? local.db_init_cfg.secret_arns : try(var.platform_deployer.secret_arns, {})
 }
 
 data "aws_iam_policy_document" "db_init_task" {
@@ -1178,7 +1180,7 @@ JSON
       APP_RELEASE_NAME           = local.app_deploy_release_name
       APP_NAMESPACE              = local.app_deploy_namespace
     },
-    try(var.db_init.environment, {}),
+    try(local.db_init_cfg.environment, {}),
     local.db_init_secret_env
   )
 }
@@ -1221,8 +1223,8 @@ resource "aws_ecs_task_definition" "db_init" {
   count = local.db_init_enabled ? 1 : 0
 
   family                   = "${var.eks.cluster_name}-db-init"
-  cpu                      = tostring(try(var.db_init.cpu, 512))
-  memory                   = tostring(try(var.db_init.memory, 1024))
+  cpu                      = tostring(try(local.db_init_cfg.cpu, 512))
+  memory                   = tostring(try(local.db_init_cfg.memory, 1024))
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.db_init_execution[0].arn
@@ -1232,7 +1234,7 @@ resource "aws_ecs_task_definition" "db_init" {
     merge(
       {
         name      = "db-init"
-        image     = var.db_init.image_uri
+        image     = local.db_init_cfg.image_uri
         essential = true
         command   = ["/bin/bash", "-lc", local.db_init_command]
         environment = [

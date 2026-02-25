@@ -476,7 +476,7 @@ if ($certPath -and $keyPath) {
   }
 }
 
-# App SQL credentials (required for DB init when enabled)
+# App SQL credentials (required for db_init when enabled)
 $dbInitEnabled = $false
 if ($cfg -and $cfg.db_init) {
   $dbInitEnabled = [bool]$cfg.db_init.enabled

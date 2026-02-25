@@ -77,6 +77,10 @@ function Has-SecretValues($obj) {
   return $false
 }
 
+function Get-DbInitConfig($cfgObj) {
+  return Get-PropValue $cfgObj "db_init"
+}
+
 $cachedOutputs = $null
 function Get-Outputs([string]$InfraRoot, [string]$BackendConfigPath) {
   if ($null -ne $script:cachedOutputs) { return $script:cachedOutputs }
@@ -115,7 +119,7 @@ try {
 }
 
 if ($cfg) {
-  $dbInitCfgEarly = Get-PropValue $cfg "db_init"
+  $dbInitCfgEarly = Get-DbInitConfig $cfg
   $dbInitEnabledEarly = Get-PropValue $dbInitCfgEarly "enabled"
   if ($dbInitEnabledEarly -eq $true) {
     $dbInitSecretsEarly = Get-PropValue $dbInitCfgEarly "secret_arns"
@@ -267,7 +271,7 @@ if (Test-Path -LiteralPath $settingsPath) {
 # ---------------------------------------------------------------------------
 # Upload Settings.yaml to S3 for ECS-based app deployment
 # ---------------------------------------------------------------------------
-$dbInitCfgForSettings = Get-PropValue $cfg "db_init"
+$dbInitCfgForSettings = Get-DbInitConfig $cfg
 $dbInitEnabledForSettings = Get-PropValue $dbInitCfgForSettings "enabled"
 $settingsBucketCfg = Get-PropValue $cfg "settings_bucket"
 $settingsBucketEnabled = Get-PropValue $settingsBucketCfg "enabled"
@@ -288,9 +292,9 @@ if ($dbInitEnabledForSettings -eq $true -and $settingsBucketEnabled -eq $true) {
 }
 
 # ---------------------------------------------------------------------------
-# Auto-run DB init task (Fargate) when enabled
+# Auto-run db_init task (Fargate) when enabled
 # ---------------------------------------------------------------------------
-$dbInitCfg = Get-PropValue $cfg "db_init"
+$dbInitCfg = Get-DbInitConfig $cfg
 $dbInitEnabled = Get-PropValue $dbInitCfg "enabled"
 if ($dbInitEnabled -eq $true) {
   if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
@@ -333,10 +337,10 @@ if ($dbInitEnabled -eq $true) {
     $networkConfigUri = Get-FileUri $networkConfigFile
   } catch {
     Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
-    throw "Failed to create network configuration file for DB init task."
+    throw "Failed to create network configuration file for db_init task."
   }
 
-  Write-Host "Starting DB init Fargate task..."
+  Write-Host "Starting db_init Fargate task..."
   $taskArn = aws ecs run-task `
     --cluster $clusterArn `
     --launch-type FARGATE `
@@ -347,10 +351,10 @@ if ($dbInitEnabled -eq $true) {
   Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
 
   if ($LASTEXITCODE -ne 0 -or -not $taskArn -or $taskArn -eq "None") {
-    throw "Failed to start DB init task."
+    throw "Failed to start db_init task."
   }
 
-  Write-Host ("DB init task started: {0}" -f $taskArn)
+  Write-Host ("db_init task started: {0}" -f $taskArn)
 
   $maxWaitMinutes = 20
   $elapsed = 0
@@ -361,16 +365,16 @@ if ($dbInitEnabled -eq $true) {
     if ($task -and $task.lastStatus -eq "STOPPED") {
       $exitCode = $task.containers[0].exitCode
       if ($exitCode -ne 0) {
-        throw "DB init task failed (exit code $exitCode). Check CloudWatch logs: /aws/ecs/$($cfg.eks.cluster_name)-db-init"
+        throw "db_init task failed (exit code $exitCode). Check CloudWatch logs: /aws/ecs/$($cfg.eks.cluster_name)-db-init"
       }
-      Write-Host "DB init task completed."
+      Write-Host "db_init task completed."
       break
     }
 
     Start-Sleep -Seconds $sleepSeconds
     $elapsed += $sleepSeconds
     if ($elapsed -ge ($maxWaitMinutes * 60)) {
-      Write-Host "DB init task still running. Check status in ECS console."
+      Write-Host "db_init task still running. Check status in ECS console."
       break
     }
   }

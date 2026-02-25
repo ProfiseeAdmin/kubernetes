@@ -112,17 +112,36 @@ function Remove-LoadBalancers([string]$VpcId, [string]$Region) {
   Write-Host ("Checking for load balancers in VPC {0}..." -f $VpcId)
 
   # ELBv2 (ALB/NLB)
-  $lbArgs = @("elbv2", "describe-load-balancers", "--region", $Region, "--query", "LoadBalancers[?VpcId=='$VpcId'].[LoadBalancerArn,LoadBalancerName]", "--output", "json")
+  $lbArgs = @("elbv2", "describe-load-balancers", "--region", $Region, "--query", "LoadBalancers[?VpcId=='$VpcId'].{Arn:LoadBalancerArn,Name:LoadBalancerName}", "--output", "json")
   $lbRaw = & aws @lbArgs 2>&1
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to list ELBv2 load balancers in VPC $VpcId (exit code $LASTEXITCODE)."
   }
   $lbList = @()
-  if ($lbRaw) { $lbList = $lbRaw | ConvertFrom-Json }
+  if ($lbRaw) { $lbList = @($lbRaw | ConvertFrom-Json) }
   foreach ($lb in $lbList) {
-    $arn = $lb[0]
-    $name = $lb[1]
+    $arn = $null
+    $name = $null
+
+    if ($lb -is [string]) {
+      # Defensive fallback if JSON shape is unexpectedly a string.
+      $arn = $lb
+      $name = $lb
+    } elseif ($lb -is [System.Collections.IList]) {
+      if ($lb.Count -gt 0) { $arn = $lb[0] }
+      if ($lb.Count -gt 1) { $name = $lb[1] }
+    } else {
+      $arn = Get-OptionalProperty $lb "Arn"
+      if (-not $arn) { $arn = Get-OptionalProperty $lb "LoadBalancerArn" }
+      $name = Get-OptionalProperty $lb "Name"
+      if (-not $name) { $name = Get-OptionalProperty $lb "LoadBalancerName" }
+    }
+
     if ($arn) {
+      if ($arn -notmatch '^arn:') {
+        Write-Host ("Skipping ELBv2 entry with non-ARN value: {0}" -f $arn)
+        continue
+      }
       Write-Host ("Deleting ELBv2 load balancer: {0} ({1})" -f $name, $arn)
       & aws elbv2 delete-load-balancer --load-balancer-arn $arn --region $Region | Out-Null
       if ($LASTEXITCODE -ne 0) {
