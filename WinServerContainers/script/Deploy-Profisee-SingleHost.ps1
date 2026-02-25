@@ -5,6 +5,7 @@ param(
   # Base name. Script auto-allocates next available suffix: <base>-0, <base>-1, ...
   [string]$ContainerName = "profisee",
   [ValidateSet("process","hyperv")] [string]$Isolation = "process",
+  [string]$DockerNamespace = "profisee",
 
   # Container port assumption: Profisee serves HTTP on 80 in-container.
   [int]$HostAppPort = 18080,
@@ -14,7 +15,8 @@ param(
 
   # For parity/reference as you requested
   [string]$SettingsYamlUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/Azure-ARM/Settings.yaml",
-  [string]$NginxConfUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/WinServerContainers/nginx-config/nginx.conf"
+  [string]$NginxConfUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/WinServerContainers/nginx-config/nginx.conf",
+  [string]$ForensicsScriptUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/refs/heads/master/Azure-ARM/forensics_log_pull.ps1"
 )
 
 Set-StrictMode -Version Latest
@@ -22,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-25.7"
+$script:DeployScriptVersion = "2026-02-25.11"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -193,76 +195,9 @@ function Ensure-PathContains([string[]]$entries){
   [Environment]::SetEnvironmentVariable("Path",$mp,"Machine")
   $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 }
-function Get-ContainerdLocalVersion {
-  $exe = "$env:ProgramFiles\containerd\containerd.exe"
-  if(-not(Test-Path $exe)){ return $null }
-  try{
-    $txt = (& $exe --version 2>&1 | Out-String)
-    $m = [regex]::Match($txt,'v(\d+\.\d+\.\d+)')
-    if($m.Success){ return $m.Groups[1].Value }
-  } catch {}
-  return $null
-}
-function Get-NerdctlLocalVersion {
-  $exe = "$env:ProgramFiles\nerdctl\nerdctl.exe"
-  if(-not(Test-Path $exe)){ return $null }
-  try{
-    $txt = (& $exe --version 2>&1 | Out-String)
-    $m = [regex]::Match($txt,'(\d+\.\d+\.\d+)')
-    if($m.Success){ return $m.Groups[1].Value }
-  } catch {}
-  return $null
-}
-function Get-WindowsCniLocalVersion {
-  $marker = "$env:ProgramFiles\containerd\cni\bin\wcni.version"
-  if(Test-Path $marker){
-    $v = (Get-Content -Raw -Path $marker).Trim()
-    if(-not [string]::IsNullOrWhiteSpace($v)){ return $v }
-  }
-
-  $natExe = "$env:ProgramFiles\containerd\cni\bin\nat.exe"
-  if(Test-Path $natExe){
-    $fv = (Get-Item $natExe).VersionInfo.FileVersion
-    $m = [regex]::Match($fv,'(\d+\.\d+\.\d+)')
-    if($m.Success){ return $m.Groups[1].Value }
-  }
-  return $null
-}
-function Get-LatestGitHubRelease([string]$owner,[string]$repo,[string]$fallback){
-  try{
-    $r = Invoke-RestMethod -Headers @{ "User-Agent"="ProfiseeDeploy" } -Uri "https://api.github.com/repos/$owner/$repo/releases/latest"
-    return ($r.tag_name -replace '^v','')
-  } catch { return $fallback }
-}
 function Stop-ServiceIfExists([string]$name){
   $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
   if($svc -and $svc.Status -ne "Stopped"){ Stop-Service -Name $name -Force }
-}
-function Ensure-ContainerdService([switch]$ForceRestart){
-  $containerdExe = "$env:ProgramFiles\containerd\containerd.exe"
-  if(-not(Test-Path $containerdExe)){ throw "containerd.exe not found at $containerdExe" }
-
-  $cfgPath = "$env:ProgramFiles\containerd\config.toml"
-  if(-not(Test-Path $cfgPath)){
-    & $containerdExe config default | Out-File $cfgPath -Encoding ascii
-  }
-
-  $svc = Get-Service -Name "containerd" -ErrorAction SilentlyContinue
-  if(-not $svc){
-    & $containerdExe --register-service | Out-Null
-    $svc = Get-Service -Name "containerd" -ErrorAction SilentlyContinue
-  }
-  if(-not $svc){ throw "containerd service could not be registered." }
-
-  if($ForceRestart){
-    if($svc.Status -eq "Running"){
-      Restart-Service containerd -Force
-    } else {
-      Start-Service containerd
-    }
-    return
-  }
-  if($svc.Status -ne "Running"){ Start-Service containerd }
 }
 function Install-ContainersFeature {
   Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
@@ -366,112 +301,6 @@ function Install-DockerEngineLatest {
 
   Ensure-PathContains @("$env:ProgramFiles\Docker")
   Ensure-DockerService -ForceRestart:$dockerUpdated
-}
-
-function Install-ContainerdAndNerdctl {
-  Ensure-Dir $WorkDir
-  Ensure-Dir "$env:ProgramFiles\containerd"
-  Ensure-Dir "$env:ProgramFiles\nerdctl"
-
-  $containerdVer = Get-LatestGitHubRelease "containerd" "containerd" "2.2.1"
-  $nerdctlVer    = Get-LatestGitHubRelease "containerd" "nerdctl"    "2.2.1"
-  $localContainerdVer = Get-ContainerdLocalVersion
-  $localNerdctlVer = Get-NerdctlLocalVersion
-  $arch = "amd64"
-  $containerdUpdated = $false
-
-  if(Is-SameOrNewer $localContainerdVer $containerdVer){
-    Write-Host "containerd local version $localContainerdVer is current (latest $containerdVer). Skipping install."
-  } else {
-    Write-Host "Updating containerd from '$localContainerdVer' to '$containerdVer'"
-    Stop-ServiceIfExists "containerd"
-    $cTgz = Join-Path $WorkDir "containerd-$containerdVer-windows-$arch.tar.gz"
-    $cExtract = Join-Path $WorkDir "containerd-extract"
-    if(Test-Path $cExtract){ Remove-Item $cExtract -Recurse -Force }
-    Ensure-Dir $cExtract
-    Invoke-WebRequest -Uri "https://github.com/containerd/containerd/releases/download/v$containerdVer/containerd-$containerdVer-windows-$arch.tar.gz" -OutFile $cTgz
-    tar.exe -xvf $cTgz -C $cExtract | Out-Null
-    Copy-Item -Path (Join-Path $cExtract "bin\*") -Destination "$env:ProgramFiles\containerd" -Recurse -Force
-    Remove-Item $cExtract -Recurse -Force
-    $containerdUpdated = $true
-  }
-
-  if(Is-SameOrNewer $localNerdctlVer $nerdctlVer){
-    Write-Host "nerdctl local version $localNerdctlVer is current (latest $nerdctlVer). Skipping install."
-  } else {
-    Write-Host "Updating nerdctl from '$localNerdctlVer' to '$nerdctlVer'"
-    $nTgz = Join-Path $WorkDir "nerdctl-$nerdctlVer-windows-$arch.tar.gz"
-    $nExtract = Join-Path $WorkDir "nerdctl-extract"
-    if(Test-Path $nExtract){ Remove-Item $nExtract -Recurse -Force }
-    Ensure-Dir $nExtract
-    Invoke-WebRequest -Uri "https://github.com/containerd/nerdctl/releases/download/v$nerdctlVer/nerdctl-$nerdctlVer-windows-$arch.tar.gz" -OutFile $nTgz
-    tar.exe -xvf $nTgz -C $nExtract | Out-Null
-    Copy-Item -Path (Join-Path $nExtract "nerdctl.exe") -Destination "$env:ProgramFiles\nerdctl\nerdctl.exe" -Force
-    Remove-Item $nExtract -Recurse -Force
-  }
-
-  Ensure-PathContains @("$env:ProgramFiles\containerd","$env:ProgramFiles\nerdctl")
-  Ensure-ContainerdService -ForceRestart:$containerdUpdated
-}
-
-function Ensure-HnsModule {
-  if(-not(Get-Command New-HnsNetwork -ErrorAction SilentlyContinue)){
-    $hns = Join-Path $WorkDir "hns.psm1"
-    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/microsoft/SDN/master/Kubernetes/windows/hns.psm1" -OutFile $hns
-    Import-Module $hns -Force
-  }
-}
-function Write-ContainerdNatCniConfig([string]$adapterName){
-  if([string]::IsNullOrWhiteSpace($adapterName)){ $adapterName = "Ethernet" }
-@"
-{
-  "cniVersion": "1.0.0",
-  "name": "nat",
-  "type": "nat",
-  "master": "$adapterName",
-  "ipam": {
-    "subnet": "10.88.0.0/16",
-    "ranges": [
-      [
-        { "subnet": "10.88.0.0/16", "gateway": "10.88.0.1" }
-      ]
-    ],
-    "routes": [ { "dst": "0.0.0.0/0", "gw": "10.88.0.1" } ]
-  },
-  "capabilities": { "portMappings": true, "dns": true }
-}
-"@ | Set-Content -Path "$env:ProgramFiles\containerd\cni\conf\0-containerd-nat.conf" -Encoding ascii -Force
-}
-
-function Install-WindowsNatCni_Latest {
-  # Install latest windows-container-networking CNI zip (contains nat.exe, etc.)
-  Ensure-Dir "$env:ProgramFiles\containerd\cni\bin"
-  Ensure-Dir "$env:ProgramFiles\containerd\cni\conf"
-
-  $wcniVer = Get-LatestGitHubRelease "microsoft" "windows-container-networking" "0.3.2"
-  $localWcniVer = Get-WindowsCniLocalVersion
-  $zipName = "windows-container-networking-cni-amd64-v$wcniVer.zip"
-  $zipUrl  = "https://github.com/microsoft/windows-container-networking/releases/download/v$wcniVer/$zipName"
-  $zipPath = Join-Path $WorkDir $zipName
-
-  if(Is-SameOrNewer $localWcniVer $wcniVer){
-    Write-Host "Windows CNI local version $localWcniVer is current (latest $wcniVer). Skipping install."
-  } else {
-    Write-Host "Updating Windows CNI from '$localWcniVer' to '$wcniVer'"
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath "$env:ProgramFiles\containerd\cni\bin" -Force
-    Set-Content -Path "$env:ProgramFiles\containerd\cni\bin\wcni.version" -Value $wcniVer -Encoding ascii -Force
-  }
-
-  Ensure-HnsModule
-  $adapter = (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1 -ExpandProperty Name)
-  if(-not $adapter){ $adapter = "Ethernet" }
-  $existing = Get-HnsNetwork | Where-Object Name -eq "nat" -ErrorAction SilentlyContinue
-  if(-not $existing){
-    New-HnsNetwork -Type Nat -AddressPrefix "10.88.0.0/16" -Gateway "10.88.0.1" -Name "nat" | Out-Null
-  }
-  # Always refresh CNI config so nerdctl sees stable IPAM schema.
-  Write-ContainerdNatCniConfig -adapterName $adapter
 }
 
 function Download-SettingsYamlTemplate {
@@ -683,8 +512,19 @@ function Start-Nginx {
     }
   } catch {}
 
-  & $exe -s stop -p $prefix 2>$null | Out-Null
-  Start-Process -FilePath $exe -WorkingDirectory $NginxRoot -ArgumentList @("-p",$prefix,"-c","conf/nginx.conf") | Out-Null
+  $running = @(Get-Process -Name "nginx" -ErrorAction SilentlyContinue).Count -gt 0
+  if($running){
+    Write-Host "nginx is already running. Reloading configuration."
+    & $exe -s reload -p $prefix 2>&1 | Out-Null
+    if($LASTEXITCODE -ne 0){
+      Write-Warning "nginx reload failed. Attempting restart."
+      & $exe -s stop -p $prefix 2>$null | Out-Null
+      Start-Process -FilePath $exe -WorkingDirectory $NginxRoot -ArgumentList @("-p",$prefix,"-c","conf/nginx.conf") | Out-Null
+    }
+  } else {
+    Write-Host "nginx is not running. Starting nginx."
+    Start-Process -FilePath $exe -WorkingDirectory $NginxRoot -ArgumentList @("-p",$prefix,"-c","conf/nginx.conf") | Out-Null
+  }
 }
 
 function DockerCli([string[]]$commandArgs){
@@ -763,12 +603,56 @@ function Test-Base64String([string]$value){
     return $false
   }
 }
+function Resolve-RepositoryMountSource([string]$repoLocation){
+  if([string]::IsNullOrWhiteSpace($repoLocation)){
+    throw "ProfiseeAttachmentRepositoryLocation is required."
+  }
+  $path = $repoLocation.Trim()
+  $isUnc = $path.StartsWith("\\")
+  $isDrivePath = $path -match '^[A-Za-z]:\\'
+  if(-not $isUnc -and -not $isDrivePath){
+    throw "ProfiseeAttachmentRepositoryLocation must be an absolute UNC path (\\server\share) or local path (C:\path)."
+  }
+
+  if($isDrivePath){
+    if(-not (Test-Path -LiteralPath $path)){
+      Ensure-Dir $path
+    }
+  }
+
+  if(-not (Test-Path -LiteralPath $path)){
+    throw "Attachment repository host path is not accessible: $path"
+  }
+  try {
+    return (Resolve-Path -LiteralPath $path).Path
+  } catch {
+    return $path
+  }
+}
+function Download-ForensicsScriptToRepository([string]$repoMountSource){
+  if([string]::IsNullOrWhiteSpace($repoMountSource)){
+    throw "Repository mount source path is required for forensics script download."
+  }
+  Ensure-Dir $WorkDir
+  $tmp = Join-Path $WorkDir "forensics_log_pull.ps1.download"
+  $dst = Join-Path $repoMountSource "forensics_log_pull.ps1"
+
+  Invoke-WebRequest -Uri $ForensicsScriptUrl -OutFile $tmp
+  if(-not (Test-Path -LiteralPath $tmp)){
+    throw "Failed to download forensics script from $ForensicsScriptUrl"
+  }
+  Copy-Item -LiteralPath $tmp -Destination $dst -Force
+  try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch {}
+  Write-Host "Downloaded forensics_log_pull.ps1 to: $dst"
+}
 function Build-ContainerRunArgs(
   [string]$name,
   [string]$isolation,
+  [string]$dockerNamespace,
   [string]$networkName,
   [int]$hostPort,
   [string]$hostDataDir,
+  [string]$repoMountSource,
   [string]$cpuLimit,
   [string]$memoryLimit,
   [hashtable]$envMap,
@@ -781,8 +665,12 @@ function Build-ContainerRunArgs(
 ){
   $args = @(
     "run","-d",
-    "--name",$name
+    "--name",$name,
+    "--hostname",$name
   )
+  if(-not [string]::IsNullOrWhiteSpace($dockerNamespace)){
+    $args += @("--label","profisee.namespace=$dockerNamespace")
+  }
 
   if($IncludeIsolation -and -not [string]::IsNullOrWhiteSpace($isolation)){
     $args += @("--isolation",$isolation)
@@ -795,6 +683,7 @@ function Build-ContainerRunArgs(
   }
   if($IncludeBindMount){
     $args += @("--mount","type=bind,source=$hostDataDir,destination=c:\data")
+    $args += @("--mount","type=bind,source=$repoMountSource,destination=c:\fileshare")
   }
 
   if($IncludeResourceLimits){
@@ -844,19 +733,19 @@ function Resolve-NextContainerName([string]$baseName){
   }
   return "$trimmed-$($maxIndex + 1)"
 }
-function Ensure-NerdctlNatNetwork([string]$networkName){
-  if([string]::IsNullOrWhiteSpace($networkName)){ return "" }
+function Ensure-DockerNamespaceNetwork([string]$namespaceName){
+  if([string]::IsNullOrWhiteSpace($namespaceName)){ return "" }
+  $networkName = $namespaceName.Trim().ToLowerInvariant()
 
-  $nerdctlExe = "$env:ProgramFiles\nerdctl\nerdctl.exe"
-  & $nerdctlExe network inspect $networkName *> $null
+  & docker network inspect $networkName *> $null
   if($LASTEXITCODE -eq 0){
-    Write-Host "Using nerdctl network '$networkName'."
+    Write-Host "Using docker namespace network '$networkName'."
     return $networkName
   }
 
-  Write-Host "Creating nerdctl network '$networkName' (driver nat)."
+  Write-Host "Creating docker namespace network '$networkName' (driver nat)."
   $createLines = @()
-  & $nerdctlExe network create --driver nat $networkName 2>&1 | Tee-Object -Variable createLines | Out-Host
+  & docker network create --driver nat $networkName 2>&1 | Tee-Object -Variable createLines | Out-Host
   $createText = (($createLines | ForEach-Object { [string]$_ }) -join "`n")
   if($LASTEXITCODE -eq 0 -or $createText -match "(?i)already exists"){
     return $networkName
@@ -864,13 +753,13 @@ function Ensure-NerdctlNatNetwork([string]$networkName){
 
   Write-Warning "Network create with driver 'nat' failed. Retrying without explicit driver."
   $createLines2 = @()
-  & $nerdctlExe network create $networkName 2>&1 | Tee-Object -Variable createLines2 | Out-Host
+  & docker network create $networkName 2>&1 | Tee-Object -Variable createLines2 | Out-Host
   $createText2 = (($createLines2 | ForEach-Object { [string]$_ }) -join "`n")
   if($LASTEXITCODE -eq 0 -or $createText2 -match "(?i)already exists"){
     return $networkName
   }
 
-  Write-Warning "Failed to create nerdctl network '$networkName'. Falling back to default CNI network selection."
+  Write-Warning "Failed to create docker namespace network '$networkName'. Falling back to default docker network."
   return ""
 }
 function Get-ContainerIPv4([string]$name){
@@ -989,7 +878,7 @@ $sqlUser   = Read-WithHistory -state $customerInputState -key "ProfiseeSqlUserNa
 $sqlPass   = Read-SecretWithHistory -state $customerInputState -key "ProfiseeSqlPassword" -prompt "ProfiseeSqlPassword" -Required
 
 Write-Host ""
-$repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)" -Required
+$repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (host path to mount, UNC or local, e.g. \\server\share or C:\r4fileshare)" -Required
 $repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required
 $repoPass     = Read-SecretWithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserPassword" -prompt "ProfiseeAttachmentRepositoryUserPassword" -Required
 $repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -prompt "ProfiseeAttachmentRepositoryLogonType" -defaultValue "NewCredentials" -Required
@@ -1148,7 +1037,16 @@ while(-not $imagePulled){
 
 $resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
 Write-Host "Container name selected: $resolvedContainerName"
-$containerNetwork = ""
+$containerAttachmentPath = "c:\fileshare"
+$repoMountSource = Resolve-RepositoryMountSource -repoLocation $repoLocation
+Write-Host "Attachment repository mount: host '$repoMountSource' -> container '$containerAttachmentPath'"
+Download-ForensicsScriptToRepository -repoMountSource $repoMountSource
+$containerNetwork = Ensure-DockerNamespaceNetwork -namespaceName $DockerNamespace
+if([string]::IsNullOrWhiteSpace($containerNetwork)){
+  Write-Warning "Docker namespace network unavailable. Container will use default docker network."
+} else {
+  Write-Host "Docker namespace: '$DockerNamespace' (network '$containerNetwork')."
+}
 
 $envMap = @{
   "ProfiseeAdditionalOpenIdConnectProvidersFile" = "c:\data\oidc.json"
@@ -1156,7 +1054,7 @@ $envMap = @{
 
   "ProfiseeLicenseFile"                         = $containerLicenseFile
 
-  "ProfiseeAttachmentRepositoryLocation"        = $repoLocation
+  "ProfiseeAttachmentRepositoryLocation"        = $containerAttachmentPath
   "ProfiseeAttachmentRepositoryLogonType"       = $repoLogon
   "ProfiseeAttachmentRepositoryUserName"        = $repoUser
   "ProfiseeAttachmentRepositoryUserPassword"    = $repoPass
@@ -1195,25 +1093,14 @@ if($licenseMode -eq "base64"){
 $envListPath = Join-Path $WorkDir "container-env-vars.txt"
 $envMap.Keys | Sort-Object | Set-Content -Path $envListPath -Encoding ascii -Force
 
-$envMapNoMount = @{}
-foreach($k in $envMap.Keys){ $envMapNoMount[$k] = $envMap[$k] }
-$envMapNoMount.Remove("ProfiseeAdditionalOpenIdConnectProvidersFile") | Out-Null
-if($licenseMode -eq "file" -and (Test-Path $hostLicenseFile)){
-  $licBytes = [IO.File]::ReadAllBytes($hostLicenseFile)
-  $envMapNoMount["ProfiseeLicenseString"] = [Convert]::ToBase64String($licBytes)
-} elseif($licenseMode -eq "base64"){
-  $envMapNoMount["ProfiseeLicenseString"] = $licenseString
-}
-
 $runAttempts = @(
   [pscustomobject]@{
     Name = "standard"
     Message = ""
     AttemptIsolation = $Isolation
-    UseNoMountEnv = $false
     IncludeResourceLimits = $true
     IncludeIsolation = $true
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $true
     IncludeBindMount = $true
   },
@@ -1221,10 +1108,9 @@ $runAttempts = @(
     Name = "no-resource-limits"
     Message = "docker run returned 'not implemented'. Retrying without --cpus/--memory."
     AttemptIsolation = $Isolation
-    UseNoMountEnv = $false
     IncludeResourceLimits = $false
     IncludeIsolation = $true
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $true
     IncludeBindMount = $true
   },
@@ -1232,10 +1118,9 @@ $runAttempts = @(
     Name = "no-explicit-isolation"
     Message = "Retrying without explicit isolation."
     AttemptIsolation = $Isolation
-    UseNoMountEnv = $false
     IncludeResourceLimits = $false
     IncludeIsolation = $false
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $true
     IncludeBindMount = $true
   },
@@ -1243,10 +1128,9 @@ $runAttempts = @(
     Name = "no-port-mapping"
     Message = "Retrying without port mapping (-p)."
     AttemptIsolation = $Isolation
-    UseNoMountEnv = $false
     IncludeResourceLimits = $false
     IncludeIsolation = $false
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $false
     IncludeBindMount = $true
   },
@@ -1254,10 +1138,9 @@ $runAttempts = @(
     Name = "hyperv-no-port-mapping"
     Message = "Retrying with hyperv isolation and without port mapping."
     AttemptIsolation = "hyperv"
-    UseNoMountEnv = $false
     IncludeResourceLimits = $false
     IncludeIsolation = $true
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $false
     IncludeBindMount = $true
   },
@@ -1265,45 +1148,11 @@ $runAttempts = @(
     Name = "hyperv-no-limits"
     Message = "Retrying with hyperv isolation."
     AttemptIsolation = "hyperv"
-    UseNoMountEnv = $false
     IncludeResourceLimits = $false
     IncludeIsolation = $true
-    IncludeNetwork = $false
+    IncludeNetwork = $true
     IncludePortMapping = $true
     IncludeBindMount = $true
-  },
-  [pscustomobject]@{
-    Name = "no-port-and-no-bind-mount"
-    Message = "Retrying without port mapping and without bind mount."
-    AttemptIsolation = $Isolation
-    UseNoMountEnv = $true
-    IncludeResourceLimits = $false
-    IncludeIsolation = $false
-    IncludeNetwork = $false
-    IncludePortMapping = $false
-    IncludeBindMount = $false
-  },
-  [pscustomobject]@{
-    Name = "no-bind-mount"
-    Message = "Retrying without bind mount."
-    AttemptIsolation = $Isolation
-    UseNoMountEnv = $true
-    IncludeResourceLimits = $false
-    IncludeIsolation = $false
-    IncludeNetwork = $false
-    IncludePortMapping = $false
-    IncludeBindMount = $false
-  },
-  [pscustomobject]@{
-    Name = "hyperv-no-bind-mount"
-    Message = "Retrying with hyperv isolation and no bind mount."
-    AttemptIsolation = "hyperv"
-    UseNoMountEnv = $true
-    IncludeResourceLimits = $false
-    IncludeIsolation = $true
-    IncludeNetwork = $false
-    IncludePortMapping = $false
-    IncludeBindMount = $false
   }
 )
 
@@ -1319,8 +1168,7 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
     Write-Warning $attempt.Message
   }
 
-  $attemptEnvMap = if($attempt.UseNoMountEnv){ $envMapNoMount } else { $envMap }
-  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $attemptEnvMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
+  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
 
   try {
     DockerCli $attemptArgs
@@ -1370,3 +1218,25 @@ Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 Write-Host "Container env var key list written to: $envListPath"
 Write-Host "Customer input state saved to: $customerInputStatePath"
+Write-Host ""
+
+try {
+  $dockerSvc = Get-Service -Name "docker" -ErrorAction Stop
+  Write-Host "Docker service status: $($dockerSvc.Status)"
+} catch {
+  Write-Warning "Could not read Docker service status. Error: $($_.Exception.Message)"
+}
+
+Write-Host ""
+Write-Host "docker ps -a"
+& docker ps -a 2>&1 | Out-Host
+
+$traceContainer = "profisee-0"
+& docker container inspect $traceContainer *> $null
+if($LASTEXITCODE -ne 0){
+  $traceContainer = $resolvedContainerName
+}
+
+Write-Host ""
+Write-Host "Streaming logs (Ctrl+C to stop): docker logs -f $traceContainer"
+& docker logs -f $traceContainer 2>&1 | Out-Host
