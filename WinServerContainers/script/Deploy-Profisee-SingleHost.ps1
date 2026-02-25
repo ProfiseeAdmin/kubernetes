@@ -2,6 +2,7 @@
 #requires -RunAsAdministrator
 [CmdletBinding()]
 param(
+  # Base name. Script auto-allocates next available suffix: <base>-0, <base>-1, ...
   [string]$ContainerName = "profisee",
   [ValidateSet("process","hyperv")] [string]$Isolation = "process",
 
@@ -21,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-25.6"
+$script:DeployScriptVersion = "2026-02-25.7"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -815,6 +816,34 @@ function Remove-ContainerIfExists([string]$name){
     DockerCli @("rm","-f",$name)
   }
 }
+function Resolve-NextContainerName([string]$baseName){
+  if([string]::IsNullOrWhiteSpace($baseName)){ $baseName = "profisee" }
+  $trimmed = $baseName.Trim()
+  if($trimmed -match '-\d+$'){
+    return $trimmed
+  }
+
+  $names = @()
+  try {
+    $names = (& docker ps -a --format "{{.Names}}" 2>$null | ForEach-Object { [string]$_ })
+  } catch {
+    $names = @()
+  }
+
+  $pattern = "^{0}-(\d+)$" -f [regex]::Escape($trimmed)
+  $maxIndex = -1
+  foreach($n in $names){
+    if([string]::IsNullOrWhiteSpace($n)){ continue }
+    $m = [regex]::Match($n,$pattern)
+    if($m.Success){
+      try {
+        $i = [int]$m.Groups[1].Value
+        if($i -gt $maxIndex){ $maxIndex = $i }
+      } catch {}
+    }
+  }
+  return "$trimmed-$($maxIndex + 1)"
+}
 function Ensure-NerdctlNatNetwork([string]$networkName){
   if([string]::IsNullOrWhiteSpace($networkName)){ return "" }
 
@@ -1117,7 +1146,8 @@ while(-not $imagePulled){
   }
 }
 
-Remove-ContainerIfExists $ContainerName
+$resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
+Write-Host "Container name selected: $resolvedContainerName"
 $containerNetwork = ""
 
 $envMap = @{
@@ -1290,7 +1320,7 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
   }
 
   $attemptEnvMap = if($attempt.UseNoMountEnv){ $envMapNoMount } else { $envMap }
-  $attemptArgs = Build-ContainerRunArgs -name $ContainerName -isolation $attempt.AttemptIsolation -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $attemptEnvMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
+  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $attemptEnvMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
 
   try {
     DockerCli $attemptArgs
@@ -1303,7 +1333,7 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
     if([string]::IsNullOrWhiteSpace($runErr)){ $runErr = $_.Exception.Message }
     $lastRunErrorText = $runErr
     if((Is-ContainerCliNotImplemented $runErr) -or (Is-ContainerCliRecoverableNetworkBug $runErr)){
-      Remove-ContainerIfExists $ContainerName
+      Remove-ContainerIfExists $resolvedContainerName
       continue
     }
     throw
@@ -1319,7 +1349,7 @@ if($runSucceededMode -ne "standard"){
 if($runUsedPortMapping){
   Remove-LocalPortProxy -listenPort $HostAppPort
 } else {
-  $containerIpViaPortProxy = Get-ContainerIPv4 -name $ContainerName
+  $containerIpViaPortProxy = Get-ContainerIPv4 -name $resolvedContainerName
   if([string]::IsNullOrWhiteSpace($containerIpViaPortProxy)){
     throw "Container started without native port mapping, but container IP could not be determined for local portproxy setup."
   }
@@ -1332,9 +1362,9 @@ Write-Host "DONE."
 Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
 Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
 if($runUsedPortMapping){
-  Write-Host "Container is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
+  Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
 } else {
-  Write-Host "Container port path uses local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80 (internal only)"
+  Write-Host "Container '$resolvedContainerName' port path uses local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80 (internal only)"
 }
 Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
