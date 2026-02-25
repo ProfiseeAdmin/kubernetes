@@ -19,6 +19,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$script:CustomerInputStatePath = $null
+$script:LastContainerCliOutputText = ""
+$script:DeployScriptVersion = "2026-02-25.6"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -70,6 +73,14 @@ function Save-CustomerInputState([object]$state,[string]$path){
   Ensure-Dir (Split-Path $path -Parent)
   Export-Clixml -InputObject $state -Path $path -Force
 }
+function Persist-CustomerInputState([object]$state){
+  if([string]::IsNullOrWhiteSpace($script:CustomerInputStatePath)){ return }
+  try {
+    Save-CustomerInputState -state $state -path $script:CustomerInputStatePath
+  } catch {
+    Write-Warning "Could not persist customer input state to $script:CustomerInputStatePath. Error: $($_.Exception.Message)"
+  }
+}
 function Get-StateInput([object]$state,[string]$key){
   if($state -and $state.Inputs -and $state.Inputs.ContainsKey($key)){ return [string]$state.Inputs[$key] }
   return $null
@@ -98,11 +109,24 @@ function Mask-SecretPreview([string]$value){
   $maskLen = [Math]::Max(0,$value.Length - $prefixLen)
   return ($prefix + ("*" * $maskLen))
 }
-function Show-PreviousCustomerValue([string]$label,[string]$value,[switch]$Sensitive){
-  if([string]::IsNullOrWhiteSpace($value)){ return }
-  $display = $value
-  if($Sensitive){ $display = Mask-SecretPreview $value }
-  Write-Host "Customer value from prior run: $label = $display" -ForegroundColor Green
+function Read-PromptWithGreenDefault([string]$label,[string]$defaultText){
+  if(-not [string]::IsNullOrWhiteSpace($defaultText)){
+    Write-Host ("{0} [" -f $label) -NoNewline
+    Write-Host $defaultText -NoNewline -ForegroundColor Green
+    Write-Host "]:" -NoNewline
+    return Read-Host
+  }
+  return Read-Host ("{0}:" -f $label)
+}
+function Read-SecretPromptWithGreenDefault([string]$label,[string]$defaultText){
+  if(-not [string]::IsNullOrWhiteSpace($defaultText)){
+    Write-Host ("{0} [" -f $label) -NoNewline
+    Write-Host $defaultText -NoNewline -ForegroundColor Green
+    Write-Host "]:" -NoNewline
+  } else {
+    Write-Host ("{0}:" -f $label) -NoNewline
+  }
+  return SecureToPlain (Read-Host -AsSecureString)
 }
 function Read-WithHistory(
   [object]$state,
@@ -113,30 +137,19 @@ function Read-WithHistory(
   [switch]$SensitiveDisplay
 ){
   $previous = Get-StateInput $state $key
-  Show-PreviousCustomerValue -label $key -value $previous -Sensitive:$SensitiveDisplay
 
   $effectiveDefault = $defaultValue
   if(-not [string]::IsNullOrWhiteSpace($previous)){ $effectiveDefault = $previous }
 
   while($true){
-    if($SensitiveDisplay){
-      if([string]::IsNullOrWhiteSpace($effectiveDefault)){
-        $entered = Read-Host $prompt
-      } else {
-        $entered = Read-Host "$prompt (press Enter to reuse previous value)"
-      }
-    } else {
-      if([string]::IsNullOrWhiteSpace($effectiveDefault)){
-        $entered = Read-Host $prompt
-      } else {
-        $entered = Read-Host "$prompt [$effectiveDefault]"
-      }
-    }
+    $defaultForDisplay = if($SensitiveDisplay){ Mask-SecretPreview $effectiveDefault } else { $effectiveDefault }
+    $entered = Read-PromptWithGreenDefault -label $prompt -defaultText $defaultForDisplay
 
     if([string]::IsNullOrWhiteSpace($entered)){ $value = $effectiveDefault } else { $value = $entered }
     if($Required -and [string]::IsNullOrWhiteSpace($value)){ continue }
 
     Set-StateInput -state $state -key $key -value $value
+    Persist-CustomerInputState -state $state
     return $value
   }
 }
@@ -147,19 +160,15 @@ function Read-SecretWithHistory(
   [switch]$Required
 ){
   $previous = Get-StateSecret $state $key
-  Show-PreviousCustomerValue -label $key -value $previous -Sensitive
 
   while($true){
-    if([string]::IsNullOrWhiteSpace($previous)){
-      $entered = SecureToPlain (Read-Host $prompt -AsSecureString)
-    } else {
-      $entered = SecureToPlain (Read-Host "$prompt (press Enter to reuse previous value)" -AsSecureString)
-    }
+    $entered = Read-SecretPromptWithGreenDefault -label $prompt -defaultText (Mask-SecretPreview $previous)
 
     if([string]::IsNullOrWhiteSpace($entered)){ $value = $previous } else { $value = $entered }
     if($Required -and [string]::IsNullOrWhiteSpace($value)){ continue }
 
     Set-StateSecret -state $state -key $key -value $value
+    Persist-CustomerInputState -state $state
     return $value
   }
 }
@@ -262,6 +271,101 @@ function Install-ContainersFeature {
     Write-Warning "Containers feature installed. A reboot may be required."
   }
 }
+function Get-DockerLocalVersion {
+  $dockerExe = $null
+  try {
+    $cmd = Get-Command docker -ErrorAction SilentlyContinue
+    if($cmd){ $dockerExe = $cmd.Source }
+  } catch {}
+  if([string]::IsNullOrWhiteSpace($dockerExe)){
+    $fallback = "$env:ProgramFiles\Docker\docker.exe"
+    if(Test-Path $fallback){ $dockerExe = $fallback }
+  }
+  if([string]::IsNullOrWhiteSpace($dockerExe)){ return $null }
+  try{
+    $txt = (& $dockerExe --version 2>&1 | Out-String)
+    $m = [regex]::Match($txt,'(\d+\.\d+\.\d+)')
+    if($m.Success){ return $m.Groups[1].Value }
+  } catch {}
+  return $null
+}
+function Get-LatestDockerStableVersion {
+  try{
+    $listing = (Invoke-WebRequest -Uri "https://download.docker.com/win/static/stable/x86_64/" -UseBasicParsing).Content
+    $matches = [regex]::Matches($listing,'docker-(\d+\.\d+\.\d+)\.zip')
+    $unique = @{}
+    foreach($m in $matches){ $unique[$m.Groups[1].Value] = $true }
+    if($unique.Keys.Count -gt 0){
+      return ($unique.Keys | Sort-Object { [version]$_ } -Descending | Select-Object -First 1)
+    }
+  } catch {}
+  return $null
+}
+function Ensure-DockerService([switch]$ForceRestart){
+  $dockerdExe = "$env:ProgramFiles\Docker\dockerd.exe"
+  if(-not(Test-Path $dockerdExe)){
+    try {
+      $cmd = Get-Command dockerd -ErrorAction SilentlyContinue
+      if($cmd){ $dockerdExe = $cmd.Source }
+    } catch {}
+  }
+  if(-not(Test-Path $dockerdExe)){ throw "dockerd.exe not found at $dockerdExe" }
+
+  $svc = Get-Service -Name "docker" -ErrorAction SilentlyContinue
+  if(-not $svc){
+    & $dockerdExe --register-service | Out-Null
+    $svc = Get-Service -Name "docker" -ErrorAction SilentlyContinue
+  }
+  if(-not $svc){ throw "docker service could not be registered." }
+
+  try { Set-Service -Name docker -StartupType Automatic } catch {}
+  if($ForceRestart){
+    if($svc.Status -eq "Running"){
+      Restart-Service docker -Force
+    } else {
+      Start-Service docker
+    }
+    return
+  }
+  if($svc.Status -ne "Running"){ Start-Service docker }
+}
+function Install-DockerEngineLatest {
+  Ensure-Dir $WorkDir
+  Ensure-Dir "$env:ProgramFiles\Docker"
+
+  $latestDocker = Get-LatestDockerStableVersion
+  $localDocker = Get-DockerLocalVersion
+  $dockerUpdated = $false
+
+  if([string]::IsNullOrWhiteSpace($latestDocker)){
+    if(-not [string]::IsNullOrWhiteSpace($localDocker)){
+      Write-Warning "Could not determine latest Docker version online. Keeping local version $localDocker."
+      Ensure-PathContains @("$env:ProgramFiles\Docker")
+      Ensure-DockerService
+      return
+    }
+    throw "Could not determine latest Docker version online and Docker is not installed."
+  }
+
+  if(Is-SameOrNewer $localDocker $latestDocker){
+    Write-Host "docker local version $localDocker is current (latest $latestDocker). Skipping install."
+  } else {
+    Write-Host "Updating docker from '$localDocker' to '$latestDocker'"
+    Stop-ServiceIfExists "docker"
+    $dockerZip = Join-Path $WorkDir "docker-$latestDocker.zip"
+    $dockerExtract = Join-Path $WorkDir "docker-extract"
+    if(Test-Path $dockerExtract){ Remove-Item $dockerExtract -Recurse -Force }
+    Ensure-Dir $dockerExtract
+    Invoke-WebRequest -Uri "https://download.docker.com/win/static/stable/x86_64/docker-$latestDocker.zip" -OutFile $dockerZip
+    Expand-Archive -Path $dockerZip -DestinationPath $dockerExtract -Force
+    Copy-Item -Path (Join-Path $dockerExtract "docker\*") -Destination "$env:ProgramFiles\Docker" -Recurse -Force
+    Remove-Item $dockerExtract -Recurse -Force
+    $dockerUpdated = $true
+  }
+
+  Ensure-PathContains @("$env:ProgramFiles\Docker")
+  Ensure-DockerService -ForceRestart:$dockerUpdated
+}
 
 function Install-ContainerdAndNerdctl {
   Ensure-Dir $WorkDir
@@ -316,6 +420,27 @@ function Ensure-HnsModule {
     Import-Module $hns -Force
   }
 }
+function Write-ContainerdNatCniConfig([string]$adapterName){
+  if([string]::IsNullOrWhiteSpace($adapterName)){ $adapterName = "Ethernet" }
+@"
+{
+  "cniVersion": "1.0.0",
+  "name": "nat",
+  "type": "nat",
+  "master": "$adapterName",
+  "ipam": {
+    "subnet": "10.88.0.0/16",
+    "ranges": [
+      [
+        { "subnet": "10.88.0.0/16", "gateway": "10.88.0.1" }
+      ]
+    ],
+    "routes": [ { "dst": "0.0.0.0/0", "gw": "10.88.0.1" } ]
+  },
+  "capabilities": { "portMappings": true, "dns": true }
+}
+"@ | Set-Content -Path "$env:ProgramFiles\containerd\cni\conf\0-containerd-nat.conf" -Encoding ascii -Force
+}
 
 function Install-WindowsNatCni_Latest {
   # Install latest windows-container-networking CNI zip (contains nat.exe, etc.)
@@ -338,29 +463,14 @@ function Install-WindowsNatCni_Latest {
   }
 
   Ensure-HnsModule
+  $adapter = (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1 -ExpandProperty Name)
+  if(-not $adapter){ $adapter = "Ethernet" }
   $existing = Get-HnsNetwork | Where-Object Name -eq "nat" -ErrorAction SilentlyContinue
   if(-not $existing){
-    $adapter = (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1 -ExpandProperty Name)
-    if(-not $adapter){ $adapter = "Ethernet" }
-
     New-HnsNetwork -Type Nat -AddressPrefix "10.88.0.0/16" -Gateway "10.88.0.1" -Name "nat" | Out-Null
-
-    # cniVersion here is the CNI *spec* version of the config.
-    # windows-container-networking releases note support for CNI config 1.0.0, so we use 1.0.0.
-@"
-{
-  "cniVersion": "1.0.0",
-  "name": "nat",
-  "type": "nat",
-  "master": "$adapter",
-  "ipam": {
-    "subnet": "10.88.0.0/16",
-    "routes": [ { "dst": "0.0.0.0/0", "gw": "10.88.0.1" } ]
-  },
-  "capabilities": { "portMappings": true, "dns": true }
-}
-"@ | Set-Content -Path "$env:ProgramFiles\containerd\cni\conf\0-containerd-nat.conf" -Encoding ascii -Force
   }
+  # Always refresh CNI config so nerdctl sees stable IPAM schema.
+  Write-ContainerdNatCniConfig -adapterName $adapter
 }
 
 function Download-SettingsYamlTemplate {
@@ -385,6 +495,9 @@ function Download-NginxConfTemplate([int]$upstreamPort,[string]$webAppName,[stri
   $conf = [regex]::Replace($conf,'server\s+127\.0\.0\.1:\d+;',"server 127.0.0.1:$upstreamPort;",1)
   $conf = [regex]::Replace($conf,'ssl_certificate\s+[^;]+;',"ssl_certificate     c:/nginx/conf/certs/$certFileName;",1)
   $conf = [regex]::Replace($conf,'ssl_certificate_key\s+[^;]+;',"ssl_certificate_key c:/nginx/conf/certs/$keyFileName;",1)
+  if($conf -notmatch '(?m)^\s*server_tokens\s+off;'){
+    $conf = [regex]::Replace($conf,'default_type\s+application/octet-stream;',"default_type  application/octet-stream;`r`n`r`n    server_tokens off;",1)
+  }
   if($conf -notmatch 'location\s*=\s*/\s*\{'){
     $needle = "        location = /healthz {"
     if($conf.Contains($needle)){
@@ -460,6 +573,7 @@ events {
 http {
     include       mime.types;
     default_type  application/octet-stream;
+    server_tokens off;
 
     sendfile on;
     tcp_nopush on;
@@ -572,19 +686,227 @@ function Start-Nginx {
   Start-Process -FilePath $exe -WorkingDirectory $NginxRoot -ArgumentList @("-p",$prefix,"-c","conf/nginx.conf") | Out-Null
 }
 
-function Nerdctl([string[]]$args){
-  & "$env:ProgramFiles\nerdctl\nerdctl.exe" @args
-  if($LASTEXITCODE -ne 0){ throw "nerdctl failed: $($args -join ' ')" }
+function DockerCli([string[]]$commandArgs){
+  $script:LastContainerCliOutputText = ""
+  $dockerLines = @()
+  & docker @commandArgs 2>&1 | Tee-Object -Variable dockerLines | Out-Host
+  if($dockerLines){
+    $script:LastContainerCliOutputText = (($dockerLines | ForEach-Object { [string]$_ }) -join "`n")
+  }
+  if($LASTEXITCODE -ne 0){
+    $subcommand = if($commandArgs.Count -gt 0){ $commandArgs[0] } else { "<unknown>" }
+    throw "docker command failed (subcommand: $subcommand, exit code: $LASTEXITCODE)."
+  }
+}
+function Login-Acr([string]$registry,[string]$user,[string]$password){
+  $tmpPass = Join-Path $WorkDir "acrpass.txt"
+  try {
+    Set-Content -Path $tmpPass -Value $password -Encoding ascii -Force
+    Get-Content $tmpPass | & docker login $registry -u $user --password-stdin
+    if($LASTEXITCODE -ne 0){ throw "docker login failed for $registry (exit code $LASTEXITCODE)." }
+  } finally {
+    if(Test-Path $tmpPass){ Remove-Item $tmpPass -Force }
+  }
+}
+function Normalize-MemoryLimit([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return $value }
+  $trimmed = $value.Trim()
+  if($trimmed -match '^\d+$'){
+    Write-Warning "Memory limit '$trimmed' has no unit; interpreting as '${trimmed}G'."
+    return "$trimmed`G"
+  }
+  return $trimmed
+}
+function Is-ContainerCliNotImplemented([string]$text){
+  if([string]::IsNullOrWhiteSpace($text)){ return $false }
+  return ($text -match '(?i)\bnot implemented\b')
+}
+function Is-ContainerCliRecoverableNetworkBug([string]$text){
+  if([string]::IsNullOrWhiteSpace($text)){ return $false }
+  if($text -match '(?i)panic:\s*runtime error:\s*index out of range'){ return $true }
+  if($text -match '(?i)verifyNetworkTypes'){ return $true }
+  if($text -match '(?i)netutil_windows\.go'){ return $true }
+  return $false
+}
+function Get-EntraTenantIdFromAuthority([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return "" }
+  $trimmed = $value.Trim()
+
+  try {
+    $uri = [Uri]$trimmed
+    if($uri.Host -ieq "login.microsoftonline.com"){
+      $segments = $uri.AbsolutePath.Trim('/').Split('/')
+      if($segments.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($segments[0])){
+        return $segments[0]
+      }
+    }
+  } catch {}
+
+  if($trimmed -match '^(?i)https?://login\.microsoftonline\.com/([^/?#]+)'){ return $matches[1] }
+  if($trimmed -match '^(?i)login\.microsoftonline\.com/([^/?#]+)'){ return $matches[1] }
+  if($trimmed -notmatch '^(?i)https?://'){ return $trimmed.TrimEnd('/') }
+  return ""
+}
+function Get-MaskedEntraAuthorityPreview([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return "" }
+  $tenantId = Get-EntraTenantIdFromAuthority $value
+  if([string]::IsNullOrWhiteSpace($tenantId)){ return $value }
+  return "https://login.microsoftonline.com/" + (Mask-SecretPreview $tenantId)
+}
+function Test-Base64String([string]$value){
+  if([string]::IsNullOrWhiteSpace($value)){ return $false }
+  try {
+    [Convert]::FromBase64String($value) | Out-Null
+    return $true
+  } catch {
+    return $false
+  }
+}
+function Build-ContainerRunArgs(
+  [string]$name,
+  [string]$isolation,
+  [string]$networkName,
+  [int]$hostPort,
+  [string]$hostDataDir,
+  [string]$cpuLimit,
+  [string]$memoryLimit,
+  [hashtable]$envMap,
+  [string]$image,
+  [switch]$IncludeResourceLimits,
+  [switch]$IncludeIsolation,
+  [switch]$IncludeNetwork,
+  [switch]$IncludePortMapping,
+  [switch]$IncludeBindMount
+){
+  $args = @(
+    "run","-d",
+    "--name",$name
+  )
+
+  if($IncludeIsolation -and -not [string]::IsNullOrWhiteSpace($isolation)){
+    $args += @("--isolation",$isolation)
+  }
+  if($IncludeNetwork -and -not [string]::IsNullOrWhiteSpace($networkName)){
+    $args += @("--network",$networkName)
+  }
+  if($IncludePortMapping){
+    $args += @("-p","$hostPort`:80")
+  }
+  if($IncludeBindMount){
+    $args += @("--mount","type=bind,source=$hostDataDir,destination=c:\data")
+  }
+
+  if($IncludeResourceLimits){
+    if(-not [string]::IsNullOrWhiteSpace($cpuLimit)){ $args += @("--cpus",$cpuLimit) }
+    if(-not [string]::IsNullOrWhiteSpace($memoryLimit)){ $args += @("--memory",$memoryLimit) }
+  }
+
+  foreach($k in $envMap.Keys){
+    $v = $envMap[$k]; if($null -eq $v){ $v="" }
+    $args += @("-e","$k=$v")
+  }
+
+  $args += @($image)
+  return ,$args
+}
+function Remove-ContainerIfExists([string]$name){
+  & docker container inspect $name *> $null
+  if($LASTEXITCODE -eq 0){
+    DockerCli @("rm","-f",$name)
+  }
+}
+function Ensure-NerdctlNatNetwork([string]$networkName){
+  if([string]::IsNullOrWhiteSpace($networkName)){ return "" }
+
+  $nerdctlExe = "$env:ProgramFiles\nerdctl\nerdctl.exe"
+  & $nerdctlExe network inspect $networkName *> $null
+  if($LASTEXITCODE -eq 0){
+    Write-Host "Using nerdctl network '$networkName'."
+    return $networkName
+  }
+
+  Write-Host "Creating nerdctl network '$networkName' (driver nat)."
+  $createLines = @()
+  & $nerdctlExe network create --driver nat $networkName 2>&1 | Tee-Object -Variable createLines | Out-Host
+  $createText = (($createLines | ForEach-Object { [string]$_ }) -join "`n")
+  if($LASTEXITCODE -eq 0 -or $createText -match "(?i)already exists"){
+    return $networkName
+  }
+
+  Write-Warning "Network create with driver 'nat' failed. Retrying without explicit driver."
+  $createLines2 = @()
+  & $nerdctlExe network create $networkName 2>&1 | Tee-Object -Variable createLines2 | Out-Host
+  $createText2 = (($createLines2 | ForEach-Object { [string]$_ }) -join "`n")
+  if($LASTEXITCODE -eq 0 -or $createText2 -match "(?i)already exists"){
+    return $networkName
+  }
+
+  Write-Warning "Failed to create nerdctl network '$networkName'. Falling back to default CNI network selection."
+  return ""
+}
+function Get-ContainerIPv4([string]$name){
+  if([string]::IsNullOrWhiteSpace($name)){ return "" }
+  $inspectLines = @()
+  & docker inspect $name 2>&1 | Tee-Object -Variable inspectLines | Out-Null
+  if($LASTEXITCODE -ne 0){ return "" }
+  $jsonText = (($inspectLines | ForEach-Object { [string]$_ }) -join "`n")
+  if([string]::IsNullOrWhiteSpace($jsonText)){ return "" }
+
+  try {
+    $obj = $jsonText | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    return ""
+  }
+  $item = if($obj -is [array]){ if($obj.Count -gt 0){ $obj[0] } else { $null } } else { $obj }
+  if($null -eq $item){ return "" }
+
+  if($item.PSObject.Properties.Name -contains "NetworkSettings"){
+    $ns = $item.NetworkSettings
+    if($ns -and $ns.PSObject.Properties.Name -contains "IPAddress" -and -not [string]::IsNullOrWhiteSpace($ns.IPAddress)){
+      return [string]$ns.IPAddress
+    }
+    if($ns -and $ns.PSObject.Properties.Name -contains "Networks" -and $ns.Networks){
+      foreach($p in $ns.Networks.PSObject.Properties){
+        $net = $p.Value
+        if($net -and $net.PSObject.Properties.Name -contains "IPAddress" -and -not [string]::IsNullOrWhiteSpace($net.IPAddress)){
+          return [string]$net.IPAddress
+        }
+      }
+    }
+  }
+  return ""
+}
+function Remove-LocalPortProxy([int]$listenPort){
+  & netsh interface portproxy delete v4tov4 listenport=$listenPort listenaddress=127.0.0.1 *> $null
+}
+function Ensure-LocalPortProxy([int]$listenPort,[string]$connectAddress,[int]$connectPort){
+  if([string]::IsNullOrWhiteSpace($connectAddress)){
+    throw "connectAddress is required for local portproxy."
+  }
+  try { Set-Service -Name iphlpsvc -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
+  $iphlp = Get-Service -Name iphlpsvc -ErrorAction SilentlyContinue
+  if($iphlp -and $iphlp.Status -ne "Running"){
+    Start-Service -Name iphlpsvc
+  }
+
+  Remove-LocalPortProxy -listenPort $listenPort
+  & netsh interface portproxy add v4tov4 listenport=$listenPort listenaddress=127.0.0.1 connectport=$connectPort connectaddress=$connectAddress protocol=tcp | Out-Null
+  if($LASTEXITCODE -ne 0){
+    throw "Failed to configure local portproxy 127.0.0.1:${listenPort} -> ${connectAddress}:${connectPort}."
+  }
 }
 
 # ---------------- MAIN ----------------
 Ensure-Dir $WorkDir
 $customerInputStatePath = Join-Path $WorkDir "customer-input-state.clixml"
+$script:CustomerInputStatePath = $customerInputStatePath
 $customerInputState = Load-CustomerInputState $customerInputStatePath
+$scriptPathDisplay = if([string]::IsNullOrWhiteSpace($PSCommandPath)){ "<interactive>" } else { $PSCommandPath }
+Write-Host "Deploy script: $scriptPathDisplay"
+Write-Host "Deploy script version: $($script:DeployScriptVersion)"
 
 Install-ContainersFeature
-Install-ContainerdAndNerdctl
-Install-WindowsNatCni_Latest
+Install-DockerEngineLatest
 Install-NginxStable
 Download-SettingsYamlTemplate
 
@@ -639,7 +961,7 @@ $sqlPass   = Read-SecretWithHistory -state $customerInputState -key "ProfiseeSql
 
 Write-Host ""
 $repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (UNC path, e.g. \\server\share)" -Required
-$repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required -SensitiveDisplay
+$repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required
 $repoPass     = Read-SecretWithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserPassword" -prompt "ProfiseeAttachmentRepositoryUserPassword" -Required
 $repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -prompt "ProfiseeAttachmentRepositoryLogonType" -defaultValue "NewCredentials" -Required
 
@@ -649,7 +971,33 @@ $externalUrl  = Read-WithHistory -state $customerInputState -key "ProfiseeExtern
 
 Write-Host ""
 $oidcProvider  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcName" -prompt "ProfiseeOidcName (Entra/Okta)" -defaultValue "Entra" -Required
-$oidcAuthority = Read-WithHistory -state $customerInputState -key "ProfiseeOidcAuthority" -prompt "ProfiseeOidcAuthority (auth tenant id/authority URL)" -Required -SensitiveDisplay
+if($oidcProvider.ToLower() -eq "entra"){
+  $priorTenantId = Get-StateSecret $customerInputState "ProfiseeOidcTenantId"
+  if([string]::IsNullOrWhiteSpace($priorTenantId)){
+    $priorTenantId = Get-StateInput $customerInputState "ProfiseeOidcTenantId"
+  }
+  if([string]::IsNullOrWhiteSpace($priorTenantId)){
+    $priorTenantId = Get-EntraTenantIdFromAuthority (Get-StateInput $customerInputState "ProfiseeOidcAuthority")
+  }
+  if(-not [string]::IsNullOrWhiteSpace($priorTenantId)){
+    Set-StateSecret -state $customerInputState -key "ProfiseeOidcTenantId" -value $priorTenantId
+    if($customerInputState.Inputs.ContainsKey("ProfiseeOidcTenantId")){
+      $customerInputState.Inputs.Remove("ProfiseeOidcTenantId") | Out-Null
+    }
+    Persist-CustomerInputState -state $customerInputState
+  }
+
+  $oidcTenantIdInput = Read-SecretWithHistory -state $customerInputState -key "ProfiseeOidcTenantId" -prompt "ProfiseeOidcTenantId (used for https://login.microsoftonline.com/<tenantId>)" -Required
+  $oidcTenantId = Get-EntraTenantIdFromAuthority $oidcTenantIdInput
+  if([string]::IsNullOrWhiteSpace($oidcTenantId)){ $oidcTenantId = $oidcTenantIdInput.Trim() }
+  $oidcAuthority = "https://login.microsoftonline.com/$oidcTenantId"
+  Set-StateSecret -state $customerInputState -key "ProfiseeOidcTenantId" -value $oidcTenantId
+  Set-StateInput -state $customerInputState -key "ProfiseeOidcAuthority" -value $oidcAuthority
+  Persist-CustomerInputState -state $customerInputState
+  Write-Host ("ProfiseeOidcAuthority resolved to: {0}" -f (Get-MaskedEntraAuthorityPreview $oidcAuthority))
+} else {
+  $oidcAuthority = Read-WithHistory -state $customerInputState -key "ProfiseeOidcAuthority" -prompt "ProfiseeOidcAuthority (full authority URL)" -Required
+}
 $oidcClientId  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcClientId" -prompt "ProfiseeOidcClientId" -Required -SensitiveDisplay
 $oidcSecret    = Read-SecretWithHistory -state $customerInputState -key "ProfiseeOidcClientSecret" -prompt "ProfiseeOidcClientSecret" -Required
 
@@ -657,6 +1005,16 @@ Write-Host ""
 $purviewTenantId = Read-WithHistory -state $customerInputState -key "ProfiseePurviewTenantId" -prompt "ProfiseePurviewTenantId (optional)" -SensitiveDisplay
 $purviewClientId = Read-WithHistory -state $customerInputState -key "ProfiseePurviewClientId" -prompt "ProfiseePurviewClientId (optional)" -SensitiveDisplay
 $purviewClientSecret = Read-SecretWithHistory -state $customerInputState -key "ProfiseePurviewClientSecret" -prompt "ProfiseePurviewClientSecret (optional)"
+$purviewUrl = Read-WithHistory -state $customerInputState -key "ProfiseePurviewUrl" -prompt "ProfiseePurviewUrl (optional)"
+$priorPurviewCollectionId = Get-StateInput $customerInputState "ProfiseePurviewCollectionId"
+if(-not [string]::IsNullOrWhiteSpace($priorPurviewCollectionId) -and [string]::IsNullOrWhiteSpace((Get-StateSecret $customerInputState "ProfiseePurviewCollectionId"))){
+  Set-StateSecret -state $customerInputState -key "ProfiseePurviewCollectionId" -value $priorPurviewCollectionId
+  if($customerInputState.Inputs.ContainsKey("ProfiseePurviewCollectionId")){
+    $customerInputState.Inputs.Remove("ProfiseePurviewCollectionId") | Out-Null
+  }
+  Persist-CustomerInputState -state $customerInputState
+}
+$purviewCollectionId = Read-SecretWithHistory -state $customerInputState -key "ProfiseePurviewCollectionId" -prompt "ProfiseePurviewCollectionId (optional)"
 
 if($oidcProvider.ToLower() -eq "entra"){
   $oidcUsernameClaim = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
@@ -677,12 +1035,15 @@ if($oidcProvider.ToLower() -eq "entra"){
 Write-Host ""
 $cpuLimit = Read-WithHistory -state $customerInputState -key "ContainerCpuLimit" -prompt "CPU limit for container (--cpus), e.g. 2" -defaultValue "2" -Required
 $memLimit = Read-WithHistory -state $customerInputState -key "ContainerMemoryLimit" -prompt "Memory limit for container (--memory), e.g. 8G" -defaultValue "8G" -Required
+$memLimit = Normalize-MemoryLimit $memLimit
+Set-StateInput -state $customerInputState -key "ContainerMemoryLimit" -value $memLimit
+Persist-CustomerInputState -state $customerInputState
 
 Write-Host ""
 Write-Host "ACR login (auth is computed automatically when needed)"
 $acrUser = Read-WithHistory -state $customerInputState -key "AcrUserName" -prompt "ACR username" -Required
 $acrPw   = Read-SecretWithHistory -state $customerInputState -key "AcrPassword" -prompt "ACR password" -Required
-# Computed for Settings.yaml parity/reference (nerdctl login uses --password-stdin).
+# Computed for Settings.yaml parity/reference (docker login uses --password-stdin).
 $acrAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$acrUser`:$acrPw"))
 
 Write-Host ""
@@ -699,18 +1060,71 @@ if([string]::IsNullOrWhiteSpace($oidcJsonSource)){
   Copy-Item $oidcJsonSource $hostOidcJson -Force
 }
 
-# ---- nerdctl login/pull/run ----
-$tmpPass = Join-Path $WorkDir "acrpass.txt"
-Set-Content -Path $tmpPass -Value $acrPw -Encoding ascii -Force
-Get-Content $tmpPass | & "$env:ProgramFiles\nerdctl\nerdctl.exe" login $acrRegistry -u $acrUser --password-stdin
-Remove-Item $tmpPass -Force
+$containerLicenseFile = "c:\data\profisee.plic"
+$hostLicenseFile = Join-Path $hostDataDir "profisee.plic"
+$licenseString = ""
+$licenseMode = ""
+while([string]::IsNullOrWhiteSpace($licenseMode)){
+  Write-Host ""
+  $licenseFileSource = Read-WithHistory -state $customerInputState -key "ProfiseeLicenseSourcePath" -prompt "Path to local Profisee .plic file (optional; leave blank to use base64)"
+  if(-not [string]::IsNullOrWhiteSpace($licenseFileSource)){
+    if(-not(Test-Path $licenseFileSource)){
+      Write-Warning "License file not found: $licenseFileSource"
+      continue
+    }
+    Copy-Item $licenseFileSource $hostLicenseFile -Force
+    Set-StateSecret -state $customerInputState -key "ProfiseeLicenseString" -value ""
+    Persist-CustomerInputState -state $customerInputState
+    $licenseMode = "file"
+    break
+  }
 
-Nerdctl @("pull", $image)
-try { Nerdctl @("rm","-f",$ContainerName) } catch {}
+  $licenseString = Read-SecretWithHistory -state $customerInputState -key "ProfiseeLicenseString" -prompt "ProfiseeLicenseString (base64; optional if .plic path provided)"
+  if(-not [string]::IsNullOrWhiteSpace($licenseString)){
+    if(-not (Test-Base64String $licenseString)){
+      Write-Warning "ProfiseeLicenseString is not valid base64. Please re-enter."
+      continue
+    }
+    $licenseMode = "base64"
+    break
+  }
+
+  Write-Warning "A license is required. Provide either a .plic path or a base64 ProfiseeLicenseString."
+}
+
+# ---- docker login/pull/run ----
+Login-Acr -registry $acrRegistry -user $acrUser -password $acrPw
+
+$imagePulled = $false
+while(-not $imagePulled){
+  try {
+    DockerCli @("pull", $image)
+    $imagePulled = $true
+  } catch {
+    $pullErr = $script:LastContainerCliOutputText
+    if([string]::IsNullOrWhiteSpace($pullErr)){ $pullErr = $_.Exception.Message }
+    if($pullErr -match "(404|not found)"){
+      Write-Warning "Image not found in ACR: $image"
+      Write-Host "Update image coordinates and retry pull."
+      $acrRegistry = Read-WithHistory -state $customerInputState -key "AcrRegistry" -prompt "ACR registry" -defaultValue "profisee.azurecr.io" -Required
+      $acrRepo     = Read-WithHistory -state $customerInputState -key "AcrRepository" -prompt "Repository" -defaultValue "profiseeplatform" -Required
+      $acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-153319-win22)" -defaultValue "2025r4.0-153319-win22" -Required
+      $image       = "$acrRegistry/$acrRepo`:$acrTag"
+      Login-Acr -registry $acrRegistry -user $acrUser -password $acrPw
+      continue
+    }
+    throw
+  }
+}
+
+Remove-ContainerIfExists $ContainerName
+$containerNetwork = ""
 
 $envMap = @{
   "ProfiseeAdditionalOpenIdConnectProvidersFile" = "c:\data\oidc.json"
   "ProfiseeAdminAccount"                        = $adminAccount
+
+  "ProfiseeLicenseFile"                         = $containerLicenseFile
 
   "ProfiseeAttachmentRepositoryLocation"        = $repoLocation
   "ProfiseeAttachmentRepositoryLogonType"       = $repoLogon
@@ -733,6 +1147,8 @@ $envMap = @{
   "ProfiseePurviewTenantId"                     = $purviewTenantId
   "ProfiseePurviewClientId"                     = $purviewClientId
   "ProfiseePurviewClientSecret"                 = $purviewClientSecret
+  "ProfiseePurviewUrl"                          = $purviewUrl
+  "ProfiseePurviewCollectionId"                 = $purviewCollectionId
 
   "ProfiseeSqlDatabase"                         = $sqlDb
   "ProfiseeSqlPassword"                         = $sqlPass
@@ -742,33 +1158,184 @@ $envMap = @{
   "ProfiseeUseWindowsAuthentication"            = "false"
   "ProfiseeWebAppName"                          = $webAppName
 }
+if($licenseMode -eq "base64"){
+  $envMap["ProfiseeLicenseString"] = $licenseString
+}
 
 $envListPath = Join-Path $WorkDir "container-env-vars.txt"
 $envMap.Keys | Sort-Object | Set-Content -Path $envListPath -Encoding ascii -Force
 
-$args = @(
-  "run","-d",
-  "--name",$ContainerName,
-  "--isolation",$Isolation,
-  "-p","$HostAppPort`:80",
-  "--cpus",$cpuLimit,
-  "--memory",$memLimit,
-  "--mount","type=bind,source=$hostDataDir,destination=c:\data"
-)
-
-foreach($k in $envMap.Keys){
-  $v = $envMap[$k]; if($null -eq $v){ $v="" }
-  $args += @("-e","$k=$v")
+$envMapNoMount = @{}
+foreach($k in $envMap.Keys){ $envMapNoMount[$k] = $envMap[$k] }
+$envMapNoMount.Remove("ProfiseeAdditionalOpenIdConnectProvidersFile") | Out-Null
+if($licenseMode -eq "file" -and (Test-Path $hostLicenseFile)){
+  $licBytes = [IO.File]::ReadAllBytes($hostLicenseFile)
+  $envMapNoMount["ProfiseeLicenseString"] = [Convert]::ToBase64String($licBytes)
+} elseif($licenseMode -eq "base64"){
+  $envMapNoMount["ProfiseeLicenseString"] = $licenseString
 }
 
-$args += @($image)
-Nerdctl $args
+$runAttempts = @(
+  [pscustomobject]@{
+    Name = "standard"
+    Message = ""
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $true
+    IncludeIsolation = $true
+    IncludeNetwork = $false
+    IncludePortMapping = $true
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "no-resource-limits"
+    Message = "docker run returned 'not implemented'. Retrying without --cpus/--memory."
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $false
+    IncludeIsolation = $true
+    IncludeNetwork = $false
+    IncludePortMapping = $true
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "no-explicit-isolation"
+    Message = "Retrying without explicit isolation."
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $false
+    IncludeIsolation = $false
+    IncludeNetwork = $false
+    IncludePortMapping = $true
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "no-port-mapping"
+    Message = "Retrying without port mapping (-p)."
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $false
+    IncludeIsolation = $false
+    IncludeNetwork = $false
+    IncludePortMapping = $false
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "hyperv-no-port-mapping"
+    Message = "Retrying with hyperv isolation and without port mapping."
+    AttemptIsolation = "hyperv"
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $false
+    IncludeIsolation = $true
+    IncludeNetwork = $false
+    IncludePortMapping = $false
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "hyperv-no-limits"
+    Message = "Retrying with hyperv isolation."
+    AttemptIsolation = "hyperv"
+    UseNoMountEnv = $false
+    IncludeResourceLimits = $false
+    IncludeIsolation = $true
+    IncludeNetwork = $false
+    IncludePortMapping = $true
+    IncludeBindMount = $true
+  },
+  [pscustomobject]@{
+    Name = "no-port-and-no-bind-mount"
+    Message = "Retrying without port mapping and without bind mount."
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $true
+    IncludeResourceLimits = $false
+    IncludeIsolation = $false
+    IncludeNetwork = $false
+    IncludePortMapping = $false
+    IncludeBindMount = $false
+  },
+  [pscustomobject]@{
+    Name = "no-bind-mount"
+    Message = "Retrying without bind mount."
+    AttemptIsolation = $Isolation
+    UseNoMountEnv = $true
+    IncludeResourceLimits = $false
+    IncludeIsolation = $false
+    IncludeNetwork = $false
+    IncludePortMapping = $false
+    IncludeBindMount = $false
+  },
+  [pscustomobject]@{
+    Name = "hyperv-no-bind-mount"
+    Message = "Retrying with hyperv isolation and no bind mount."
+    AttemptIsolation = "hyperv"
+    UseNoMountEnv = $true
+    IncludeResourceLimits = $false
+    IncludeIsolation = $true
+    IncludeNetwork = $false
+    IncludePortMapping = $false
+    IncludeBindMount = $false
+  }
+)
+
+$runSucceeded = $false
+$runSucceededMode = ""
+$runUsedPortMapping = $true
+$lastRunErrorText = ""
+$containerIpViaPortProxy = ""
+
+for($i = 0; $i -lt $runAttempts.Count; $i++){
+  $attempt = $runAttempts[$i]
+  if($i -gt 0 -and -not [string]::IsNullOrWhiteSpace($attempt.Message)){
+    Write-Warning $attempt.Message
+  }
+
+  $attemptEnvMap = if($attempt.UseNoMountEnv){ $envMapNoMount } else { $envMap }
+  $attemptArgs = Build-ContainerRunArgs -name $ContainerName -isolation $attempt.AttemptIsolation -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $attemptEnvMap -image $image -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
+
+  try {
+    DockerCli $attemptArgs
+    $runSucceeded = $true
+    $runSucceededMode = $attempt.Name
+    $runUsedPortMapping = [bool]$attempt.IncludePortMapping
+    break
+  } catch {
+    $runErr = $script:LastContainerCliOutputText
+    if([string]::IsNullOrWhiteSpace($runErr)){ $runErr = $_.Exception.Message }
+    $lastRunErrorText = $runErr
+    if((Is-ContainerCliNotImplemented $runErr) -or (Is-ContainerCliRecoverableNetworkBug $runErr)){
+      Remove-ContainerIfExists $ContainerName
+      continue
+    }
+    throw
+  }
+}
+
+if(-not $runSucceeded){
+  throw "docker run failed across all compatibility retries. This host likely does not support one or more required Windows container features (port mapping and/or bind mounts)."
+}
+if($runSucceededMode -ne "standard"){
+  Write-Warning "Container started in compatibility mode '$runSucceededMode'."
+}
+if($runUsedPortMapping){
+  Remove-LocalPortProxy -listenPort $HostAppPort
+} else {
+  $containerIpViaPortProxy = Get-ContainerIPv4 -name $ContainerName
+  if([string]::IsNullOrWhiteSpace($containerIpViaPortProxy)){
+    throw "Container started without native port mapping, but container IP could not be determined for local portproxy setup."
+  }
+  Ensure-LocalPortProxy -listenPort $HostAppPort -connectAddress $containerIpViaPortProxy -connectPort 80
+  Write-Warning "Native port mapping is unavailable on this host. Using local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80."
+}
 
 Write-Host ""
 Write-Host "DONE."
 Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
 Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
-Write-Host "Container is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
+if($runUsedPortMapping){
+  Write-Host "Container is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
+} else {
+  Write-Host "Container port path uses local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80 (internal only)"
+}
 Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 Write-Host "Container env var key list written to: $envListPath"
