@@ -32,7 +32,7 @@
     "environment": {},
     "secret_arns": {}
   },
-  "db_init": {
+  "profisee_deploy": {
     "enabled": true,
     "environment": {
       "RUNTIME_SQL_MODE": "rds_dbadmin"

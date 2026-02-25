@@ -5,6 +5,9 @@ locals {
       value = value
     }
   ]
+  cloudfront_aliases = distinct(compact([
+    for alias in var.aliases : trimsuffix(lower(trimspace(alias)), ".")
+  ]))
 }
 
 resource "aws_cloudfront_cache_policy" "no_cache" {
@@ -27,8 +30,9 @@ resource "aws_cloudfront_cache_policy" "no_cache" {
       query_string_behavior = "none"
     }
 
-    enable_accept_encoding_brotli = true
-    enable_accept_encoding_gzip   = true
+    # CloudFront rejects accept-encoding flags when cache policy disables caching (all TTLs = 0).
+    enable_accept_encoding_brotli = false
+    enable_accept_encoding_gzip   = false
   }
 }
 
@@ -53,7 +57,7 @@ resource "aws_cloudfront_distribution" "this" {
   enabled         = var.enabled
   is_ipv6_enabled = true
   price_class     = var.price_class
-  aliases         = var.aliases
+  aliases         = local.cloudfront_aliases
   web_acl_id      = var.web_acl_id
 
   origin {

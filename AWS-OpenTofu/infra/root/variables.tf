@@ -78,7 +78,7 @@ variable "platform_deployer" {
   }
 }
 
-variable "db_init" {
+variable "profisee_deploy" {
   type = object({
     enabled     = optional(bool, false)
     image_uri   = optional(string, "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest")
@@ -89,26 +89,26 @@ variable "db_init" {
     secret_arns = optional(map(string), {})
   })
   default     = { enabled = true }
-  description = "Fargate one-shot DB initializer for creating app SQL login/user."
+  description = "Fargate one-shot Profisee deploy task for DB setup and app deployment."
 
   validation {
-    condition     = !try(var.db_init.enabled, false) || (try(var.db_init.image_uri, "") != "")
-    error_message = "db_init.image_uri is required when db_init.enabled is true."
+    condition     = !try(var.profisee_deploy.enabled, false) || (try(var.profisee_deploy.image_uri, "") != "")
+    error_message = "profisee_deploy.image_uri is required when profisee_deploy.enabled is true."
   }
 
   validation {
-    condition     = try(var.db_init.enabled, false) == true
-    error_message = "db_init.enabled must be true (DB init is required)."
+    condition     = try(var.profisee_deploy.enabled, false) == true
+    error_message = "profisee_deploy.enabled must be true (Profisee deploy task is required)."
   }
 
   validation {
-    condition     = !try(var.db_init.enabled, false) || try(var.rds_sqlserver.manage_master_user_password, true)
-    error_message = "rds_sqlserver.manage_master_user_password must be true when db_init.enabled is true."
+    condition     = !try(var.profisee_deploy.enabled, false) || try(var.rds_sqlserver.manage_master_user_password, true)
+    error_message = "rds_sqlserver.manage_master_user_password must be true when profisee_deploy.enabled is true."
   }
 
   validation {
-    condition     = !try(var.db_init.enabled, false) || (try(var.rds_sqlserver.db_name, "") != "")
-    error_message = "rds_sqlserver.db_name must be set when db_init.enabled is true (app database name)."
+    condition     = !try(var.profisee_deploy.enabled, false) || (try(var.rds_sqlserver.db_name, "") != "")
+    error_message = "rds_sqlserver.db_name must be set when profisee_deploy.enabled is true (app database name)."
   }
 }
 
@@ -119,7 +119,7 @@ variable "app_deploy" {
     namespace    = optional(string, "profisee")
   })
   default     = {}
-  description = "App deployment toggles for the db_init ECS task (Stage E)."
+  description = "App deployment toggles for the profisee_deploy ECS task (Stage E)."
 }
 
 variable "vpc" {
@@ -187,7 +187,7 @@ variable "rds_sqlserver" {
     iops                          = optional(number)
     storage_encrypted             = optional(bool, true)
     kms_key_arn                   = optional(string)
-    db_name                       = optional(string) # App DB name created by db_init (not the RDS initial DB)
+    db_name                       = optional(string) # App DB name created by profisee_deploy (not the RDS initial DB)
     master_username               = string
     manage_master_user_password   = optional(bool, true)
     master_user_secret_kms_key_id = optional(string)
@@ -260,7 +260,7 @@ variable "cloudfront" {
     logging_bucket           = optional(string)
     tags                     = optional(map(string), {})
   })
-  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after db_init/Traefik."
+  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after profisee_deploy/Traefik."
 }
 
 variable "route53" {

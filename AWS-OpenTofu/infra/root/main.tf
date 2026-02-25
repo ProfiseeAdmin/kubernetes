@@ -17,9 +17,9 @@ locals {
   cloudfront_origin_domain_raw   = try(var.cloudfront.origin_domain_name, null)
   cloudfront_origin_domain_name  = local.cloudfront_origin_domain_raw == null ? "" : trimspace(local.cloudfront_origin_domain_raw)
   cloudfront_deployed            = try(var.cloudfront.enabled, false) && local.cloudfront_origin_domain_name != ""
-  db_init_cfg                    = var.db_init
-  db_init_enabled                = try(local.db_init_cfg.enabled, false)
-  db_init_tags                   = merge(var.tags, try(local.db_init_cfg.tags, {}))
+  profisee_deploy_cfg                    = var.profisee_deploy
+  profisee_deploy_enabled                = try(local.profisee_deploy_cfg.enabled, false)
+  profisee_deploy_tags                   = merge(var.tags, try(local.profisee_deploy_cfg.tags, {}))
   vpc_cni_addon_enabled          = try(var.eks.install_vpc_cni_addon, true)
   ebs_csi_addon_enabled          = try(var.eks.install_ebs_csi_addon, true)
 }
@@ -198,19 +198,19 @@ resource "aws_ecs_cluster" "platform_deployer" {
   tags = local.platform_deployer_tags
 }
 
-resource "aws_ecs_cluster" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_ecs_cluster" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name = "${var.eks.cluster_name}-db-init"
-  tags = local.db_init_tags
+  name = "${var.eks.cluster_name}-profisee-deploy"
+  tags = local.profisee_deploy_tags
 }
 
-resource "aws_cloudwatch_log_group" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_cloudwatch_log_group" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name              = "/aws/ecs/${var.eks.cluster_name}-db-init"
+  name              = "/aws/ecs/${var.eks.cluster_name}-profisee-deploy"
   retention_in_days = 14
-  tags              = local.db_init_tags
+  tags              = local.profisee_deploy_tags
 }
 
 resource "aws_cloudwatch_log_group" "platform_deployer" {
@@ -242,8 +242,8 @@ resource "aws_iam_role" "platform_deployer_task" {
   tags               = local.platform_deployer_tags
 }
 
-data "aws_iam_policy_document" "db_init_task_assume" {
-  count = local.db_init_enabled ? 1 : 0
+data "aws_iam_policy_document" "profisee_deploy_task_assume" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
   statement {
     effect  = "Allow"
@@ -255,12 +255,12 @@ data "aws_iam_policy_document" "db_init_task_assume" {
   }
 }
 
-resource "aws_iam_role" "db_init_task" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_iam_role" "profisee_deploy_task" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name               = "${var.eks.cluster_name}-db-init-task"
-  assume_role_policy = data.aws_iam_policy_document.db_init_task_assume[0].json
-  tags               = local.db_init_tags
+  name               = "${var.eks.cluster_name}-profisee-deploy-task"
+  assume_role_policy = data.aws_iam_policy_document.profisee_deploy_task_assume[0].json
+  tags               = local.profisee_deploy_tags
 }
 
 data "aws_iam_policy_document" "platform_deployer_task" {
@@ -312,11 +312,11 @@ resource "aws_iam_role_policy" "platform_deployer_task" {
 }
 
 locals {
-  db_init_secret_arns = length(try(local.db_init_cfg.secret_arns, {})) > 0 ? local.db_init_cfg.secret_arns : try(var.platform_deployer.secret_arns, {})
+  profisee_deploy_secret_arns = length(try(local.profisee_deploy_cfg.secret_arns, {})) > 0 ? local.profisee_deploy_cfg.secret_arns : try(var.platform_deployer.secret_arns, {})
 }
 
-data "aws_iam_policy_document" "db_init_task" {
-  count = local.db_init_enabled ? 1 : 0
+data "aws_iam_policy_document" "profisee_deploy_task" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
   statement {
     effect = "Allow"
@@ -325,7 +325,7 @@ data "aws_iam_policy_document" "db_init_task" {
     ]
     resources = concat(
       [module.rds_sqlserver.master_user_secret_arn],
-      length(local.db_init_secret_arns) > 0 ? values(local.db_init_secret_arns) : []
+      length(local.profisee_deploy_secret_arns) > 0 ? values(local.profisee_deploy_secret_arns) : []
     )
   }
 
@@ -388,12 +388,12 @@ data "aws_iam_policy_document" "db_init_task" {
   }
 }
 
-resource "aws_iam_role_policy" "db_init_task" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_iam_role_policy" "profisee_deploy_task" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name   = "${var.eks.cluster_name}-db-init-task"
-  role   = aws_iam_role.db_init_task[0].id
-  policy = data.aws_iam_policy_document.db_init_task[0].json
+  name   = "${var.eks.cluster_name}-profisee-deploy-task"
+  role   = aws_iam_role.profisee_deploy_task[0].id
+  policy = data.aws_iam_policy_document.profisee_deploy_task[0].json
 }
 
 resource "aws_iam_role" "platform_deployer_execution" {
@@ -404,35 +404,35 @@ resource "aws_iam_role" "platform_deployer_execution" {
   tags               = local.platform_deployer_tags
 }
 
-resource "aws_iam_role" "db_init_execution" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_iam_role" "profisee_deploy_execution" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name               = "${var.eks.cluster_name}-db-init-exec"
-  assume_role_policy = data.aws_iam_policy_document.db_init_task_assume[0].json
-  tags               = local.db_init_tags
+  name               = "${var.eks.cluster_name}-profisee-deploy-exec"
+  assume_role_policy = data.aws_iam_policy_document.profisee_deploy_task_assume[0].json
+  tags               = local.profisee_deploy_tags
 }
 
-resource "aws_iam_role_policy_attachment" "db_init_execution" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_iam_role_policy_attachment" "profisee_deploy_execution" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  role       = aws_iam_role.db_init_execution[0].name
+  role       = aws_iam_role.profisee_deploy_execution[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-data "aws_iam_policy_document" "db_init_execution" {
-  count = local.db_init_enabled && local.db_init_acr_secret_arn != null ? 1 : 0
+data "aws_iam_policy_document" "profisee_deploy_execution" {
+  count = local.profisee_deploy_enabled && local.profisee_deploy_acr_secret_arn != null ? 1 : 0
 
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [local.db_init_acr_secret_arn]
+    resources = [local.profisee_deploy_acr_secret_arn]
   }
 }
 
-resource "aws_iam_role_policy" "db_init_execution" {
-  count = local.db_init_enabled && local.db_init_acr_secret_arn != null ? 1 : 0
+resource "aws_iam_role_policy" "profisee_deploy_execution" {
+  count = local.profisee_deploy_enabled && local.profisee_deploy_acr_secret_arn != null ? 1 : 0
 
-  role   = aws_iam_role.db_init_execution[0].id
-  policy = data.aws_iam_policy_document.db_init_execution[0].json
+  role   = aws_iam_role.profisee_deploy_execution[0].id
+  policy = data.aws_iam_policy_document.profisee_deploy_execution[0].json
 }
 
 resource "aws_iam_role_policy_attachment" "platform_deployer_execution" {
@@ -459,11 +459,11 @@ resource "aws_security_group" "platform_deployer" {
   tags = local.platform_deployer_tags
 }
 
-resource "aws_security_group" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_security_group" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  name        = "${var.eks.cluster_name}-db-init-sg"
-  description = "Fargate DB init egress"
+  name        = "${var.eks.cluster_name}-profisee-deploy-sg"
+  description = "Fargate Profisee deploy egress"
   vpc_id      = module.vpc.vpc_id
 
   egress {
@@ -473,7 +473,7 @@ resource "aws_security_group" "db_init" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = local.db_init_tags
+  tags = local.profisee_deploy_tags
 }
 
 locals {
@@ -495,12 +495,12 @@ locals {
     try(var.platform_deployer.environment, {}),
     local.platform_deployer_secret_env
   )
-  db_init_secret_env     = { for k, v in local.db_init_secret_arns : "SECRET_${upper(k)}_ARN" => v }
-  db_init_acr_secret_arn = try(local.db_init_secret_arns["acr"], null)
-  db_init_command        = <<-EOT
+  profisee_deploy_secret_env     = { for k, v in local.profisee_deploy_secret_arns : "SECRET_${upper(k)}_ARN" => v }
+  profisee_deploy_acr_secret_arn = try(local.profisee_deploy_secret_arns["acr"], null)
+  profisee_deploy_command        = <<-EOT
 set -eo pipefail
 
-LOG_LEVEL="$${DB_INIT_LOG_LEVEL:-info}"
+LOG_LEVEL="$${profisee_deploy_LOG_LEVEL:-info}"
 log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
 log_err() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >&2; }
 log_debug() { if [ "$LOG_LEVEL" = "debug" ]; then log "$*"; fi }
@@ -508,9 +508,9 @@ run() {
   local desc="$1"
   shift
   log "$desc..."
-  if ! "$@" >/tmp/db-init-step.log 2>&1; then
+  if ! "$@" >/tmp/profisee-deploy-step.log 2>&1; then
     log "FAILED: $desc"
-    sed -n '1,120p' /tmp/db-init-step.log || true
+    sed -n '1,120p' /tmp/profisee-deploy-step.log || true
     exit 1
   fi
   log "OK: $desc"
@@ -526,16 +526,16 @@ curl_step() {
   local out="$3"
   log "$desc..."
   local http=""
-  http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/db-init-step.log)
+  http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/profisee-deploy-step.log)
   local rc=$?
   if [ $rc -ne 0 ]; then
     log "FAILED: $desc (curl exit $rc)"
-    sed -n '1,120p' /tmp/db-init-step.log || true
+    sed -n '1,120p' /tmp/profisee-deploy-step.log || true
     return 1
   fi
   if [ "$http" -ge 400 ] 2>/dev/null; then
     log "FAILED: $desc (HTTP $http)"
-    sed -n '1,120p' /tmp/db-init-step.log || true
+    sed -n '1,120p' /tmp/profisee-deploy-step.log || true
     return 1
   fi
   log "OK: $desc"
@@ -552,11 +552,11 @@ download_tar_gz() {
   while [ $i -le $attempts ]; do
     log "$desc (attempt $i/$attempts)..."
     local http=""
-    http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/db-init-step.log)
+    http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/profisee-deploy-step.log)
     local rc=$?
     if [ $rc -ne 0 ]; then
       log "FAILED: $desc (curl exit $rc)"
-      sed -n '1,120p' /tmp/db-init-step.log || true
+      sed -n '1,120p' /tmp/profisee-deploy-step.log || true
     elif [ "$http" -ge 400 ] 2>/dev/null; then
       log "FAILED: $desc (HTTP $http)"
     elif tar -tzf "$out" >/dev/null 2>&1; then
@@ -572,7 +572,7 @@ download_tar_gz() {
   return 1
 }
 
-log "Using prebuilt db-init tools image; skipping tool installation."
+log "Using prebuilt profisee-deploy tools image; skipping tool installation."
 
 export PATH="/opt/mssql-tools18/bin:$PATH"
 export AWS_PAGER=""
@@ -665,10 +665,10 @@ normalize_dns_name() {
 wait_for_public_cname() {
   local fqdn="$1"
   local expected_target="$2"
-  local timeout_seconds="$DB_INIT_DNS_WAIT_SECONDS"
-  local sleep_seconds="$DB_INIT_DNS_WAIT_SLEEP_SECONDS"
-  local success_needed="$DB_INIT_DNS_SUCCESS_CHECKS"
-  local stabilize_seconds="$DB_INIT_DNS_STABILIZE_SECONDS"
+  local timeout_seconds="$profisee_deploy_DNS_WAIT_SECONDS"
+  local sleep_seconds="$profisee_deploy_DNS_WAIT_SLEEP_SECONDS"
+  local success_needed="$profisee_deploy_DNS_SUCCESS_CHECKS"
+  local stabilize_seconds="$profisee_deploy_DNS_STABILIZE_SECONDS"
   if [ -z "$timeout_seconds" ]; then timeout_seconds="900"; fi
   if [ -z "$sleep_seconds" ]; then sleep_seconds="15"; fi
   if [ -z "$success_needed" ]; then success_needed="2"; fi
@@ -688,12 +688,12 @@ wait_for_public_cname() {
     local g_resp g_status g_cname
     local cf_resp cf_status cf_cname
     local g_ok cf_ok
-    g_resp=$(curl -fsSL --max-time 10 "https://dns.google/resolve?name=$fqdn_norm&type=CNAME" 2>/tmp/db-init-step.log || true)
+    g_resp=$(curl -fsSL --max-time 10 "https://dns.google/resolve?name=$fqdn_norm&type=CNAME" 2>/tmp/profisee-deploy-step.log || true)
     g_status=$(printf '%s' "$g_resp" | jq -r '.Status // empty' 2>/dev/null || true)
     g_cname=$(printf '%s' "$g_resp" | jq -r '.Answer[]? | select(.type==5) | .data' 2>/dev/null | head -n1 || true)
     g_cname=$(normalize_dns_name "$g_cname")
 
-    cf_resp=$(curl -fsSL --max-time 10 -H "accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name=$fqdn_norm&type=CNAME" 2>>/tmp/db-init-step.log || true)
+    cf_resp=$(curl -fsSL --max-time 10 -H "accept: application/dns-json" "https://cloudflare-dns.com/dns-query?name=$fqdn_norm&type=CNAME" 2>>/tmp/profisee-deploy-step.log || true)
     cf_status=$(printf '%s' "$cf_resp" | jq -r '.Status // empty' 2>/dev/null || true)
     cf_cname=$(printf '%s' "$cf_resp" | jq -r '.Answer[]? | select(.type==5) | .data' 2>/dev/null | head -n1 || true)
     cf_cname=$(normalize_dns_name "$cf_cname")
@@ -836,9 +836,9 @@ else
 fi
 
 log "Waiting for SQL Server to accept connections..."
-max_attempts="$DB_INIT_MAX_ATTEMPTS"
+max_attempts="$profisee_deploy_MAX_ATTEMPTS"
 if [ -z "$max_attempts" ]; then max_attempts="30"; fi
-sleep_seconds="$DB_INIT_SLEEP_SECONDS"
+sleep_seconds="$profisee_deploy_SLEEP_SECONDS"
 if [ -z "$sleep_seconds" ]; then sleep_seconds="10"; fi
 attempt=1
 while true; do
@@ -854,7 +854,7 @@ while true; do
   sleep "$sleep_seconds"
 done
 
-cat > /tmp/db-init.sql <<SQL
+cat > /tmp/profisee-deploy.sql <<SQL
 SET NOCOUNT ON;
 IF DB_ID(N'$db_lit') IS NULL
 BEGIN
@@ -889,11 +889,11 @@ END
 GO
 SQL
 
-log "Running DB init against $DB_ENDPOINT (db: $DB_NAME)..."
-sqlcmd -S "$server" -U "$MASTER_USER" -P "$MASTER_PASS" -d master -i /tmp/db-init.sql -b -C -l 30
-rm -f /tmp/db-init.sql
+log "Running Profisee deploy against $DB_ENDPOINT (db: $DB_NAME)..."
+sqlcmd -S "$server" -U "$MASTER_USER" -P "$MASTER_PASS" -d master -i /tmp/profisee-deploy.sql -b -C -l 30
+rm -f /tmp/profisee-deploy.sql
 
-log "DB init complete."
+log "Profisee deploy complete."
 run "Update kubeconfig" aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" --kubeconfig /tmp/kubeconfig
 log "Kubeconfig written to /tmp/kubeconfig"
 if [ -n "$KUBECONFIG_S3_BUCKET" ] && [ -n "$KUBECONFIG_S3_KEY" ]; then
@@ -982,7 +982,7 @@ done
       *.) ;;
       *) record_name_dot="$record_name_dot." ;;
     esac
-    current_cname=$(aws route53 list-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --output json 2>/tmp/db-init-step.log | jq -r --arg n "$record_name_dot" '.ResourceRecordSets[]? | select(.Type=="CNAME" and .Name==$n) | .ResourceRecords[0].Value // empty' | head -n1 || true)
+    current_cname=$(aws route53 list-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --output json 2>/tmp/profisee-deploy-step.log | jq -r --arg n "$record_name_dot" '.ResourceRecordSets[]? | select(.Type=="CNAME" and .Name==$n) | .ResourceRecords[0].Value // empty' | head -n1 || true)
     current_norm=$(normalize_dns_name "$current_cname")
     desired_norm=$(normalize_dns_name "$lb_host")
     if [ -n "$current_norm" ] && [ "$current_norm" = "$desired_norm" ]; then
@@ -1004,10 +1004,10 @@ JSON
   if [ -n "$ROUTE53_RECORD_NAME" ]; then
     coredns_host=$(printf '%s' "$ROUTE53_RECORD_NAME" | sed 's/\.$//')
     log "Ensuring CoreDNS rewrite in coredns Corefile: $coredns_host -> traefik.traefik.svc.cluster.local"
-    current_corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/tmp/db-init-step.log || true)
+    current_corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/tmp/profisee-deploy-step.log || true)
     if [ -z "$current_corefile" ]; then
       log "FAILED: Read CoreDNS Corefile"
-      sed -n '1,120p' /tmp/db-init-step.log || true
+      sed -n '1,120p' /tmp/profisee-deploy-step.log || true
       exit 1
     fi
     updated_corefile=$(printf '%s\n' "$current_corefile" | awk -v host="$coredns_host" '
@@ -1116,19 +1116,19 @@ JSON
           log "Unresolved placeholders: $unresolved_tokens"
         fi
         if grep -Eq '\$PURVIEW(URL|COLLECTIONID|TENANTID|CLIENTID|CLIENTSECRET)' /tmp/Settings.yaml; then
-          log "Purview placeholders remain unresolved in Settings.yaml. Verify db_init.secret_arns.purview and Purview secret payload."
+          log "Purview placeholders remain unresolved in Settings.yaml. Verify profisee_deploy.secret_arns.purview and Purview secret payload."
           exit 1
         fi
         helm repo remove profisee >/dev/null 2>&1 || true
         run "Add Profisee Helm repo" helm repo add profisee https://profiseeadmin.github.io/kubernetes --force-update
         run "Update Helm repos" helm repo update
-        repo_url=$(helm repo list 2>/tmp/db-init-step.log | awk '$1=="profisee"{v=$2} END{print v}')
+        repo_url=$(helm repo list 2>/tmp/profisee-deploy-step.log | awk '$1=="profisee"{v=$2} END{print v}')
         if [ -n "$repo_url" ]; then
           log "Profisee helm repo URL: $repo_url"
         else
           log "Profisee helm repo URL: <not-found>"
         fi
-        remote_version=$(curl -fsSL https://profiseeadmin.github.io/kubernetes/index.yaml 2>/tmp/db-init-step.log | awk '
+        remote_version=$(curl -fsSL https://profiseeadmin.github.io/kubernetes/index.yaml 2>/tmp/profisee-deploy-step.log | awk '
           /name:[[:space:]]*profisee-platform/ {in_chart=1; next}
           in_chart && /version:[[:space:]]*/ && v=="" {v=$2}
           END{print v}
@@ -1138,13 +1138,13 @@ JSON
         else
           log "Profisee chart version (index.yaml): <unknown>"
         fi
-        repo_versions=$(helm search repo profisee/profisee-platform --versions 2>/tmp/db-init-step.log | awk 'NR>1 && c<5 {printf "%s ", $2; c++}')
+        repo_versions=$(helm search repo profisee/profisee-platform --versions 2>/tmp/profisee-deploy-step.log | awk 'NR>1 && c<5 {printf "%s ", $2; c++}')
         if [ -n "$repo_versions" ]; then
           log "Profisee chart versions (helm cache top5): $repo_versions"
         else
           log "Profisee chart versions (helm cache top5): <none>"
         fi
-        chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/db-init-step.log | awk '/^version:/ {v=$2} END{print v}')
+        chart_version=$(helm show chart profisee/profisee-platform 2>/tmp/profisee-deploy-step.log | awk '/^version:/ {v=$2} END{print v}')
         if [ -n "$chart_version" ]; then
           log "Profisee chart version (repo): $chart_version"
         else
@@ -1160,7 +1160,7 @@ JSON
       fi
     fi
   EOT
-  db_init_env = merge(
+  profisee_deploy_env = merge(
     {
       AWS_REGION                 = var.region
       CLUSTER_NAME               = var.eks.cluster_name
@@ -1180,8 +1180,8 @@ JSON
       APP_RELEASE_NAME           = local.app_deploy_release_name
       APP_NAMESPACE              = local.app_deploy_namespace
     },
-    try(local.db_init_cfg.environment, {}),
-    local.db_init_secret_env
+    try(local.profisee_deploy_cfg.environment, {}),
+    local.profisee_deploy_secret_env
   )
 }
 
@@ -1219,26 +1219,26 @@ resource "aws_ecs_task_definition" "platform_deployer" {
   ])
 }
 
-resource "aws_ecs_task_definition" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_ecs_task_definition" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
-  family                   = "${var.eks.cluster_name}-db-init"
-  cpu                      = tostring(try(local.db_init_cfg.cpu, 512))
-  memory                   = tostring(try(local.db_init_cfg.memory, 1024))
+  family                   = "${var.eks.cluster_name}-profisee-deploy"
+  cpu                      = tostring(try(local.profisee_deploy_cfg.cpu, 512))
+  memory                   = tostring(try(local.profisee_deploy_cfg.memory, 1024))
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.db_init_execution[0].arn
-  task_role_arn            = aws_iam_role.db_init_task[0].arn
+  execution_role_arn       = aws_iam_role.profisee_deploy_execution[0].arn
+  task_role_arn            = aws_iam_role.profisee_deploy_task[0].arn
 
   container_definitions = jsonencode([
     merge(
       {
-        name      = "db-init"
-        image     = local.db_init_cfg.image_uri
+        name      = "profisee-deploy"
+        image     = local.profisee_deploy_cfg.image_uri
         essential = true
-        command   = ["/bin/bash", "-lc", local.db_init_command]
+        command   = ["/bin/bash", "-lc", local.profisee_deploy_command]
         environment = [
-          for k, v in local.db_init_env : {
+          for k, v in local.profisee_deploy_env : {
             name  = k
             value = tostring(v)
           }
@@ -1246,15 +1246,15 @@ resource "aws_ecs_task_definition" "db_init" {
         logConfiguration = {
           logDriver = "awslogs"
           options = {
-            awslogs-group         = aws_cloudwatch_log_group.db_init[0].name
+            awslogs-group         = aws_cloudwatch_log_group.profisee_deploy[0].name
             awslogs-region        = var.region
-            awslogs-stream-prefix = "db-init"
+            awslogs-stream-prefix = "profisee-deploy"
           }
         }
       },
-      local.db_init_acr_secret_arn != null ? {
+      local.profisee_deploy_acr_secret_arn != null ? {
         repositoryCredentials = {
-          credentialsParameter = local.db_init_acr_secret_arn
+          credentialsParameter = local.profisee_deploy_acr_secret_arn
         }
       } : {}
     )
@@ -1301,19 +1301,19 @@ resource "aws_eks_access_policy_association" "jumpbox" {
   }
 }
 
-resource "aws_eks_access_entry" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_eks_access_entry" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
   cluster_name  = module.eks.cluster_name
-  principal_arn = aws_iam_role.db_init_task[0].arn
+  principal_arn = aws_iam_role.profisee_deploy_task[0].arn
   type          = "STANDARD"
 }
 
-resource "aws_eks_access_policy_association" "db_init" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_eks_access_policy_association" "profisee_deploy" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
   cluster_name  = module.eks.cluster_name
-  principal_arn = aws_iam_role.db_init_task[0].arn
+  principal_arn = aws_iam_role.profisee_deploy_task[0].arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
@@ -1343,7 +1343,7 @@ module "rds_sqlserver" {
     [module.eks.cluster_security_group_id],
     local.jumpbox_enabled ? [module.jumpbox_windows[0].security_group_id] : [],
     local.platform_deployer_enabled ? [aws_security_group.platform_deployer[0].id] : [],
-    local.db_init_enabled ? [aws_security_group.db_init[0].id] : []
+    local.profisee_deploy_enabled ? [aws_security_group.profisee_deploy[0].id] : []
   )
   backup_retention_days = var.rds_sqlserver.backup_retention_days
   multi_az              = var.rds_sqlserver.multi_az
@@ -1618,16 +1618,16 @@ resource "aws_security_group_rule" "jumpbox_to_eks_api" {
   description              = "Allow jumpbox access to EKS API"
 }
 
-resource "aws_security_group_rule" "db_init_to_eks_api" {
-  count = local.db_init_enabled ? 1 : 0
+resource "aws_security_group_rule" "profisee_deploy_to_eks_api" {
+  count = local.profisee_deploy_enabled ? 1 : 0
 
   type                     = "ingress"
   from_port                = 443
   to_port                  = 443
   protocol                 = "tcp"
   security_group_id        = module.eks.cluster_security_group_id
-  source_security_group_id = aws_security_group.db_init[0].id
-  description              = "Allow db-init Fargate access to EKS API"
+  source_security_group_id = aws_security_group.profisee_deploy[0].id
+  description              = "Allow profisee-deploy Fargate access to EKS API"
 }
 
 module "outputs_contract" {
@@ -1651,10 +1651,10 @@ module "outputs_contract" {
     platform_deployer_task_definition_arn = local.platform_deployer_enabled ? aws_ecs_task_definition.platform_deployer[0].arn : null
     platform_deployer_task_role_arn       = local.platform_deployer_enabled ? aws_iam_role.platform_deployer_task[0].arn : null
     platform_deployer_security_group_id   = local.platform_deployer_enabled ? aws_security_group.platform_deployer[0].id : null
-    db_init_cluster_arn                   = local.db_init_enabled ? aws_ecs_cluster.db_init[0].arn : null
-    db_init_task_definition_arn           = local.db_init_enabled ? aws_ecs_task_definition.db_init[0].arn : null
-    db_init_task_role_arn                 = local.db_init_enabled ? aws_iam_role.db_init_task[0].arn : null
-    db_init_security_group_id             = local.db_init_enabled ? aws_security_group.db_init[0].id : null
+    profisee_deploy_cluster_arn                   = local.profisee_deploy_enabled ? aws_ecs_cluster.profisee_deploy[0].arn : null
+    profisee_deploy_task_definition_arn           = local.profisee_deploy_enabled ? aws_ecs_task_definition.profisee_deploy[0].arn : null
+    profisee_deploy_task_role_arn                 = local.profisee_deploy_enabled ? aws_iam_role.profisee_deploy_task[0].arn : null
+    profisee_deploy_security_group_id             = local.profisee_deploy_enabled ? aws_security_group.profisee_deploy[0].id : null
     vpc_id                                = module.vpc.vpc_id
     public_subnet_ids                     = module.vpc.public_subnet_ids
     private_subnet_ids                    = module.vpc.private_subnet_ids

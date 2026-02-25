@@ -77,8 +77,8 @@ function Has-SecretValues($obj) {
   return $false
 }
 
-function Get-DbInitConfig($cfgObj) {
-  return Get-PropValue $cfgObj "db_init"
+function Get-ProfiseeDeployConfig($cfgObj) {
+  return Get-PropValue $cfgObj "profisee_deploy"
 }
 
 $cachedOutputs = $null
@@ -103,9 +103,58 @@ function Read-JsonFileOrNull([string]$Path) {
   }
 }
 
+function Normalize-CloudFrontAliases($Aliases) {
+  $result = @()
+  foreach ($raw in @($Aliases)) {
+    if ($null -eq $raw) { continue }
+    $v = $raw.ToString().Trim().ToLower()
+    if ($v -eq "") { continue }
+    if ($v -match '^https?://') {
+      $v = $v -replace '^https?://', ''
+    }
+    if ($v.Contains("/")) {
+      $v = ($v -split '/')[0]
+    }
+    $v = $v.Trim(".")
+    if ($v -eq "" -or $v -eq "app.example.com") { continue }
+    if ($v -match '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' -and $v.Contains(".")) {
+      if ($result -notcontains $v) { $result += $v }
+    }
+  }
+  return ,$result
+}
+
 # If the user changed the deploy role name, derive it from config when possible.
 try {
   $cfg = Get-Content -Raw -Path $varFile | ConvertFrom-Json
+  $cfgChanged = $false
+  if ($null -ne (Get-PropValue $cfg "db_init")) {
+    $cfg.PSObject.Properties.Remove("db_init")
+    Write-Host "Removed legacy db_init block from config.auto.tfvars.json."
+    $cfgChanged = $true
+  }
+
+  $cloudfrontCfgForPrecheck = Get-PropValue $cfg "cloudfront"
+  if ($cloudfrontCfgForPrecheck) {
+    $aliasesRaw = Get-PropValue $cloudfrontCfgForPrecheck "aliases"
+    $aliasesNormalized = Normalize-CloudFrontAliases $aliasesRaw
+    $route53CfgForPrecheck = Get-PropValue $cfg "route53"
+    $route53NameForPrecheck = Get-PropValue $route53CfgForPrecheck "record_name"
+    if ($aliasesNormalized.Count -eq 0 -and $route53NameForPrecheck) {
+      $aliasesNormalized = Normalize-CloudFrontAliases @($route53NameForPrecheck)
+    }
+
+    $existingAliasesForCompare = @($aliasesRaw | ForEach-Object { $_.ToString().Trim().ToLower().Trim(".") } | Where-Object { $_ -ne "" })
+    if (($aliasesNormalized -join ",") -ne ($existingAliasesForCompare -join ",")) {
+      $cfg.cloudfront.aliases = $aliasesNormalized
+      Write-Host ("Normalized CloudFront aliases in config: {0}" -f ($aliasesNormalized -join ", "))
+      $cfgChanged = $true
+    }
+  }
+
+  if ($cfgChanged) {
+    [System.IO.File]::WriteAllText($varFile, ($cfg | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
+  }
   $cfgAssumeArn = $cfg.jumpbox.assume_role_arn
   if ($cfgAssumeArn -and $DeployRoleName -eq "opentofu-deploy") {
     $derivedRoleName = ($cfgAssumeArn -split "/")[-1]
@@ -119,12 +168,12 @@ try {
 }
 
 if ($cfg) {
-  $dbInitCfgEarly = Get-DbInitConfig $cfg
-  $dbInitEnabledEarly = Get-PropValue $dbInitCfgEarly "enabled"
-  if ($dbInitEnabledEarly -eq $true) {
-    $dbInitSecretsEarly = Get-PropValue $dbInitCfgEarly "secret_arns"
-    if (-not (Has-Entries $dbInitSecretsEarly) -or -not (Has-SecretValues $dbInitSecretsEarly)) {
-      throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
+  $profiseeDeployCfgEarly = Get-ProfiseeDeployConfig $cfg
+  $profiseeDeployEnabledEarly = Get-PropValue $profiseeDeployCfgEarly "enabled"
+  if ($profiseeDeployEnabledEarly -eq $true) {
+    $profiseeDeploySecretsEarly = Get-PropValue $profiseeDeployCfgEarly "secret_arns"
+    if (-not (Has-Entries $profiseeDeploySecretsEarly) -or -not (Has-SecretValues $profiseeDeploySecretsEarly)) {
+      throw "profisee_deploy.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
     }
   }
 }
@@ -271,12 +320,12 @@ if (Test-Path -LiteralPath $settingsPath) {
 # ---------------------------------------------------------------------------
 # Upload Settings.yaml to S3 for ECS-based app deployment
 # ---------------------------------------------------------------------------
-$dbInitCfgForSettings = Get-DbInitConfig $cfg
-$dbInitEnabledForSettings = Get-PropValue $dbInitCfgForSettings "enabled"
+$profiseeDeployCfgForSettings = Get-ProfiseeDeployConfig $cfg
+$profiseeDeployEnabledForSettings = Get-PropValue $profiseeDeployCfgForSettings "enabled"
 $settingsBucketCfg = Get-PropValue $cfg "settings_bucket"
 $settingsBucketEnabled = Get-PropValue $settingsBucketCfg "enabled"
 if ($null -eq $settingsBucketEnabled) { $settingsBucketEnabled = $true }
-if ($dbInitEnabledForSettings -eq $true -and $settingsBucketEnabled -eq $true) {
+if ($profiseeDeployEnabledForSettings -eq $true -and $settingsBucketEnabled -eq $true) {
   if (Test-Path -LiteralPath $settingsPath) {
     $uploadSettingsScript = Join-Path $resolvedRepoRoot "scripts\upload-settings.ps1"
     if (-not (Test-Path -LiteralPath $uploadSettingsScript)) {
@@ -292,31 +341,32 @@ if ($dbInitEnabledForSettings -eq $true -and $settingsBucketEnabled -eq $true) {
 }
 
 # ---------------------------------------------------------------------------
-# Auto-run db_init task (Fargate) when enabled
+# Auto-run profisee_deploy task (Fargate) when enabled
 # ---------------------------------------------------------------------------
-$dbInitCfg = Get-DbInitConfig $cfg
-$dbInitEnabled = Get-PropValue $dbInitCfg "enabled"
-if ($dbInitEnabled -eq $true) {
+$profiseeDeployCfg = Get-ProfiseeDeployConfig $cfg
+$profiseeDeployEnabled = Get-PropValue $profiseeDeployCfg "enabled"
+$profiseeDeployTaskSucceeded = $false
+if ($profiseeDeployEnabled -eq $true) {
   if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
     throw "AWS CLI (aws) is not on PATH. Install AWS CLI and try again."
   }
 
-  $dbInitSecrets = Get-PropValue $dbInitCfg "secret_arns"
-  if (-not (Has-Entries $dbInitSecrets) -or -not (Has-SecretValues $dbInitSecrets)) {
-    throw "db_init.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
+  $profiseeDeploySecrets = Get-PropValue $profiseeDeployCfg "secret_arns"
+  if (-not (Has-Entries $profiseeDeploySecrets) -or -not (Has-SecretValues $profiseeDeploySecrets)) {
+    throw "profisee_deploy.secret_arns is empty. Run scripts\\seed-secrets.ps1 -UpdateConfig before tofu-apply."
   }
 
   $region = Get-PropValue $cfg "region"
   if (-not $region -or $region -eq "") { $region = "us-east-1" }
 
   $outputs = Get-Outputs -InfraRoot $infraRoot -BackendConfigPath $backendConfig
-  $clusterArn = Get-PropValue $outputs "db_init_cluster_arn"
-  $taskDefArn = Get-PropValue $outputs "db_init_task_definition_arn"
-  $sgId = Get-PropValue $outputs "db_init_security_group_id"
+  $clusterArn = Get-PropValue $outputs "profisee_deploy_cluster_arn"
+  $taskDefArn = Get-PropValue $outputs "profisee_deploy_task_definition_arn"
+  $sgId = Get-PropValue $outputs "profisee_deploy_security_group_id"
   $subnetIds = Get-PropValue $outputs "private_subnet_ids"
 
   if (-not $clusterArn -or -not $taskDefArn -or -not $sgId -or -not $subnetIds) {
-    throw "db_init outputs missing. Ensure db_init is enabled and apply completed successfully."
+    throw "profisee_deploy outputs missing. Ensure profisee_deploy is enabled and apply completed successfully."
   }
 
   $subnetList = @($subnetIds | ForEach-Object { $_ })
@@ -337,10 +387,10 @@ if ($dbInitEnabled -eq $true) {
     $networkConfigUri = Get-FileUri $networkConfigFile
   } catch {
     Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
-    throw "Failed to create network configuration file for db_init task."
+    throw "Failed to create network configuration file for profisee_deploy task."
   }
 
-  Write-Host "Starting db_init Fargate task..."
+  Write-Host "Starting profisee_deploy Fargate task..."
   $taskArn = aws ecs run-task `
     --cluster $clusterArn `
     --launch-type FARGATE `
@@ -351,10 +401,10 @@ if ($dbInitEnabled -eq $true) {
   Remove-Item -LiteralPath $networkConfigFile -ErrorAction SilentlyContinue
 
   if ($LASTEXITCODE -ne 0 -or -not $taskArn -or $taskArn -eq "None") {
-    throw "Failed to start db_init task."
+    throw "Failed to start profisee_deploy task."
   }
 
-  Write-Host ("db_init task started: {0}" -f $taskArn)
+  Write-Host ("profisee_deploy task started: {0}" -f $taskArn)
 
   $maxWaitMinutes = 20
   $elapsed = 0
@@ -365,19 +415,23 @@ if ($dbInitEnabled -eq $true) {
     if ($task -and $task.lastStatus -eq "STOPPED") {
       $exitCode = $task.containers[0].exitCode
       if ($exitCode -ne 0) {
-        throw "db_init task failed (exit code $exitCode). Check CloudWatch logs: /aws/ecs/$($cfg.eks.cluster_name)-db-init"
+        throw "profisee_deploy task failed (exit code $exitCode). Check CloudWatch logs: /aws/ecs/$($cfg.eks.cluster_name)-profisee-deploy"
       }
-      Write-Host "db_init task completed."
+      Write-Host "profisee_deploy task completed."
+      $profiseeDeployTaskSucceeded = $true
       break
     }
 
     Start-Sleep -Seconds $sleepSeconds
     $elapsed += $sleepSeconds
     if ($elapsed -ge ($maxWaitMinutes * 60)) {
-      Write-Host "db_init task still running. Check status in ECS console."
+      Write-Host "profisee_deploy task still running. Check status in ECS console."
       break
     }
   }
+} else {
+  # Keep legacy safety: if task is disabled, allow edge wiring to continue.
+  $profiseeDeployTaskSucceeded = $true
 }
 
 # ---------------------------------------------------------------------------
@@ -386,6 +440,10 @@ if ($dbInitEnabled -eq $true) {
 $cloudfrontCfg = Get-PropValue $cfg "cloudfront"
 $cloudfrontEnabled = Get-PropValue $cloudfrontCfg "enabled"
 if ($cloudfrontEnabled -eq $true) {
+  if (-not $profiseeDeployTaskSucceeded) {
+    Write-Host "CloudFront wiring skipped (profisee_deploy task did not complete successfully yet)."
+    return
+  }
   $settingsBucketCfg = Get-PropValue $cfg "settings_bucket"
   $settingsBucketName = Get-PropValue $settingsBucketCfg "name"
   $clusterCfg = Get-PropValue $cfg "eks"
@@ -422,17 +480,21 @@ if ($cloudfrontEnabled -eq $true) {
       Write-Host ("CloudFront origin set to Traefik NLB: {0}" -f $nlbDns)
     }
 
-    $currentAliases = @()
     $aliasesValue = Get-PropValue $cloudfrontCfg "aliases"
-    if ($aliasesValue) { $currentAliases = @($aliasesValue) }
-    if ($currentAliases.Count -eq 0) {
-      $route53Cfg = Get-PropValue $cfg "route53"
-      $recordName = Get-PropValue $route53Cfg "record_name"
-      if ($recordName -and $recordName -ne "") {
-        $cfg.cloudfront.aliases = @($recordName)
-        $edgeConfigChanged = $true
-        Write-Host ("CloudFront aliases defaulted to Route53 record: {0}" -f $recordName)
-      }
+    $currentAliases = Normalize-CloudFrontAliases $aliasesValue
+    $route53Cfg = Get-PropValue $cfg "route53"
+    $recordName = Get-PropValue $route53Cfg "record_name"
+    $fallbackAliases = Normalize-CloudFrontAliases @($recordName)
+    if ($currentAliases.Count -eq 0 -and $fallbackAliases.Count -gt 0) {
+      $currentAliases = $fallbackAliases
+      Write-Host ("CloudFront aliases defaulted to Route53 record: {0}" -f ($fallbackAliases -join ", "))
+    }
+
+    $existingAliasesForCompare = @($aliasesValue | ForEach-Object { $_.ToString().Trim().ToLower().Trim(".") } | Where-Object { $_ -ne "" })
+    if (($currentAliases -join ",") -ne ($existingAliasesForCompare -join ",")) {
+      $cfg.cloudfront.aliases = $currentAliases
+      $edgeConfigChanged = $true
+      Write-Host ("CloudFront aliases normalized: {0}" -f ($currentAliases -join ", "))
     }
 
     if ($edgeConfigChanged) {
@@ -463,5 +525,7 @@ if ($cloudfrontEnabled -eq $true) {
       Write-Host "CloudFront already wired; skipping edge apply."
     }
   }
+} else {
+  Write-Host "CloudFront disabled in config; skipping edge wiring/apply."
 }
 

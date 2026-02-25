@@ -30,7 +30,7 @@ Write-Note "Note: RDS identifier must be lowercase letters, numbers, and hyphens
 Write-Note "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
 Write-Note "Note: This script normalizes identifiers and converts lists to proper JSON arrays before writing the config."
 
-$defaultDbInitImage = "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
+$defaultProfiseeDeployImage = "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
 
 function Read-PromptWithDefault([string]$Label, [string]$DefaultText) {
   if ($null -ne $DefaultText -and $DefaultText -ne "") {
@@ -263,6 +263,10 @@ try {
   }
 
   $json = Get-Content -Raw -Path $configPath | ConvertFrom-Json
+  if ($null -ne (Get-PropValue $json "db_init")) {
+    $json.PSObject.Properties.Remove("db_init")
+    Write-Host "Removed legacy db_init block; using profisee_deploy only."
+  }
   Ensure-ObjectProperty $json "cloudfront" @{} | Out-Null
   Ensure-ObjectProperty $json.cloudfront "enabled" $true | Out-Null
   Ensure-ObjectProperty $json.cloudfront "aliases" @() | Out-Null
@@ -275,17 +279,17 @@ try {
   Ensure-ObjectProperty $json.route53 "enabled" $true | Out-Null
   Ensure-ObjectProperty $json.route53 "hosted_zone_id" $null | Out-Null
   Ensure-ObjectProperty $json.route53 "record_name" $null | Out-Null
-  Ensure-ObjectProperty $json "db_init" @{} | Out-Null
-  $dbInit = $json.db_init
-  Ensure-ObjectProperty $dbInit "enabled" $true | Out-Null
-  Ensure-ObjectProperty $dbInit "image_uri" $defaultDbInitImage | Out-Null
-  Ensure-ObjectProperty $dbInit "cpu" 512 | Out-Null
-  Ensure-ObjectProperty $dbInit "memory" 1024 | Out-Null
-  Ensure-ObjectProperty $dbInit "environment" ([pscustomobject]@{}) | Out-Null
-  $dbInitEnv = $dbInit.environment
-  $runtimeSqlMode = Normalize-RuntimeSqlMode (Get-PropValue $dbInitEnv "RUNTIME_SQL_MODE")
-  Ensure-ObjectProperty $dbInitEnv "RUNTIME_SQL_MODE" $runtimeSqlMode | Out-Null
-  $dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
+  Ensure-ObjectProperty $json "profisee_deploy" @{} | Out-Null
+  $profiseeDeploy = $json.profisee_deploy
+  Ensure-ObjectProperty $profiseeDeploy "enabled" $true | Out-Null
+  Ensure-ObjectProperty $profiseeDeploy "image_uri" $defaultProfiseeDeployImage | Out-Null
+  Ensure-ObjectProperty $profiseeDeploy "cpu" 512 | Out-Null
+  Ensure-ObjectProperty $profiseeDeploy "memory" 1024 | Out-Null
+  Ensure-ObjectProperty $profiseeDeploy "environment" ([pscustomobject]@{}) | Out-Null
+  $profiseeDeployEnv = $profiseeDeploy.environment
+  $runtimeSqlMode = Normalize-RuntimeSqlMode (Get-PropValue $profiseeDeployEnv "RUNTIME_SQL_MODE")
+  Ensure-ObjectProperty $profiseeDeployEnv "RUNTIME_SQL_MODE" $runtimeSqlMode | Out-Null
+  $profiseeDeployEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
 
   if (-not $NoPrompt) {
     $json.region = Read-Value "Primary region" $json.region
@@ -309,7 +313,7 @@ try {
   }
   $settingsBucket.kms_key_arn = Read-Value "App Settings bucket KMS key ARN (optional)" $settingsBucket.kms_key_arn
 
-  $dbInit.enabled = $true
+  $profiseeDeploy.enabled = $true
 
   $json.vpc.name = Read-Value "VPC name" $json.vpc.name
   $json.vpc.cidr_block = Read-Value "VPC CIDR block" $json.vpc.cidr_block
@@ -358,11 +362,12 @@ if (-not $NoPrompt) {
   $json.rds_sqlserver.instance_class = Read-Value "RDS instance class" $json.rds_sqlserver.instance_class
   $json.rds_sqlserver.allocated_storage = Read-Number "RDS allocated storage (GB)" $json.rds_sqlserver.allocated_storage
   $json.rds_sqlserver.master_username = Read-Value "RDS master username" $json.rds_sqlserver.master_username
-  $json.rds_sqlserver.db_name = Read-Value "Application database name (created by db_init)" $json.rds_sqlserver.db_name
+  $json.rds_sqlserver.db_name = Read-Value "Application database name (created by profisee-deploy)" $json.rds_sqlserver.db_name
   $json.rds_sqlserver.publicly_accessible = Read-Bool "RDS publicly accessible" $json.rds_sqlserver.publicly_accessible
 
   $json.acm.domain_name = Read-Value "ACM domain name" $json.acm.domain_name
   $json.acm.hosted_zone_id = Read-Value "ACM hosted zone ID" $json.acm.hosted_zone_id
+  $json.cloudfront.enabled = Read-Bool "Use CloudFront in front of load balancer" (To-BoolOrDefault (Get-PropValue $json.cloudfront "enabled") $true)
 
     $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
   if ($json.jumpbox.enabled) {
@@ -385,18 +390,18 @@ $json.eks.windows_node_group.instance_types = Coerce-List "EKS windows instance 
 $json.cloudfront.aliases = Coerce-List "CloudFront aliases" $json.cloudfront.aliases
 $json.jumpbox.allowed_rdp_cidrs = Coerce-List "Jumpbox RDP CIDRs" $json.jumpbox.allowed_rdp_cidrs
 
-if ($json.db_init -and $json.db_init.enabled -eq $true -and (-not $json.db_init.image_uri -or $json.db_init.image_uri -eq "")) {
-  $json.db_init.image_uri = $defaultDbInitImage
-  Write-Host ("db_init.image_uri not set; defaulting to {0}" -f $json.db_init.image_uri)
+if ($json.profisee_deploy -and $json.profisee_deploy.enabled -eq $true -and (-not $json.profisee_deploy.image_uri -or $json.profisee_deploy.image_uri -eq "")) {
+  $json.profisee_deploy.image_uri = $defaultProfiseeDeployImage
+  Write-Host ("profisee_deploy.image_uri not set; defaulting to {0}" -f $json.profisee_deploy.image_uri)
 }
 
-if ($json.db_init -and $json.db_init.image_uri -eq $defaultDbInitImage) {
-  $json.db_init.PSObject.Properties.Remove("image_uri")
+if ($json.profisee_deploy -and $json.profisee_deploy.image_uri -eq $defaultProfiseeDeployImage) {
+  $json.profisee_deploy.PSObject.Properties.Remove("image_uri")
 }
 
-if ($json.db_init) {
-  if ($json.db_init.cpu -eq 512) { $json.db_init.PSObject.Properties.Remove("cpu") }
-  if ($json.db_init.memory -eq 1024) { $json.db_init.PSObject.Properties.Remove("memory") }
+if ($json.profisee_deploy) {
+  if ($json.profisee_deploy.cpu -eq 512) { $json.profisee_deploy.PSObject.Properties.Remove("cpu") }
+  if ($json.profisee_deploy.memory -eq 1024) { $json.profisee_deploy.PSObject.Properties.Remove("memory") }
 }
 
 if ($ForceDestroySettingsBucket) {
@@ -405,7 +410,7 @@ if ($ForceDestroySettingsBucket) {
   Ensure-ObjectProperty $settingsBucket "force_destroy" $true | Out-Null
   $settingsBucket.force_destroy = $true
 }
-$dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
+$profiseeDeployEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
 
 Save-Config $configPath $json
 
@@ -442,9 +447,13 @@ if (-not $externalDnsName -or $externalDnsName -eq "") { $externalDnsName = $jso
 if ($externalDnsName -and $externalDnsName.StartsWith("*.")) {
   $externalDnsName = $externalDnsName.Substring(2)
 }
-$cloudfrontAliases = @($json.cloudfront.aliases)
+$cloudfrontAliases = @($json.cloudfront.aliases | Where-Object {
+  $_ -and $_.ToString().Trim() -ne "" -and $_.ToString().Trim().ToLower() -ne "app.example.com"
+})
 if ($cloudfrontAliases.Count -eq 0 -and $externalDnsName) {
   $json.cloudfront.aliases = @($externalDnsName)
+} else {
+  $json.cloudfront.aliases = $cloudfrontAliases
 }
 $externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { "" }
 
@@ -641,10 +650,10 @@ if (-not $NoPrompt) {
 }
 
 if (-not $NoPrompt) {
-  $dbInitCfgCheck = Get-PropValue $json "db_init"
-  if ($dbInitCfgCheck -and $dbInitCfgCheck.enabled -eq $true) {
+  $profiseeDeployCfgCheck = Get-PropValue $json "profisee_deploy"
+  if ($profiseeDeployCfgCheck -and $profiseeDeployCfgCheck.enabled -eq $true) {
     if (-not $sqlUsername -or -not $sqlPassword) {
-      throw "App SQL username/password are required when db_init is enabled."
+      throw "App SQL username/password are required when profisee_deploy is enabled."
     }
   }
   if ($usePurview) {
@@ -657,7 +666,7 @@ if (-not $NoPrompt) {
   }
 }
 
-$dbInitEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
+$profiseeDeployEnv.RUNTIME_SQL_MODE = $runtimeSqlMode
 Save-Config $configPath $json
 
 $licenseRaw = Read-FileRaw $licensePath

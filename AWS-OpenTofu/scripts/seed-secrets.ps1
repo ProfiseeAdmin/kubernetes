@@ -476,17 +476,15 @@ if ($certPath -and $keyPath) {
   }
 }
 
-# App SQL credentials (required for db_init when enabled)
-$dbInitEnabled = $false
-if ($cfg -and $cfg.db_init) {
-  $dbInitEnabled = [bool]$cfg.db_init.enabled
-}
+# App SQL credentials (required for profisee_deploy when enabled)
+$profiseeDeployCfg = if ($cfg) { Get-PropValue $cfg "profisee_deploy" } else { $null }
+$profiseeDeployEnabled = To-BoolOrDefault (Get-PropValue $profiseeDeployCfg "enabled") $true
 
-if ($dbInitEnabled) {
+if ($profiseeDeployEnabled) {
   $sqlUser = if ($seed -and $seed.sql.username) { $seed.sql.username } else { Read-Value "App SQL username" "" }
   $sqlPass = if ($seed -and $seed.sql.password) { $seed.sql.password } else { Read-SecretValue "App SQL password" }
   if (-not $sqlUser -or -not $sqlPass) {
-    throw "App SQL username/password are required when db_init.enabled is true."
+    throw "App SQL username/password are required when profisee_deploy.enabled is true."
   }
   $sqlPayload = @{ username = $sqlUser; password = $sqlPass } | ConvertTo-Json -Depth 4
   $secretName = "$Prefix/sql"
@@ -507,8 +505,8 @@ if ($dbInitEnabled) {
 if ($UpdateConfig -and $cfg) {
   $platform = Ensure-ObjectProperty $cfg "platform_deployer" ([pscustomobject]@{})
   Set-ObjectProperty $platform "secret_arns" $secretArns
-  $dbInitCfg = Ensure-ObjectProperty $cfg "db_init" ([pscustomobject]@{})
-  Set-ObjectProperty $dbInitCfg "secret_arns" $secretArns
+  $profiseeDeployCfg = Ensure-ObjectProperty $cfg "profisee_deploy" ([pscustomobject]@{})
+  Set-ObjectProperty $profiseeDeployCfg "secret_arns" $secretArns
   $jsonOut = $cfg | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($configPath, $jsonOut, (New-Object System.Text.UTF8Encoding($false)))
   Write-Host ("Updated config with secret ARNs: {0}" -f $configPath)
