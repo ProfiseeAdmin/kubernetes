@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.07"
+$script:DeployScriptVersion = "2026-02-26.09"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -271,33 +271,16 @@ function Download-SettingsYamlTemplate {
   Invoke-WebRequest -Uri $SettingsYamlUrl -OutFile $dst
   Write-Host "Downloaded Settings.yaml template to $dst"
 }
-function Download-NginxConfTemplate([int]$upstreamPort,[string]$webAppName,[string]$certFileName,[string]$keyFileName){
+function Download-NginxConfTemplate {
   Ensure-Dir $WorkDir
   Ensure-Dir "$NginxRoot\conf"
   Ensure-Dir "$NginxRoot\logs"
 
-  $tmp = Join-Path $WorkDir "nginx.conf.downloaded"
   $dst = Join-Path $NginxRoot "conf\nginx.conf"
-
-  Invoke-WebRequest -Uri $NginxConfUrl -OutFile $tmp
-  $conf = Get-Content -Raw -Path $tmp
+  Invoke-WebRequest -Uri $NginxConfUrl -OutFile $dst
+  if(-not (Test-Path -LiteralPath $dst)){ throw "Downloaded nginx.conf not found at: $dst" }
+  $conf = Get-Content -Raw -Path $dst
   if([string]::IsNullOrWhiteSpace($conf)){ throw "Downloaded nginx.conf is empty from: $NginxConfUrl" }
-
-  # Keep repo as source of truth while applying run-time values.
-  $conf = [regex]::Replace($conf,'server\s+127\.0\.0\.1:\d+;',"server 127.0.0.1:$upstreamPort;",1)
-  $conf = [regex]::Replace($conf,'ssl_certificate\s+[^;]+;',"ssl_certificate     c:/nginx/conf/certs/$certFileName;",1)
-  $conf = [regex]::Replace($conf,'ssl_certificate_key\s+[^;]+;',"ssl_certificate_key c:/nginx/conf/certs/$keyFileName;",1)
-  if($conf -notmatch '(?m)^\s*server_tokens\s+off;'){
-    $conf = [regex]::Replace($conf,'default_type\s+application/octet-stream;',"default_type  application/octet-stream;`r`n`r`n    server_tokens off;",1)
-  }
-  if($conf -notmatch 'location\s*=\s*/\s*\{'){
-    $needle = "        location = /healthz {"
-    if($conf.Contains($needle)){
-      $conf = $conf.Replace($needle, "        location = / { return 302 /$webAppName/; }`r`n`r`n$needle")
-    }
-  }
-
-  Set-Content -Path $dst -Value $conf -Encoding ascii -Force
   Write-Host "Downloaded nginx.conf to $dst from $NginxConfUrl"
 }
 
@@ -351,106 +334,6 @@ function Assert-PemFile([string]$path,[string]$kind){
   } else {
     if($txt -notmatch "BEGIN .*PRIVATE KEY"){ throw "Key file does not look like PEM (missing BEGIN *PRIVATE KEY): $path" }
   }
-}
-
-function Write-NginxConf([int]$upstreamPort,[string]$webAppName,[string]$certFileName,[string]$keyFileName){
-@"
-worker_processes auto;
-
-events {
-    worker_connections 50000;
-    multi_accept on;
-}
-
-http {
-    include       mime.types;
-    default_type  application/octet-stream;
-    server_tokens off;
-
-    sendfile on;
-    tcp_nopush on;
-    tcp_nodelay on;
-
-    keepalive_timeout 60;
-    types_hash_max_size 2048;
-
-    client_max_body_size 250M;
-    client_body_buffer_size 512k;
-    client_body_timeout 300s;
-    reset_timedout_connection on;
-
-    log_not_found off;
-
-    log_format main '`$remote_addr - `$remote_user [`$time_local] "`$request" '
-                    '`$status `$body_bytes_sent "`$http_referer" '
-                    '"`$http_user_agent" "`$http_x_forwarded_for"';
-
-    access_log logs/access.log main;
-    error_log  logs/error.log notice;
-
-    gzip on;
-    gzip_disable msie6;
-    gzip_vary on;
-    gzip_comp_level 3;
-    gzip_min_length 256;
-    gzip_buffers 16 8k;
-    gzip_proxied any;
-    gzip_types
-        text/css
-        text/plain
-        text/javascript
-        application/javascript
-        application/json
-        application/xml
-        application/xml+rss
-        application/xhtml+xml
-        application/ld+json
-        image/svg+xml
-        image/x-icon
-        font/opentype;
-
-    map `$http_upgrade `$connection_upgrade { default upgrade; "" close; }
-
-    upstream profisee_upstream { server 127.0.0.1:$upstreamPort; keepalive 32; }
-
-    server { listen 80; server_name _; return 301 https://`$host`$request_uri; }
-
-    server {
-        listen 443 ssl;
-        server_name _;
-
-        ssl_certificate     c:/nginx/conf/certs/$certFileName;
-        ssl_certificate_key c:/nginx/conf/certs/$keyFileName;
-
-        # convenience: / -> /<webAppName>/
-        location = / { return 302 /$webAppName/; }
-
-        location = /healthz { return 200 "ok`n"; add_header Content-Type text/plain; }
-
-        location / {
-            proxy_http_version 1.1;
-            proxy_set_header Host                `$host;
-            proxy_set_header X-Real-IP           `$remote_addr;
-            proxy_set_header X-Forwarded-For     `$proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto   https;
-            proxy_set_header X-Forwarded-Host    `$host;
-            proxy_set_header X-Forwarded-Port    443;
-            proxy_set_header Upgrade             `$http_upgrade;
-            proxy_set_header Connection          `$connection_upgrade;
-
-            proxy_connect_timeout 60s;
-            proxy_send_timeout    600s;
-            proxy_read_timeout    600s;
-
-            proxy_buffering off;
-            proxy_request_buffering off;
-
-            # DO NOT rewrite the URI; Profisee expects /<webAppName>/... to reach the app
-            proxy_pass http://profisee_upstream;
-        }
-    }
-}
-"@ | Set-Content -Path "$NginxRoot\conf\nginx.conf" -Encoding ascii -Force
 }
 
 function Start-Nginx {
@@ -941,33 +824,13 @@ if($caCertType -eq "Internal"){
   Persist-CustomerInputState -state $customerInputState
 }
 
-$certExt = [IO.Path]::GetExtension($pemCert)
-if([string]::IsNullOrWhiteSpace($certExt)){ $certExt = ".pem" }
-$keyExt = [IO.Path]::GetExtension($pemKey)
-if([string]::IsNullOrWhiteSpace($keyExt)){ $keyExt = ".key" }
-
-$nginxCertFile = "site-cert$certExt"
-$nginxKeyFile  = "site-key$keyExt"
-
-if($nginxCertFile -ieq $nginxKeyFile){
-  throw "TLS cert/key destination filenames resolved to the same file ($nginxCertFile). Refusing to continue."
-}
+$nginxCertFile = "site.crt"
+$nginxKeyFile  = "site.key"
 
 Copy-Item $pemCert "$NginxRoot\conf\certs\$nginxCertFile" -Force
 Copy-Item $pemKey  "$NginxRoot\conf\certs\$nginxKeyFile" -Force
 
 # ---- Prompts for EXACT Profisee env vars you provided ----
-Write-Host ""
-$webAppName = Read-WithHistory -state $customerInputState -key "ProfiseeWebAppName" -prompt "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)" -Required
-
-try {
-  Download-NginxConfTemplate -upstreamPort $HostAppPort -webAppName $webAppName -certFileName $nginxCertFile -keyFileName $nginxKeyFile
-} catch {
-  Write-Warning "Failed to download nginx.conf from $NginxConfUrl. Falling back to built-in template. Error: $($_.Exception.Message)"
-  Write-NginxConf -upstreamPort $HostAppPort -webAppName $webAppName -certFileName $nginxCertFile -keyFileName $nginxKeyFile
-}
-Start-Nginx
-
 Write-Host ""
 $sqlServer = Read-WithHistory -state $customerInputState -key "ProfiseeSqlServer" -prompt "ProfiseeSqlServer (e.g. xxx.database.windows.net)" -Required
 $sqlDb     = Read-WithHistory -state $customerInputState -key "ProfiseeSqlDatabase" -prompt "ProfiseeSqlDatabase" -Required
@@ -983,6 +846,10 @@ $repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttach
 Write-Host ""
 $adminAccount = Read-WithHistory -state $customerInputState -key "ProfiseeAdminAccount" -prompt "ProfiseeAdminAccount (email/username)" -Required
 $externalUrl  = Read-WithHistory -state $customerInputState -key "ProfiseeExternalDNSUrl" -prompt "ProfiseeExternalDNSUrl (e.g. https://something.com)" -Required
+$webAppName = Read-WithHistory -state $customerInputState -key "ProfiseeWebAppName" -prompt "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)" -Required
+
+Download-NginxConfTemplate
+Start-Nginx
 
 Write-Host ""
 $oidcProvider  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcName" -prompt "ProfiseeOidcName (Entra/Okta)" -defaultValue "Entra" -Required
