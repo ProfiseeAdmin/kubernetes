@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.02"
+$script:DeployScriptVersion = "2026-02-26.03"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -1185,11 +1185,19 @@ $containerAttachmentPath = "c:\fileshare"
 $repoMountSource = Resolve-RepositoryMountSource -repoLocation $repoLocation
 Write-Host "Attachment repository mount: host '$repoMountSource' -> container '$containerAttachmentPath'"
 Download-ForensicsScriptToRepository -repoMountSource $repoMountSource
-$containerNetwork = Ensure-DockerNamespaceNetwork -namespaceName $DockerNamespace
-if([string]::IsNullOrWhiteSpace($containerNetwork)){
-  Write-Warning "Docker namespace network unavailable. Container will use default docker network."
+$containerNetwork = ""
+if($Isolation -eq "hyperv"){
+  if(-not [string]::IsNullOrWhiteSpace($DockerNamespace)){
+    Write-Host "Docker namespace label: '$DockerNamespace'."
+  }
+  Write-Warning "Hyper-V isolation selected. Using default docker network (custom --network is skipped)."
 } else {
-  Write-Host "Docker namespace: '$DockerNamespace' (network '$containerNetwork')."
+  $containerNetwork = Ensure-DockerNamespaceNetwork -namespaceName $DockerNamespace
+  if([string]::IsNullOrWhiteSpace($containerNetwork)){
+    Write-Warning "Docker namespace network unavailable. Container will use default docker network."
+  } else {
+    Write-Host "Docker namespace: '$DockerNamespace' (network '$containerNetwork')."
+  }
 }
 
 $envMap = @{
