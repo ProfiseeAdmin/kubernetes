@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-25.12"
+$script:DeployScriptVersion = "2026-02-26.01"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -267,40 +267,31 @@ function Ensure-DockerService([switch]$ForceRestart){
 }
 function Install-DockerEngineLatest {
   Ensure-Dir $WorkDir
-  Ensure-Dir "$env:ProgramFiles\Docker"
+  $installScriptUrl = "https://raw.githubusercontent.com/microsoft/Windows-Containers/Main/helpful_tools/Install-DockerCE/install-docker-ce.ps1"
+  $installScriptPath = Join-Path $WorkDir "install-docker-ce.ps1"
+  $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 
-  $latestDocker = Get-LatestDockerStableVersion
-  $localDocker = Get-DockerLocalVersion
-  $dockerUpdated = $false
-
-  if([string]::IsNullOrWhiteSpace($latestDocker)){
-    if(-not [string]::IsNullOrWhiteSpace($localDocker)){
-      Write-Warning "Could not determine latest Docker version online. Keeping local version $localDocker."
-      Ensure-PathContains @("$env:ProgramFiles\Docker")
-      Ensure-DockerService
-      return
-    }
-    throw "Could not determine latest Docker version online and Docker is not installed."
+  Write-Host "Installing/updating Docker using Microsoft Windows-Containers installer script."
+  Invoke-WebRequest -UseBasicParsing -Uri $installScriptUrl -OutFile $installScriptPath
+  if(-not (Test-Path -LiteralPath $installScriptPath)){
+    throw "Failed to download Docker install script from $installScriptUrl"
   }
+  try { Unblock-File -LiteralPath $installScriptPath -ErrorAction SilentlyContinue } catch {}
 
-  if(Is-SameOrNewer $localDocker $latestDocker){
-    Write-Host "docker local version $localDocker is current (latest $latestDocker). Skipping install."
+  if(Test-Path -LiteralPath $windowsPowerShell){
+    & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $installScriptPath
+    if($LASTEXITCODE -ne 0){
+      throw "Microsoft install-docker-ce.ps1 failed with exit code $LASTEXITCODE."
+    }
   } else {
-    Write-Host "Updating docker from '$localDocker' to '$latestDocker'"
-    Stop-ServiceIfExists "docker"
-    $dockerZip = Join-Path $WorkDir "docker-$latestDocker.zip"
-    $dockerExtract = Join-Path $WorkDir "docker-extract"
-    if(Test-Path $dockerExtract){ Remove-Item $dockerExtract -Recurse -Force }
-    Ensure-Dir $dockerExtract
-    Invoke-WebRequest -Uri "https://download.docker.com/win/static/stable/x86_64/docker-$latestDocker.zip" -OutFile $dockerZip
-    Expand-Archive -Path $dockerZip -DestinationPath $dockerExtract -Force
-    Copy-Item -Path (Join-Path $dockerExtract "docker\*") -Destination "$env:ProgramFiles\Docker" -Recurse -Force
-    Remove-Item $dockerExtract -Recurse -Force
-    $dockerUpdated = $true
+    & $installScriptPath
+    if($LASTEXITCODE -ne 0){
+      throw "Microsoft install-docker-ce.ps1 failed with exit code $LASTEXITCODE."
+    }
   }
 
   Ensure-PathContains @("$env:ProgramFiles\Docker")
-  Ensure-DockerService -ForceRestart:$dockerUpdated
+  Ensure-DockerService
 }
 
 function Download-SettingsYamlTemplate {
