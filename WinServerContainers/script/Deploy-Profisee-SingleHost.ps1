@@ -31,14 +31,6 @@ function SecureToPlain([Security.SecureString]$s){
   $b=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($s)
   try{[Runtime.InteropServices.Marshal]::PtrToStringAuto($b)} finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)}
 }
-function Read-Required([string]$prompt){
-  do { $v = Read-Host $prompt } while([string]::IsNullOrWhiteSpace($v))
-  return $v
-}
-function Read-RequiredSecret([string]$prompt){
-  do { $v = SecureToPlain (Read-Host $prompt -AsSecureString) } while([string]::IsNullOrWhiteSpace($v))
-  return $v
-}
 function New-CustomerInputState {
   return [pscustomobject]@{
     Inputs = @{}
@@ -195,10 +187,6 @@ function Ensure-PathContains([string[]]$entries){
   [Environment]::SetEnvironmentVariable("Path",$mp,"Machine")
   $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 }
-function Stop-ServiceIfExists([string]$name){
-  $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
-  if($svc -and $svc.Status -ne "Stopped"){ Stop-Service -Name $name -Force }
-}
 function Install-ContainersFeature {
   Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
   $feat = Get-WindowsFeature -Name Containers -ErrorAction SilentlyContinue
@@ -256,36 +244,6 @@ function Ensure-HyperVRole {
   if($restartNeeded){
     throw "Hyper-V role installed. A reboot is required before continuing. Re-run this script after restart."
   }
-}
-function Get-DockerLocalVersion {
-  $dockerExe = $null
-  try {
-    $cmd = Get-Command docker -ErrorAction SilentlyContinue
-    if($cmd){ $dockerExe = $cmd.Source }
-  } catch {}
-  if([string]::IsNullOrWhiteSpace($dockerExe)){
-    $fallback = "$env:ProgramFiles\Docker\docker.exe"
-    if(Test-Path $fallback){ $dockerExe = $fallback }
-  }
-  if([string]::IsNullOrWhiteSpace($dockerExe)){ return $null }
-  try{
-    $txt = (& $dockerExe --version 2>&1 | Out-String)
-    $m = [regex]::Match($txt,'(\d+\.\d+\.\d+)')
-    if($m.Success){ return $m.Groups[1].Value }
-  } catch {}
-  return $null
-}
-function Get-LatestDockerStableVersion {
-  try{
-    $listing = (Invoke-WebRequest -Uri "https://download.docker.com/win/static/stable/x86_64/" -UseBasicParsing).Content
-    $matches = [regex]::Matches($listing,'docker-(\d+\.\d+\.\d+)\.zip')
-    $unique = @{}
-    foreach($m in $matches){ $unique[$m.Groups[1].Value] = $true }
-    if($unique.Keys.Count -gt 0){
-      return ($unique.Keys | Sort-Object { [version]$_ } -Descending | Select-Object -First 1)
-    }
-  } catch {}
-  return $null
 }
 function Ensure-DockerService([switch]$ForceRestart){
   $dockerdExe = "$env:ProgramFiles\Docker\dockerd.exe"
