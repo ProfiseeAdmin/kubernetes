@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.04"
+$script:DeployScriptVersion = "2026-02-26.05"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -190,9 +190,11 @@ function Ensure-PathContains([string[]]$entries){
 function Install-ContainersFeature {
   Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
   $feat = Get-WindowsFeature -Name Containers -ErrorAction SilentlyContinue
-  if($feat -and -not $feat.Installed){
-    Install-WindowsFeature -Name Containers | Out-Null
-    Write-Warning "Containers feature installed. A reboot may be required."
+  if(-not $feat){
+    throw "Unable to query Windows feature state for 'Containers'."
+  }
+  if(-not $feat.Installed){
+    throw "Install Windows feature: Containers (Install-WindowsFeature Containers) and rerun."
   }
 }
 function Assert-HyperVPrerequisites {
@@ -223,27 +225,11 @@ function Ensure-HyperVRole {
   if(-not $hyperV){
     throw "Unable to query Hyper-V feature state on this server."
   }
-  if($hyperV.Installed){
-    Write-Host "Hyper-V role is already installed."
-    return
+  if(-not $hyperV.Installed){
+    throw "Install Windows feature: Hyper-V (Install-WindowsFeature Hyper-V -IncludeManagementTools) and rerun."
   }
-
   Assert-HyperVPrerequisites
-  Write-Host "Hyper-V role is not installed. Installing Hyper-V role."
-  $result = Install-WindowsFeature -Name Hyper-V -IncludeManagementTools
-  if(-not $result -or -not $result.Success){
-    $code = if($result){ [string]$result.ExitCode } else { "<unknown>" }
-    throw "Hyper-V role installation failed (ExitCode: $code)."
-  }
-
-  $restartNeeded = $false
-  if($result.PSObject.Properties.Name -contains "RestartNeeded"){
-    $restartToken = [string]$result.RestartNeeded
-    if($restartToken -match '^(?i:Yes|True|Maybe)$'){ $restartNeeded = $true }
-  }
-  if($restartNeeded){
-    throw "Hyper-V role installed. A reboot is required before continuing. Re-run this script after restart."
-  }
+  Write-Host "Hyper-V role is installed."
 }
 function Ensure-DockerService([switch]$ForceRestart){
   $dockerdExe = "$env:ProgramFiles\Docker\dockerd.exe"
