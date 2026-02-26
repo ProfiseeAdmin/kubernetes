@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.06"
+$script:DeployScriptVersion = "2026-02-26.07"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -197,28 +197,6 @@ function Install-ContainersFeature {
     throw "Install Windows feature: Containers (Install-WindowsFeature Containers) and rerun."
   }
 }
-function Assert-HyperVPrerequisites {
-  $cpus = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue)
-  if($cpus.Count -lt 1){
-    throw "Could not determine CPU virtualization prerequisites for Hyper-V."
-  }
-
-  $firmwareOk = $true
-  $vmMonitorOk = $true
-  $slatOk = $true
-  foreach($cpu in $cpus){
-    if(-not [bool]$cpu.VirtualizationFirmwareEnabled){ $firmwareOk = $false }
-    if(-not [bool]$cpu.VMMonitorModeExtensions){ $vmMonitorOk = $false }
-    if(-not [bool]$cpu.SecondLevelAddressTranslationExtensions){ $slatOk = $false }
-  }
-
-  if(-not ($firmwareOk -and $vmMonitorOk -and $slatOk)){
-    $first = $cpus[0]
-    throw ("Hyper-V prerequisites are not available (VirtualizationFirmwareEnabled={0}, VMMonitorModeExtensions={1}, SecondLevelAddressTranslationExtensions={2}). " +
-           "Enable CPU virtualization in BIOS/UEFI and nested virtualization on the outer host, then retry.") -f `
-           $first.VirtualizationFirmwareEnabled,$first.VMMonitorModeExtensions,$first.SecondLevelAddressTranslationExtensions
-  }
-}
 function Ensure-HyperVRole {
   Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
   $hyperV = Get-WindowsFeature -Name Hyper-V -ErrorAction SilentlyContinue
@@ -227,12 +205,6 @@ function Ensure-HyperVRole {
   }
   if(-not $hyperV.Installed){
     throw "Install Windows feature: Hyper-V (Install-WindowsFeature Hyper-V -IncludeManagementTools) and rerun."
-  }
-  try {
-    Assert-HyperVPrerequisites
-  } catch {
-    Write-Warning "Hyper-V prerequisite probe reported: $($_.Exception.Message)"
-    Write-Warning "Proceeding because Hyper-V role is installed. If platform support is unavailable, docker run with --isolation=hyperv will fail later."
   }
   Write-Host "Hyper-V role is installed."
 }
