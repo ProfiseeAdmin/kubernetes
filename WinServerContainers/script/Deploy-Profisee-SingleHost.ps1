@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.11"
+$script:DeployScriptVersion = "2026-02-26.12"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -1005,7 +1005,7 @@ $resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
 Write-Host "Container name selected: $resolvedContainerName"
 $resolvedHostAppPort = Resolve-AvailableHostPort -requestedPort $HostAppPort
 if($resolvedHostAppPort -ne $HostAppPort){
-  $portOwners = Get-ContainersUsingHostPort -port $HostAppPort
+  $portOwners = @(Get-ContainersUsingHostPort -port $HostAppPort)
   if($portOwners.Count -gt 0){
     Write-Warning ("Requested host port {0} is already bound by container(s): {1}. Using {2} instead." -f $HostAppPort, ($portOwners -join ", "), $resolvedHostAppPort)
   } else {
