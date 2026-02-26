@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.03"
+$script:DeployScriptVersion = "2026-02-26.04"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -205,6 +205,56 @@ function Install-ContainersFeature {
   if($feat -and -not $feat.Installed){
     Install-WindowsFeature -Name Containers | Out-Null
     Write-Warning "Containers feature installed. A reboot may be required."
+  }
+}
+function Assert-HyperVPrerequisites {
+  $cpus = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue)
+  if($cpus.Count -lt 1){
+    throw "Could not determine CPU virtualization prerequisites for Hyper-V."
+  }
+
+  $firmwareOk = $true
+  $vmMonitorOk = $true
+  $slatOk = $true
+  foreach($cpu in $cpus){
+    if(-not [bool]$cpu.VirtualizationFirmwareEnabled){ $firmwareOk = $false }
+    if(-not [bool]$cpu.VMMonitorModeExtensions){ $vmMonitorOk = $false }
+    if(-not [bool]$cpu.SecondLevelAddressTranslationExtensions){ $slatOk = $false }
+  }
+
+  if(-not ($firmwareOk -and $vmMonitorOk -and $slatOk)){
+    $first = $cpus[0]
+    throw ("Hyper-V prerequisites are not available (VirtualizationFirmwareEnabled={0}, VMMonitorModeExtensions={1}, SecondLevelAddressTranslationExtensions={2}). " +
+           "Enable CPU virtualization in BIOS/UEFI and nested virtualization on the outer host, then retry.") -f `
+           $first.VirtualizationFirmwareEnabled,$first.VMMonitorModeExtensions,$first.SecondLevelAddressTranslationExtensions
+  }
+}
+function Ensure-HyperVRole {
+  Import-Module ServerManager -ErrorAction SilentlyContinue | Out-Null
+  $hyperV = Get-WindowsFeature -Name Hyper-V -ErrorAction SilentlyContinue
+  if(-not $hyperV){
+    throw "Unable to query Hyper-V feature state on this server."
+  }
+  if($hyperV.Installed){
+    Write-Host "Hyper-V role is already installed."
+    return
+  }
+
+  Assert-HyperVPrerequisites
+  Write-Host "Hyper-V role is not installed. Installing Hyper-V role."
+  $result = Install-WindowsFeature -Name Hyper-V -IncludeManagementTools
+  if(-not $result -or -not $result.Success){
+    $code = if($result){ [string]$result.ExitCode } else { "<unknown>" }
+    throw "Hyper-V role installation failed (ExitCode: $code)."
+  }
+
+  $restartNeeded = $false
+  if($result.PSObject.Properties.Name -contains "RestartNeeded"){
+    $restartToken = [string]$result.RestartNeeded
+    if($restartToken -match '^(?i:Yes|True|Maybe)$'){ $restartNeeded = $true }
+  }
+  if($restartNeeded){
+    throw "Hyper-V role installed. A reboot is required before continuing. Re-run this script after restart."
   }
 }
 function Get-DockerLocalVersion {
@@ -922,6 +972,7 @@ if($Isolation -ne "hyperv"){
 }
 
 Install-ContainersFeature
+Ensure-HyperVRole
 Install-DockerEngineLatest
 Install-NginxStable
 Download-SettingsYamlTemplate
