@@ -4,7 +4,7 @@
 - Run deployment as Administrator.
 - Windows feature `Containers` must be installed.
 - Windows feature `Hyper-V` must be installed.
-- Docker Engine (Docker CE) must be installed.
+- Docker Engine (Docker CE) is installed/updated automatically by `Deploy-Profisee-SingleHost.ps1`.
 
 ## After VM Reboot
 - Ensure nginx is running before testing access.
