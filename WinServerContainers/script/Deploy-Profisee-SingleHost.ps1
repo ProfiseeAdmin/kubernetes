@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.09"
+$script:DeployScriptVersion = "2026-02-26.11"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -399,13 +399,6 @@ function Is-ContainerCliNotImplemented([string]$text){
   if([string]::IsNullOrWhiteSpace($text)){ return $false }
   return ($text -match '(?i)\bnot implemented\b')
 }
-function Is-ContainerCliRecoverableNetworkBug([string]$text){
-  if([string]::IsNullOrWhiteSpace($text)){ return $false }
-  if($text -match '(?i)panic:\s*runtime error:\s*index out of range'){ return $true }
-  if($text -match '(?i)verifyNetworkTypes'){ return $true }
-  if($text -match '(?i)netutil_windows\.go'){ return $true }
-  return $false
-}
 function Get-EntraTenantIdFromAuthority([string]$value){
   if([string]::IsNullOrWhiteSpace($value)){ return "" }
   $trimmed = $value.Trim()
@@ -583,7 +576,6 @@ function Build-ContainerRunArgs(
   [string]$name,
   [string]$isolation,
   [string]$dockerNamespace,
-  [string]$networkName,
   [int]$hostPort,
   [string]$hostDataDir,
   [string]$repoMountSource,
@@ -594,10 +586,7 @@ function Build-ContainerRunArgs(
   [string]$startupCommandBase64,
   [string]$rootCaContainerPath,
   [switch]$IncludeResourceLimits,
-  [switch]$IncludeIsolation,
-  [switch]$IncludeNetwork,
-  [switch]$IncludePortMapping,
-  [switch]$IncludeBindMount
+  [switch]$IncludeIsolation
 ){
   $args = @(
     "run","-d",
@@ -611,16 +600,9 @@ function Build-ContainerRunArgs(
   if($IncludeIsolation -and -not [string]::IsNullOrWhiteSpace($isolation)){
     $args += @("--isolation",$isolation)
   }
-  if($IncludeNetwork -and -not [string]::IsNullOrWhiteSpace($networkName)){
-    $args += @("--network",$networkName)
-  }
-  if($IncludePortMapping){
-    $args += @("-p","$hostPort`:80")
-  }
-  if($IncludeBindMount){
-    $args += @("--mount","type=bind,source=$hostDataDir,destination=c:\data")
-    $args += @("--mount","type=bind,source=$repoMountSource,destination=c:\fileshare")
-  }
+  $args += @("-p","$hostPort`:80")
+  $args += @("--mount","type=bind,source=$hostDataDir,destination=c:\data")
+  $args += @("--mount","type=bind,source=$repoMountSource,destination=c:\fileshare")
 
   if($IncludeResourceLimits){
     if(-not [string]::IsNullOrWhiteSpace($cpuLimit)){ $args += @("--cpus",$cpuLimit) }
@@ -674,85 +656,100 @@ function Resolve-NextContainerName([string]$baseName){
   }
   return "$trimmed-$($maxIndex + 1)"
 }
-function Ensure-DockerNamespaceNetwork([string]$namespaceName){
-  if([string]::IsNullOrWhiteSpace($namespaceName)){ return "" }
-  $networkName = $namespaceName.Trim().ToLowerInvariant()
-
-  & docker network inspect $networkName *> $null
-  if($LASTEXITCODE -eq 0){
-    Write-Host "Using docker namespace network '$networkName'."
-    return $networkName
+function Get-DockerHostPortBindings{
+  $result = @{}
+  $ids = @()
+  try {
+    $ids = (& docker ps -aq 2>$null | ForEach-Object { [string]$_ })
+  } catch {
+    $ids = @()
   }
+  if(-not $ids -or $ids.Count -lt 1){ return $result }
 
-  Write-Host "Creating docker namespace network '$networkName' (driver nat)."
-  $createLines = @()
-  & docker network create --driver nat $networkName 2>&1 | Tee-Object -Variable createLines | Out-Host
-  $createText = (($createLines | ForEach-Object { [string]$_ }) -join "`n")
-  if($LASTEXITCODE -eq 0 -or $createText -match "(?i)already exists"){
-    return $networkName
-  }
-
-  Write-Warning "Network create with driver 'nat' failed. Retrying without explicit driver."
-  $createLines2 = @()
-  & docker network create $networkName 2>&1 | Tee-Object -Variable createLines2 | Out-Host
-  $createText2 = (($createLines2 | ForEach-Object { [string]$_ }) -join "`n")
-  if($LASTEXITCODE -eq 0 -or $createText2 -match "(?i)already exists"){
-    return $networkName
-  }
-
-  Write-Warning "Failed to create docker namespace network '$networkName'. Falling back to default docker network."
-  return ""
-}
-function Get-ContainerIPv4([string]$name){
-  if([string]::IsNullOrWhiteSpace($name)){ return "" }
   $inspectLines = @()
-  & docker inspect $name 2>&1 | Tee-Object -Variable inspectLines | Out-Null
-  if($LASTEXITCODE -ne 0){ return "" }
-  $jsonText = (($inspectLines | ForEach-Object { [string]$_ }) -join "`n")
-  if([string]::IsNullOrWhiteSpace($jsonText)){ return "" }
+  & docker inspect $ids 2>&1 | Tee-Object -Variable inspectLines | Out-Null
+  if($LASTEXITCODE -ne 0){ return $result }
+  $inspectText = (($inspectLines | ForEach-Object { [string]$_ }) -join "`n")
+  if([string]::IsNullOrWhiteSpace($inspectText)){ return $result }
 
   try {
-    $obj = $jsonText | ConvertFrom-Json -ErrorAction Stop
+    $items = $inspectText | ConvertFrom-Json -ErrorAction Stop
   } catch {
-    return ""
+    return $result
   }
-  $item = if($obj -is [array]){ if($obj.Count -gt 0){ $obj[0] } else { $null } } else { $obj }
-  if($null -eq $item){ return "" }
 
-  if($item.PSObject.Properties.Name -contains "NetworkSettings"){
-    $ns = $item.NetworkSettings
-    if($ns -and $ns.PSObject.Properties.Name -contains "IPAddress" -and -not [string]::IsNullOrWhiteSpace($ns.IPAddress)){
-      return [string]$ns.IPAddress
+  foreach($item in @($items)){
+    if($null -eq $item){ continue }
+
+    $name = ""
+    if($item.PSObject.Properties.Name -contains "Name" -and -not [string]::IsNullOrWhiteSpace([string]$item.Name)){
+      $name = [string]$item.Name
+      if($name.StartsWith("/")){ $name = $name.Substring(1) }
+    } elseif($item.PSObject.Properties.Name -contains "Id" -and -not [string]::IsNullOrWhiteSpace([string]$item.Id)){
+      $idText = [string]$item.Id
+      $name = if($idText.Length -gt 12){ $idText.Substring(0,12) } else { $idText }
     }
-    if($ns -and $ns.PSObject.Properties.Name -contains "Networks" -and $ns.Networks){
-      foreach($p in $ns.Networks.PSObject.Properties){
-        $net = $p.Value
-        if($net -and $net.PSObject.Properties.Name -contains "IPAddress" -and -not [string]::IsNullOrWhiteSpace($net.IPAddress)){
-          return [string]$net.IPAddress
+    if([string]::IsNullOrWhiteSpace($name)){ continue }
+
+    $ports = New-Object System.Collections.Generic.HashSet[int]
+    if($item.PSObject.Properties.Name -contains "HostConfig" -and $item.HostConfig -and
+       $item.HostConfig.PSObject.Properties.Name -contains "PortBindings" -and $item.HostConfig.PortBindings){
+      foreach($bindingGroup in $item.HostConfig.PortBindings.PSObject.Properties){
+        foreach($binding in @($bindingGroup.Value)){
+          if($null -eq $binding){ continue }
+          if(-not ($binding.PSObject.Properties.Name -contains "HostPort")){ continue }
+          $hostPortText = [string]$binding.HostPort
+          if([string]::IsNullOrWhiteSpace($hostPortText)){ continue }
+          $hostPort = 0
+          if([int]::TryParse($hostPortText,[ref]$hostPort)){
+            [void]$ports.Add($hostPort)
+          }
         }
       }
     }
+    if($ports.Count -gt 0){
+      $result[$name] = @($ports | Sort-Object)
+    }
   }
-  return ""
+
+  return $result
+}
+function Get-ContainersUsingHostPort([int]$port){
+  $bindings = Get-DockerHostPortBindings
+  $names = @()
+  foreach($name in $bindings.Keys){
+    foreach($p in @($bindings[$name])){
+      if([int]$p -eq $port){
+        $names += [string]$name
+        break
+      }
+    }
+  }
+  return @($names | Sort-Object -Unique)
+}
+function Resolve-AvailableHostPort([int]$requestedPort){
+  if($requestedPort -lt 1 -or $requestedPort -gt 65535){
+    throw "Host app port must be between 1 and 65535."
+  }
+
+  $bindings = Get-DockerHostPortBindings
+  $used = New-Object System.Collections.Generic.HashSet[int]
+  foreach($name in $bindings.Keys){
+    foreach($p in @($bindings[$name])){
+      [void]$used.Add([int]$p)
+    }
+  }
+
+  $candidate = [int]$requestedPort
+  while($candidate -le 65535){
+    if(-not $used.Contains($candidate)){ return $candidate }
+    $candidate++
+  }
+
+  throw "No available host port found from $requestedPort through 65535."
 }
 function Remove-LocalPortProxy([int]$listenPort){
   & netsh interface portproxy delete v4tov4 listenport=$listenPort listenaddress=127.0.0.1 *> $null
-}
-function Ensure-LocalPortProxy([int]$listenPort,[string]$connectAddress,[int]$connectPort){
-  if([string]::IsNullOrWhiteSpace($connectAddress)){
-    throw "connectAddress is required for local portproxy."
-  }
-  try { Set-Service -Name iphlpsvc -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
-  $iphlp = Get-Service -Name iphlpsvc -ErrorAction SilentlyContinue
-  if($iphlp -and $iphlp.Status -ne "Running"){
-    Start-Service -Name iphlpsvc
-  }
-
-  Remove-LocalPortProxy -listenPort $listenPort
-  & netsh interface portproxy add v4tov4 listenport=$listenPort listenaddress=127.0.0.1 connectport=$connectPort connectaddress=$connectAddress protocol=tcp | Out-Null
-  if($LASTEXITCODE -ne 0){
-    throw "Failed to configure local portproxy 127.0.0.1:${listenPort} -> ${connectAddress}:${connectPort}."
-  }
 }
 
 # ---------------- MAIN ----------------
@@ -763,9 +760,6 @@ $customerInputState = Load-CustomerInputState $customerInputStatePath
 $scriptPathDisplay = if([string]::IsNullOrWhiteSpace($PSCommandPath)){ "<interactive>" } else { $PSCommandPath }
 Write-Host "Deploy script: $scriptPathDisplay"
 Write-Host "Deploy script version: $($script:DeployScriptVersion)"
-if($Isolation -ne "hyperv"){
-  throw "This deployment requires Hyper-V isolation for Windows Server 2022 images on Windows Server 2025. Use -Isolation hyperv."
-}
 
 Install-ContainersFeature
 Ensure-HyperVRole
@@ -916,8 +910,6 @@ Write-Host ""
 Write-Host "ACR login (auth is computed automatically when needed)"
 $acrUser = Read-WithHistory -state $customerInputState -key "AcrUserName" -prompt "ACR username" -Required
 $acrPw   = Read-SecretWithHistory -state $customerInputState -key "AcrPassword" -prompt "ACR password" -Required
-# Computed auth for ACR login flow.
-$acrAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$acrUser`:$acrPw"))
 
 Write-Host ""
 $oidcJsonSource = Read-WithHistory -state $customerInputState -key "OidcJsonSourcePath" -prompt "Path to local OIDC JSON file for c:\data\oidc.json (blank = create {})"
@@ -1011,23 +1003,21 @@ if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
 
 $resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
 Write-Host "Container name selected: $resolvedContainerName"
+$resolvedHostAppPort = Resolve-AvailableHostPort -requestedPort $HostAppPort
+if($resolvedHostAppPort -ne $HostAppPort){
+  $portOwners = Get-ContainersUsingHostPort -port $HostAppPort
+  if($portOwners.Count -gt 0){
+    Write-Warning ("Requested host port {0} is already bound by container(s): {1}. Using {2} instead." -f $HostAppPort, ($portOwners -join ", "), $resolvedHostAppPort)
+  } else {
+    Write-Warning ("Requested host port {0} is unavailable. Using {1} instead." -f $HostAppPort, $resolvedHostAppPort)
+  }
+}
 $containerAttachmentPath = "c:\fileshare"
 $repoMountSource = Resolve-RepositoryMountSource -repoLocation $repoLocation
 Write-Host "Attachment repository mount: host '$repoMountSource' -> container '$containerAttachmentPath'"
 Download-ForensicsScriptToRepository -repoMountSource $repoMountSource
-$containerNetwork = ""
-if($Isolation -eq "hyperv"){
-  if(-not [string]::IsNullOrWhiteSpace($DockerNamespace)){
-    Write-Host "Docker namespace label: '$DockerNamespace'."
-  }
-  Write-Warning "Hyper-V isolation selected. Using default docker network (custom --network is skipped)."
-} else {
-  $containerNetwork = Ensure-DockerNamespaceNetwork -namespaceName $DockerNamespace
-  if([string]::IsNullOrWhiteSpace($containerNetwork)){
-    Write-Warning "Docker namespace network unavailable. Container will use default docker network."
-  } else {
-    Write-Host "Docker namespace: '$DockerNamespace' (network '$containerNetwork')."
-  }
+if(-not [string]::IsNullOrWhiteSpace($DockerNamespace)){
+  Write-Host "Docker namespace label: '$DockerNamespace'."
 }
 
 $envMap = @{
@@ -1082,9 +1072,6 @@ $runAttempts = @(
     AttemptIsolation = "hyperv"
     IncludeResourceLimits = $true
     IncludeIsolation = $true
-    IncludeNetwork = $true
-    IncludePortMapping = $true
-    IncludeBindMount = $true
   },
   [pscustomobject]@{
     Name = "hyperv-no-limits"
@@ -1092,17 +1079,11 @@ $runAttempts = @(
     AttemptIsolation = "hyperv"
     IncludeResourceLimits = $false
     IncludeIsolation = $true
-    IncludeNetwork = $true
-    IncludePortMapping = $true
-    IncludeBindMount = $true
   }
 )
 
 $runSucceeded = $false
 $runSucceededMode = ""
-$runUsedPortMapping = $true
-$lastRunErrorText = ""
-$containerIpViaPortProxy = ""
 
 for($i = 0; $i -lt $runAttempts.Count; $i++){
   $attempt = $runAttempts[$i]
@@ -1110,19 +1091,17 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
     Write-Warning $attempt.Message
   }
 
-  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -networkName $containerNetwork -hostPort $HostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $containerRootCaPath -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation -IncludeNetwork:$attempt.IncludeNetwork -IncludePortMapping:$attempt.IncludePortMapping -IncludeBindMount:$attempt.IncludeBindMount
+  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -hostPort $resolvedHostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $containerRootCaPath -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation
 
   try {
     DockerCli $attemptArgs
     $runSucceeded = $true
     $runSucceededMode = $attempt.Name
-    $runUsedPortMapping = [bool]$attempt.IncludePortMapping
     break
   } catch {
     $runErr = $script:LastContainerCliOutputText
     if([string]::IsNullOrWhiteSpace($runErr)){ $runErr = $_.Exception.Message }
-    $lastRunErrorText = $runErr
-    if((Is-ContainerCliNotImplemented $runErr) -or (Is-ContainerCliRecoverableNetworkBug $runErr)){
+    if(Is-ContainerCliNotImplemented $runErr){
       Remove-ContainerIfExists $resolvedContainerName
       continue
     }
@@ -1136,26 +1115,13 @@ if(-not $runSucceeded){
 if($runSucceededMode -ne "hyperv-standard"){
   Write-Warning "Container started in compatibility mode '$runSucceededMode'."
 }
-if($runUsedPortMapping){
-  Remove-LocalPortProxy -listenPort $HostAppPort
-} else {
-  $containerIpViaPortProxy = Get-ContainerIPv4 -name $resolvedContainerName
-  if([string]::IsNullOrWhiteSpace($containerIpViaPortProxy)){
-    throw "Container started without native port mapping, but container IP could not be determined for local portproxy setup."
-  }
-  Ensure-LocalPortProxy -listenPort $HostAppPort -connectAddress $containerIpViaPortProxy -connectPort 80
-  Write-Warning "Native port mapping is unavailable on this host. Using local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80."
-}
+Remove-LocalPortProxy -listenPort $resolvedHostAppPort
 
 Write-Host ""
 Write-Host "DONE."
 Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
 Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
-if($runUsedPortMapping){
-  Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
-} else {
-  Write-Host "Container '$resolvedContainerName' port path uses local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80 (internal only)"
-}
+Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$resolvedHostAppPort -> container :80 (internal only)"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
   Write-Host "Root CA cert injected at container startup from: $containerRootCaPath (store: Cert:\LocalMachine\Root)"

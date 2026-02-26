@@ -1,0 +1,28 @@
+# WinServerContainers Quick Notes
+
+## Prereqs
+- Run deployment as Administrator.
+- Windows feature `Containers` must be installed.
+- Windows feature `Hyper-V` must be installed.
+- Docker Engine (Docker CE) must be installed.
+
+## After VM Reboot
+- Ensure nginx is running before testing access.
+- Safe nginx command pattern:
+```powershell
+Set-Location C:\nginx
+if (Get-Process nginx -ErrorAction SilentlyContinue) {
+  nginx -s reload
+} else {
+  start nginx
+}
+```
+
+## Deploy / Add Containers
+- Default: run `.\Deploy-Profisee-SingleHost.ps1`.
+- On reruns, the script auto-picks the next container name (`profisee-0`, `profisee-1`, `profisee-2`, ...).
+- Host port is auto-resolved; if requested port is already used by any docker container, script increments to next free port.
+
+## Optional Overrides
+- Force a base name: `.\Deploy-Profisee-SingleHost.ps1 -ContainerName profisee`
+- Request a starting host port: `.\Deploy-Profisee-SingleHost.ps1 -HostAppPort 18080`
