@@ -4,7 +4,7 @@
 param(
   # Base name. Script auto-allocates next available suffix: <base>-0, <base>-1, ...
   [string]$ContainerName = "profisee",
-  [ValidateSet("process","hyperv")] [string]$Isolation = "process",
+  [ValidateSet("hyperv")] [string]$Isolation = "hyperv",
   [string]$DockerNamespace = "profisee",
 
   # Container port assumption: Profisee serves HTTP on 80 in-container.
@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.01"
+$script:DeployScriptVersion = "2026-02-26.02"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -917,6 +917,9 @@ $customerInputState = Load-CustomerInputState $customerInputStatePath
 $scriptPathDisplay = if([string]::IsNullOrWhiteSpace($PSCommandPath)){ "<interactive>" } else { $PSCommandPath }
 Write-Host "Deploy script: $scriptPathDisplay"
 Write-Host "Deploy script version: $($script:DeployScriptVersion)"
+if($Isolation -ne "hyperv"){
+  throw "This deployment requires Hyper-V isolation for Windows Server 2022 images on Windows Server 2025. Use -Isolation hyperv."
+}
 
 Install-ContainersFeature
 Install-DockerEngineLatest
@@ -1236,9 +1239,9 @@ $envMap.Keys | Sort-Object | Set-Content -Path $envListPath -Encoding ascii -For
 
 $runAttempts = @(
   [pscustomobject]@{
-    Name = "standard"
+    Name = "hyperv-standard"
     Message = ""
-    AttemptIsolation = $Isolation
+    AttemptIsolation = "hyperv"
     IncludeResourceLimits = $true
     IncludeIsolation = $true
     IncludeNetwork = $true
@@ -1246,48 +1249,8 @@ $runAttempts = @(
     IncludeBindMount = $true
   },
   [pscustomobject]@{
-    Name = "no-resource-limits"
-    Message = "docker run returned 'not implemented'. Retrying without --cpus/--memory."
-    AttemptIsolation = $Isolation
-    IncludeResourceLimits = $false
-    IncludeIsolation = $true
-    IncludeNetwork = $true
-    IncludePortMapping = $true
-    IncludeBindMount = $true
-  },
-  [pscustomobject]@{
-    Name = "no-explicit-isolation"
-    Message = "Retrying without explicit isolation."
-    AttemptIsolation = $Isolation
-    IncludeResourceLimits = $false
-    IncludeIsolation = $false
-    IncludeNetwork = $true
-    IncludePortMapping = $true
-    IncludeBindMount = $true
-  },
-  [pscustomobject]@{
-    Name = "no-port-mapping"
-    Message = "Retrying without port mapping (-p)."
-    AttemptIsolation = $Isolation
-    IncludeResourceLimits = $false
-    IncludeIsolation = $false
-    IncludeNetwork = $true
-    IncludePortMapping = $false
-    IncludeBindMount = $true
-  },
-  [pscustomobject]@{
-    Name = "hyperv-no-port-mapping"
-    Message = "Retrying with hyperv isolation and without port mapping."
-    AttemptIsolation = "hyperv"
-    IncludeResourceLimits = $false
-    IncludeIsolation = $true
-    IncludeNetwork = $true
-    IncludePortMapping = $false
-    IncludeBindMount = $true
-  },
-  [pscustomobject]@{
     Name = "hyperv-no-limits"
-    Message = "Retrying with hyperv isolation."
+    Message = "docker run returned 'not implemented'. Retrying with Hyper-V isolation and without --cpus/--memory."
     AttemptIsolation = "hyperv"
     IncludeResourceLimits = $false
     IncludeIsolation = $true
@@ -1330,9 +1293,9 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
 }
 
 if(-not $runSucceeded){
-  throw "docker run failed across all compatibility retries. This host likely does not support one or more required Windows container features (port mapping and/or bind mounts)."
+  throw "docker run failed while enforcing Hyper-V isolation. This host likely does not support one or more required Windows container features (Hyper-V isolation, port mapping, and/or bind mounts)."
 }
-if($runSucceededMode -ne "standard"){
+if($runSucceededMode -ne "hyperv-standard"){
   Write-Warning "Container started in compatibility mode '$runSucceededMode'."
 }
 if($runUsedPortMapping){
