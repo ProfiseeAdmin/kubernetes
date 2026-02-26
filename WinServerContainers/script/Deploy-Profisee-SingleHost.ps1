@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.13"
+$script:DeployScriptVersion = "2026-02-26.14"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -748,6 +748,73 @@ function Resolve-AvailableHostPort([int]$requestedPort){
 
   throw "No available host port found from $requestedPort through 65535."
 }
+function Get-ContainerBaseName([string]$containerName){
+  if([string]::IsNullOrWhiteSpace($containerName)){ return "profisee" }
+  $trimmed = $containerName.Trim()
+  $m = [regex]::Match($trimmed,"^(.*)-\d+$")
+  if($m.Success -and -not [string]::IsNullOrWhiteSpace($m.Groups[1].Value)){
+    return $m.Groups[1].Value
+  }
+  return $trimmed
+}
+function Get-ProfiseeContainerHostPorts([string]$containerName){
+  $baseName = Get-ContainerBaseName -containerName $containerName
+  $pattern = "^{0}-\d+$" -f [regex]::Escape($baseName)
+  $bindings = Get-DockerHostPortBindings
+
+  $ports = @()
+  foreach($name in $bindings.Keys){
+    if([string]::IsNullOrWhiteSpace($name)){ continue }
+    if($name -inotmatch $pattern){ continue }
+    foreach($p in @($bindings[$name])){
+      $portValue = 0
+      if([int]::TryParse([string]$p,[ref]$portValue) -and $portValue -gt 0){
+        $ports += $portValue
+      }
+    }
+  }
+  return @($ports | Sort-Object -Unique)
+}
+function Set-NginxProfiseeUpstreamServers([int[]]$hostPorts){
+  $ports = @($hostPorts | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+  if($ports.Count -lt 1){
+    throw "At least one host port is required to update nginx profisee_upstream."
+  }
+
+  $confPath = Join-Path $NginxRoot "conf\nginx.conf"
+  if(-not (Test-Path -LiteralPath $confPath)){
+    throw "nginx.conf not found at: $confPath"
+  }
+
+  $conf = Get-Content -Raw -LiteralPath $confPath
+  if([string]::IsNullOrWhiteSpace($conf)){
+    throw "nginx.conf is empty at: $confPath"
+  }
+
+  $upstreamMatch = [regex]::Match($conf,"(?s)(upstream\s+profisee_upstream\s*\{)(.*?)(\})")
+  if(-not $upstreamMatch.Success){
+    throw "Could not locate upstream block 'profisee_upstream' in nginx.conf."
+  }
+
+  $existingBody = $upstreamMatch.Groups[2].Value
+  $keepaliveDirective = "keepalive 32;"
+  foreach($line in @($existingBody -split "`r?`n")){
+    if($line -match '^\s*keepalive\s+\d+\s*;'){
+      $keepaliveDirective = $line.Trim()
+      break
+    }
+  }
+
+  $serverLines = @()
+  foreach($port in $ports){
+    $serverLines += "        server 127.0.0.1:$port;"
+  }
+  $serverLines += "        $keepaliveDirective"
+
+  $newBlock = "$($upstreamMatch.Groups[1].Value)`r`n" + ($serverLines -join "`r`n") + "`r`n    }"
+  $updatedConf = $conf.Substring(0,$upstreamMatch.Index) + $newBlock + $conf.Substring($upstreamMatch.Index + $upstreamMatch.Length)
+  Set-Content -LiteralPath $confPath -Value $updatedConf -Encoding ascii -Force
+}
 function Remove-LocalPortProxy([int]$listenPort){
   & netsh interface portproxy delete v4tov4 listenport=$listenPort listenaddress=127.0.0.1 *> $null
 }
@@ -1117,6 +1184,15 @@ if($runSucceededMode -ne "hyperv-standard"){
 }
 Remove-LocalPortProxy -listenPort $resolvedHostAppPort
 
+$nginxBackendPorts = @(Get-ProfiseeContainerHostPorts -containerName $resolvedContainerName)
+if($nginxBackendPorts.Count -lt 1){
+  $nginxBackendPorts = @($resolvedHostAppPort)
+}
+Set-NginxProfiseeUpstreamServers -hostPorts $nginxBackendPorts
+Start-Nginx
+$nginxBackendsDisplay = @($nginxBackendPorts | ForEach-Object { "127.0.0.1:$($_)" }) -join ", "
+Write-Host "nginx upstream profisee_upstream backends: $nginxBackendsDisplay"
+
 Write-Host ""
 Write-Host "DONE."
 Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
@@ -1141,12 +1217,6 @@ Write-Host ""
 Write-Host "docker ps -a"
 & docker ps -a 2>&1 | Out-Host
 
-$traceContainer = "profisee-0"
-& docker container inspect $traceContainer *> $null
-if($LASTEXITCODE -ne 0){
-  $traceContainer = $resolvedContainerName
-}
-
 Write-Host ""
-Write-Host "Streaming logs (Ctrl+C to stop): docker logs -f $traceContainer"
-& docker logs -f $traceContainer 2>&1 | Out-Host
+Write-Host "Streaming logs (Ctrl+C to stop): docker logs -f $resolvedContainerName"
+& docker logs -f $resolvedContainerName 2>&1 | Out-Host

@@ -22,6 +22,7 @@ if (Get-Process nginx -ErrorAction SilentlyContinue) {
 - Default: run `.\Deploy-Profisee-SingleHost.ps1`.
 - On reruns, the script auto-picks the next container name (`profisee-0`, `profisee-1`, `profisee-2`, ...).
 - Host port is auto-resolved; if requested port is already used by any docker container, script increments to next free port.
+- At the end of each run, nginx upstream `profisee_upstream` is rebuilt from `profisee-*` containers and nginx is reloaded.
 
 ## Optional Overrides
 - Force a base name: `.\Deploy-Profisee-SingleHost.ps1 -ContainerName profisee`
