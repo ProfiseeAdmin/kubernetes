@@ -975,7 +975,7 @@ $sqlUser   = Read-WithHistory -state $customerInputState -key "ProfiseeSqlUserNa
 $sqlPass   = Read-SecretWithHistory -state $customerInputState -key "ProfiseeSqlPassword" -prompt "ProfiseeSqlPassword" -Required
 
 Write-Host ""
-$repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (host path to mount, UNC or local, e.g. \\server\share or C:\r4fileshare)" -Required
+$repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (host path to mount, UNC or local, e.g. \\server\share or C:\localfolder)" -Required
 $repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required
 $repoPass     = Read-SecretWithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserPassword" -prompt "ProfiseeAttachmentRepositoryUserPassword" -Required
 $repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -prompt "ProfiseeAttachmentRepositoryLogonType" -defaultValue "NewCredentials" -Required
