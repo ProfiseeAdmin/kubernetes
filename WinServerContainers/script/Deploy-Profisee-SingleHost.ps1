@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.12"
+$script:DeployScriptVersion = "2026-02-26.13"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -664,7 +664,7 @@ function Get-DockerHostPortBindings{
   } catch {
     $ids = @()
   }
-  if(-not $ids -or $ids.Count -lt 1){ return $result }
+  if(-not $ids -or @($ids).Count -lt 1){ return $result }
 
   $inspectLines = @()
   & docker inspect $ids 2>&1 | Tee-Object -Variable inspectLines | Out-Null
