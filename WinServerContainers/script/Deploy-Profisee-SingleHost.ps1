@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.05"
+$script:DeployScriptVersion = "2026-02-26.06"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -228,7 +228,12 @@ function Ensure-HyperVRole {
   if(-not $hyperV.Installed){
     throw "Install Windows feature: Hyper-V (Install-WindowsFeature Hyper-V -IncludeManagementTools) and rerun."
   }
-  Assert-HyperVPrerequisites
+  try {
+    Assert-HyperVPrerequisites
+  } catch {
+    Write-Warning "Hyper-V prerequisite probe reported: $($_.Exception.Message)"
+    Write-Warning "Proceeding because Hyper-V role is installed. If platform support is unavailable, docker run with --isolation=hyperv will fail later."
+  }
   Write-Host "Hyper-V role is installed."
 }
 function Ensure-DockerService([switch]$ForceRestart){
