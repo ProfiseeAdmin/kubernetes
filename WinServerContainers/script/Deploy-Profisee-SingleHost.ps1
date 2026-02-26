@@ -13,8 +13,6 @@ param(
   [string]$NginxRoot = "C:\nginx",
   [string]$WorkDir = "C:\ProfiseeDeploy",
 
-  # For parity/reference as you requested
-  [string]$SettingsYamlUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/Azure-ARM/Settings.yaml",
   [string]$NginxConfUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/WinServerContainers/nginx-config/nginx.conf",
   [string]$ForensicsScriptUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/refs/heads/master/Azure-ARM/forensics_log_pull.ps1"
 )
@@ -265,12 +263,6 @@ function Install-DockerEngineLatest {
   Ensure-DockerService
 }
 
-function Download-SettingsYamlTemplate {
-  Ensure-Dir $WorkDir
-  $dst = Join-Path $WorkDir "Settings.yaml"
-  Invoke-WebRequest -Uri $SettingsYamlUrl -OutFile $dst
-  Write-Host "Downloaded Settings.yaml template to $dst"
-}
 function Download-NginxConfTemplate {
   Ensure-Dir $WorkDir
   Ensure-Dir "$NginxRoot\conf"
@@ -779,7 +771,6 @@ Install-ContainersFeature
 Ensure-HyperVRole
 Install-DockerEngineLatest
 Install-NginxStable
-Download-SettingsYamlTemplate
 
 # ---- Ask image (no static) ----
 Write-Host ""
@@ -925,7 +916,7 @@ Write-Host ""
 Write-Host "ACR login (auth is computed automatically when needed)"
 $acrUser = Read-WithHistory -state $customerInputState -key "AcrUserName" -prompt "ACR username" -Required
 $acrPw   = Read-SecretWithHistory -state $customerInputState -key "AcrPassword" -prompt "ACR password" -Required
-# Computed for Settings.yaml parity/reference (docker login uses --password-stdin).
+# Computed auth for ACR login flow.
 $acrAuth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$acrUser`:$acrPw"))
 
 Write-Host ""
@@ -1165,7 +1156,6 @@ if($runUsedPortMapping){
 } else {
   Write-Host "Container '$resolvedContainerName' port path uses local portproxy 127.0.0.1:$HostAppPort -> ${containerIpViaPortProxy}:80 (internal only)"
 }
-Write-Host "Settings.yaml downloaded to: $(Join-Path $WorkDir 'Settings.yaml')"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
   Write-Host "Root CA cert injected at container startup from: $containerRootCaPath (store: Cert:\LocalMachine\Root)"
