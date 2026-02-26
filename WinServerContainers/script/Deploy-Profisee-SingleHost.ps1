@@ -22,7 +22,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.14"
+$script:DeployScriptVersion = "2026-02-26.16"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -893,15 +893,14 @@ Write-Host ""
 $repoLocation = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLocation" -prompt "ProfiseeAttachmentRepositoryLocation (host path to mount, UNC or local, e.g. \\server\share or C:\localfolder)" -Required
 $repoUser     = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserName" -prompt "ProfiseeAttachmentRepositoryUserName" -Required
 $repoPass     = Read-SecretWithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryUserPassword" -prompt "ProfiseeAttachmentRepositoryUserPassword" -Required
-$repoLogon    = Read-WithHistory -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -prompt "ProfiseeAttachmentRepositoryLogonType" -defaultValue "NewCredentials" -Required
+$repoLogon    = "NewCredentials"
+Set-StateInput -state $customerInputState -key "ProfiseeAttachmentRepositoryLogonType" -value $repoLogon
+Persist-CustomerInputState -state $customerInputState
 
 Write-Host ""
 $adminAccount = Read-WithHistory -state $customerInputState -key "ProfiseeAdminAccount" -prompt "ProfiseeAdminAccount (email/username)" -Required
 $externalUrl  = Read-WithHistory -state $customerInputState -key "ProfiseeExternalDNSUrl" -prompt "ProfiseeExternalDNSUrl (e.g. https://something.com)" -Required
 $webAppName = Read-WithHistory -state $customerInputState -key "ProfiseeWebAppName" -prompt "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)" -Required
-
-Download-NginxConfTemplate
-Start-Nginx
 
 Write-Host ""
 $oidcProvider  = Read-WithHistory -state $customerInputState -key "ProfiseeOidcName" -prompt "ProfiseeOidcName (Entra/Okta)" -defaultValue "Entra" -Required
@@ -1188,6 +1187,7 @@ $nginxBackendPorts = @(Get-ProfiseeContainerHostPorts -containerName $resolvedCo
 if($nginxBackendPorts.Count -lt 1){
   $nginxBackendPorts = @($resolvedHostAppPort)
 }
+Download-NginxConfTemplate
 Set-NginxProfiseeUpstreamServers -hostPorts $nginxBackendPorts
 Start-Nginx
 $nginxBackendsDisplay = @($nginxBackendPorts | ForEach-Object { "127.0.0.1:$($_)" }) -join ", "
