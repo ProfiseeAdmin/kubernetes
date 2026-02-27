@@ -6,6 +6,13 @@
 - Host must also have Windows feature `Containers` installed.
 - Windows Server 2025 with Hyper-V isolation should be able to run Profisee images based on Server 2022, but Profisee recommends matching host OS and container image OS versions whenever possible.
 
+### Quick Feature Enable Script
+Run in elevated PowerShell on the host/VM:
+```powershell
+Install-WindowsFeature -Name Containers,Hyper-V -IncludeManagementTools
+Restart-Computer -Force
+```
+
 ## Deployment Prerequisites
 - Run deployment as Administrator.
 - Docker Engine (Docker CE) is installed/updated automatically by `Deploy-Profisee-SingleHost.ps1`.
