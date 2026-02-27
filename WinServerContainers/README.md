@@ -18,12 +18,13 @@ if (Get-Process nginx -ErrorAction SilentlyContinue) {
 }
 ```
 
-## Deploy / Add Containers
+## Deploy
 - Default: run `.\Deploy-Profisee-SingleHost.ps1`.
-- On reruns, the script auto-picks the next container name (`profisee-0`, `profisee-1`, `profisee-2`, ...).
-- Host port is auto-resolved; if requested port is already used by any docker container, script increments to next free port.
-- At the end of each run, script downloads `nginx.conf`, rebuilds upstream `profisee_upstream` from `profisee-*` containers, then reloads nginx.
+- Script deploys a single container; default name is `profisee-0`.
+- On rerun with the same name, existing container is removed and recreated.
+- Host port is fixed to `HostAppPort` (default `18080`).
+- At the end of each run, script downloads `nginx.conf` and reloads nginx.
 
 ## Optional Overrides
-- Force a base name: `.\Deploy-Profisee-SingleHost.ps1 -ContainerName profisee`
-- Request a starting host port: `.\Deploy-Profisee-SingleHost.ps1 -HostAppPort 18080`
+- Set container name: `.\Deploy-Profisee-SingleHost.ps1 -ContainerName profisee-0`
+- Set host port: `.\Deploy-Profisee-SingleHost.ps1 -HostAppPort 18080`

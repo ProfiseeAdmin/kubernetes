@@ -2,10 +2,9 @@
 #requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-  # Base name. Script auto-allocates next available suffix: <base>-0, <base>-1, ...
-  [string]$ContainerName = "profisee",
+  # Single-container name.
+  [string]$ContainerName = "profisee-0",
   [ValidateSet("hyperv")] [string]$Isolation = "hyperv",
-  [string]$DockerNamespace = "profisee",
 
   # Container port assumption: Profisee serves HTTP on 80 in-container.
   [int]$HostAppPort = 18080,
@@ -22,7 +21,7 @@ $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $script:CustomerInputStatePath = $null
 $script:LastContainerCliOutputText = ""
-$script:DeployScriptVersion = "2026-02-26.16"
+$script:DeployScriptVersion = "2026-02-26.18"
 
 function Ensure-Dir([string]$p){ if(-not(Test-Path $p)){ New-Item -ItemType Directory -Path $p | Out-Null } }
 function SecureToPlain([Security.SecureString]$s){
@@ -575,7 +574,6 @@ function Download-ForensicsScriptToRepository([string]$repoMountSource){
 function Build-ContainerRunArgs(
   [string]$name,
   [string]$isolation,
-  [string]$dockerNamespace,
   [int]$hostPort,
   [string]$hostDataDir,
   [string]$repoMountSource,
@@ -593,9 +591,6 @@ function Build-ContainerRunArgs(
     "--name",$name,
     "--hostname",$name
   )
-  if(-not [string]::IsNullOrWhiteSpace($dockerNamespace)){
-    $args += @("--label","profisee.namespace=$dockerNamespace")
-  }
 
   if($IncludeIsolation -and -not [string]::IsNullOrWhiteSpace($isolation)){
     $args += @("--isolation",$isolation)
@@ -627,193 +622,6 @@ function Remove-ContainerIfExists([string]$name){
   if($LASTEXITCODE -eq 0){
     DockerCli @("rm","-f",$name)
   }
-}
-function Resolve-NextContainerName([string]$baseName){
-  if([string]::IsNullOrWhiteSpace($baseName)){ $baseName = "profisee" }
-  $trimmed = $baseName.Trim()
-  if($trimmed -match '-\d+$'){
-    return $trimmed
-  }
-
-  $names = @()
-  try {
-    $names = (& docker ps -a --format "{{.Names}}" 2>$null | ForEach-Object { [string]$_ })
-  } catch {
-    $names = @()
-  }
-
-  $pattern = "^{0}-(\d+)$" -f [regex]::Escape($trimmed)
-  $maxIndex = -1
-  foreach($n in $names){
-    if([string]::IsNullOrWhiteSpace($n)){ continue }
-    $m = [regex]::Match($n,$pattern)
-    if($m.Success){
-      try {
-        $i = [int]$m.Groups[1].Value
-        if($i -gt $maxIndex){ $maxIndex = $i }
-      } catch {}
-    }
-  }
-  return "$trimmed-$($maxIndex + 1)"
-}
-function Get-DockerHostPortBindings{
-  $result = @{}
-  $ids = @()
-  try {
-    $ids = (& docker ps -aq 2>$null | ForEach-Object { [string]$_ })
-  } catch {
-    $ids = @()
-  }
-  if(-not $ids -or @($ids).Count -lt 1){ return $result }
-
-  $inspectLines = @()
-  & docker inspect $ids 2>&1 | Tee-Object -Variable inspectLines | Out-Null
-  if($LASTEXITCODE -ne 0){ return $result }
-  $inspectText = (($inspectLines | ForEach-Object { [string]$_ }) -join "`n")
-  if([string]::IsNullOrWhiteSpace($inspectText)){ return $result }
-
-  try {
-    $items = $inspectText | ConvertFrom-Json -ErrorAction Stop
-  } catch {
-    return $result
-  }
-
-  foreach($item in @($items)){
-    if($null -eq $item){ continue }
-
-    $name = ""
-    if($item.PSObject.Properties.Name -contains "Name" -and -not [string]::IsNullOrWhiteSpace([string]$item.Name)){
-      $name = [string]$item.Name
-      if($name.StartsWith("/")){ $name = $name.Substring(1) }
-    } elseif($item.PSObject.Properties.Name -contains "Id" -and -not [string]::IsNullOrWhiteSpace([string]$item.Id)){
-      $idText = [string]$item.Id
-      $name = if($idText.Length -gt 12){ $idText.Substring(0,12) } else { $idText }
-    }
-    if([string]::IsNullOrWhiteSpace($name)){ continue }
-
-    $ports = New-Object System.Collections.Generic.HashSet[int]
-    if($item.PSObject.Properties.Name -contains "HostConfig" -and $item.HostConfig -and
-       $item.HostConfig.PSObject.Properties.Name -contains "PortBindings" -and $item.HostConfig.PortBindings){
-      foreach($bindingGroup in $item.HostConfig.PortBindings.PSObject.Properties){
-        foreach($binding in @($bindingGroup.Value)){
-          if($null -eq $binding){ continue }
-          if(-not ($binding.PSObject.Properties.Name -contains "HostPort")){ continue }
-          $hostPortText = [string]$binding.HostPort
-          if([string]::IsNullOrWhiteSpace($hostPortText)){ continue }
-          $hostPort = 0
-          if([int]::TryParse($hostPortText,[ref]$hostPort)){
-            [void]$ports.Add($hostPort)
-          }
-        }
-      }
-    }
-    if($ports.Count -gt 0){
-      $result[$name] = @($ports | Sort-Object)
-    }
-  }
-
-  return $result
-}
-function Get-ContainersUsingHostPort([int]$port){
-  $bindings = Get-DockerHostPortBindings
-  $names = @()
-  foreach($name in $bindings.Keys){
-    foreach($p in @($bindings[$name])){
-      if([int]$p -eq $port){
-        $names += [string]$name
-        break
-      }
-    }
-  }
-  return @($names | Sort-Object -Unique)
-}
-function Resolve-AvailableHostPort([int]$requestedPort){
-  if($requestedPort -lt 1 -or $requestedPort -gt 65535){
-    throw "Host app port must be between 1 and 65535."
-  }
-
-  $bindings = Get-DockerHostPortBindings
-  $used = New-Object System.Collections.Generic.HashSet[int]
-  foreach($name in $bindings.Keys){
-    foreach($p in @($bindings[$name])){
-      [void]$used.Add([int]$p)
-    }
-  }
-
-  $candidate = [int]$requestedPort
-  while($candidate -le 65535){
-    if(-not $used.Contains($candidate)){ return $candidate }
-    $candidate++
-  }
-
-  throw "No available host port found from $requestedPort through 65535."
-}
-function Get-ContainerBaseName([string]$containerName){
-  if([string]::IsNullOrWhiteSpace($containerName)){ return "profisee" }
-  $trimmed = $containerName.Trim()
-  $m = [regex]::Match($trimmed,"^(.*)-\d+$")
-  if($m.Success -and -not [string]::IsNullOrWhiteSpace($m.Groups[1].Value)){
-    return $m.Groups[1].Value
-  }
-  return $trimmed
-}
-function Get-ProfiseeContainerHostPorts([string]$containerName){
-  $baseName = Get-ContainerBaseName -containerName $containerName
-  $pattern = "^{0}-\d+$" -f [regex]::Escape($baseName)
-  $bindings = Get-DockerHostPortBindings
-
-  $ports = @()
-  foreach($name in $bindings.Keys){
-    if([string]::IsNullOrWhiteSpace($name)){ continue }
-    if($name -inotmatch $pattern){ continue }
-    foreach($p in @($bindings[$name])){
-      $portValue = 0
-      if([int]::TryParse([string]$p,[ref]$portValue) -and $portValue -gt 0){
-        $ports += $portValue
-      }
-    }
-  }
-  return @($ports | Sort-Object -Unique)
-}
-function Set-NginxProfiseeUpstreamServers([int[]]$hostPorts){
-  $ports = @($hostPorts | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
-  if($ports.Count -lt 1){
-    throw "At least one host port is required to update nginx profisee_upstream."
-  }
-
-  $confPath = Join-Path $NginxRoot "conf\nginx.conf"
-  if(-not (Test-Path -LiteralPath $confPath)){
-    throw "nginx.conf not found at: $confPath"
-  }
-
-  $conf = Get-Content -Raw -LiteralPath $confPath
-  if([string]::IsNullOrWhiteSpace($conf)){
-    throw "nginx.conf is empty at: $confPath"
-  }
-
-  $upstreamMatch = [regex]::Match($conf,"(?s)(upstream\s+profisee_upstream\s*\{)(.*?)(\})")
-  if(-not $upstreamMatch.Success){
-    throw "Could not locate upstream block 'profisee_upstream' in nginx.conf."
-  }
-
-  $existingBody = $upstreamMatch.Groups[2].Value
-  $keepaliveDirective = "keepalive 32;"
-  foreach($line in @($existingBody -split "`r?`n")){
-    if($line -match '^\s*keepalive\s+\d+\s*;'){
-      $keepaliveDirective = $line.Trim()
-      break
-    }
-  }
-
-  $serverLines = @()
-  foreach($port in $ports){
-    $serverLines += "        server 127.0.0.1:$port;"
-  }
-  $serverLines += "        $keepaliveDirective"
-
-  $newBlock = "$($upstreamMatch.Groups[1].Value)`r`n" + ($serverLines -join "`r`n") + "`r`n    }"
-  $updatedConf = $conf.Substring(0,$upstreamMatch.Index) + $newBlock + $conf.Substring($upstreamMatch.Index + $upstreamMatch.Length)
-  Set-Content -LiteralPath $confPath -Value $updatedConf -Encoding ascii -Force
 }
 function Remove-LocalPortProxy([int]$listenPort){
   & netsh interface portproxy delete v4tov4 listenport=$listenPort listenaddress=127.0.0.1 *> $null
@@ -1067,24 +875,14 @@ if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
   Write-Host "Container startup bootstrap enabled: Root CA import runs before app startup."
 }
 
-$resolvedContainerName = Resolve-NextContainerName -baseName $ContainerName
+$resolvedContainerName = if([string]::IsNullOrWhiteSpace($ContainerName)){ "profisee-0" } else { $ContainerName.Trim() }
 Write-Host "Container name selected: $resolvedContainerName"
-$resolvedHostAppPort = Resolve-AvailableHostPort -requestedPort $HostAppPort
-if($resolvedHostAppPort -ne $HostAppPort){
-  $portOwners = @(Get-ContainersUsingHostPort -port $HostAppPort)
-  if($portOwners.Count -gt 0){
-    Write-Warning ("Requested host port {0} is already bound by container(s): {1}. Using {2} instead." -f $HostAppPort, ($portOwners -join ", "), $resolvedHostAppPort)
-  } else {
-    Write-Warning ("Requested host port {0} is unavailable. Using {1} instead." -f $HostAppPort, $resolvedHostAppPort)
-  }
-}
+Remove-ContainerIfExists -name $resolvedContainerName
+
 $containerAttachmentPath = "c:\fileshare"
 $repoMountSource = Resolve-RepositoryMountSource -repoLocation $repoLocation
 Write-Host "Attachment repository mount: host '$repoMountSource' -> container '$containerAttachmentPath'"
 Download-ForensicsScriptToRepository -repoMountSource $repoMountSource
-if(-not [string]::IsNullOrWhiteSpace($DockerNamespace)){
-  Write-Host "Docker namespace label: '$DockerNamespace'."
-}
 
 $envMap = @{
   "ProfiseeAdditionalOpenIdConnectProvidersFile" = "c:\data\oidc.json"
@@ -1157,7 +955,7 @@ for($i = 0; $i -lt $runAttempts.Count; $i++){
     Write-Warning $attempt.Message
   }
 
-  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -dockerNamespace $DockerNamespace -hostPort $resolvedHostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $containerRootCaPath -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation
+  $attemptArgs = Build-ContainerRunArgs -name $resolvedContainerName -isolation $attempt.AttemptIsolation -hostPort $HostAppPort -hostDataDir $hostDataDir -repoMountSource $repoMountSource -cpuLimit $cpuLimit -memoryLimit $memLimit -envMap $envMap -image $image -startupCommandBase64 $startupCommandBase64 -rootCaContainerPath $containerRootCaPath -IncludeResourceLimits:$attempt.IncludeResourceLimits -IncludeIsolation:$attempt.IncludeIsolation
 
   try {
     DockerCli $attemptArgs
@@ -1181,23 +979,15 @@ if(-not $runSucceeded){
 if($runSucceededMode -ne "hyperv-standard"){
   Write-Warning "Container started in compatibility mode '$runSucceededMode'."
 }
-Remove-LocalPortProxy -listenPort $resolvedHostAppPort
-
-$nginxBackendPorts = @(Get-ProfiseeContainerHostPorts -containerName $resolvedContainerName)
-if($nginxBackendPorts.Count -lt 1){
-  $nginxBackendPorts = @($resolvedHostAppPort)
-}
+Remove-LocalPortProxy -listenPort $HostAppPort
 Download-NginxConfTemplate
-Set-NginxProfiseeUpstreamServers -hostPorts $nginxBackendPorts
 Start-Nginx
-$nginxBackendsDisplay = @($nginxBackendPorts | ForEach-Object { "127.0.0.1:$($_)" }) -join ", "
-Write-Host "nginx upstream profisee_upstream backends: $nginxBackendsDisplay"
 
 Write-Host ""
 Write-Host "DONE."
 Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
 Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
-Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$resolvedHostAppPort -> container :80 (internal only)"
+Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
 if(-not [string]::IsNullOrWhiteSpace($containerRootCaPath)){
   Write-Host "Root CA cert injected at container startup from: $containerRootCaPath (store: Cert:\LocalMachine\Root)"
