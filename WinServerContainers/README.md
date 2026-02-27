@@ -66,6 +66,7 @@ if (Get-Process nginx -ErrorAction SilentlyContinue) {
 
 ## Helpful Docker Commands
 - Important:
+  - `Deploy-Profisee-SingleHost.ps1` retains prior run values; on reruns it is often "press Enter through prompts" unless a value changed.
   - Running only `docker run <image>` is not sufficient for Profisee.
   - The container requires deployment environment variables and mounts (provided by `Deploy-Profisee-SingleHost.ps1`).
   - Use the deployment script for normal startup/redeploy instead of a bare `docker run`.
