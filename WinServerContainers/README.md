@@ -1,6 +1,7 @@
 DEVELOPMENT
 
 # Windows Server Containers Quick Notes
+This repository would help you deploy Profisee's containerized application onto a Windows Server 2022+ Host.
 
 ## Hardware Prerequisites
 - Profisee Windows container image is currently based on Windows Server 2022.
