@@ -8,6 +8,7 @@ This repository would help you deploy Profisee's containerized application onto 
 - Deployment uses Hyper-V isolation; host must have Windows feature `Hyper-V` installed.
 - Host must also have Windows feature `Containers` installed.
 - Windows Server 2025 with Hyper-V isolation should be able to run Profisee images based on Server 2022, but Profisee recommends matching host OS and container image OS versions whenever possible.
+- The SQL database must be precreated, and the SQL user granted DBO on it.
 
 ### Quick Feature Enable Script
 Run in elevated PowerShell on the host/VM:
