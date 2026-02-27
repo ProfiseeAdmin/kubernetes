@@ -21,6 +21,7 @@ Restart-Computer -Force
 - Docker Engine (Docker CE) is installed/updated automatically by `Deploy-Profisee-SingleHost.ps1`.
 - nginx Open Source for Windows is installed/updated automatically from `nginx.org`.
 - `nginx.conf` is downloaded from the WinServerContainers repo during deployment.
+- The deployment must be excluded from being scanned by MS Defender. You will need to work with your security team to obtain the necessary exceptions.
 
 ## Customer Prep Checklist
 - Decide the production FQDN before deployment (example: `app.company.com`).
