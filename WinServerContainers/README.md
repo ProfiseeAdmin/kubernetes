@@ -1,4 +1,6 @@
-# WinServerContainers Quick Notes
+DEVELOPMENT
+
+# Windows Server Containers Quick Notes
 
 ## Hardware Prerequisites
 - Profisee Windows container image is currently based on Windows Server 2022.
