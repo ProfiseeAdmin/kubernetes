@@ -500,10 +500,8 @@ locals {
   profisee_deploy_command        = <<-EOT
 set -eo pipefail
 
-LOG_LEVEL="$${profisee_deploy_LOG_LEVEL:-info}"
 log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
 log_err() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >&2; }
-log_debug() { if [ "$LOG_LEVEL" = "debug" ]; then log "$*"; fi }
 run() {
   local desc="$1"
   shift
@@ -518,59 +516,6 @@ run() {
 trap 'rc=$?; log "Exit code $rc";' EXIT
 
 export ACCEPT_EULA=Y
-CURL_RETRY_OPTS="--retry 5 --retry-delay 2 --retry-connrefused --retry-max-time 60"
-
-curl_step() {
-  local desc="$1"
-  local url="$2"
-  local out="$3"
-  log "$desc..."
-  local http=""
-  http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/profisee-deploy-step.log)
-  local rc=$?
-  if [ $rc -ne 0 ]; then
-    log "FAILED: $desc (curl exit $rc)"
-    sed -n '1,120p' /tmp/profisee-deploy-step.log || true
-    return 1
-  fi
-  if [ "$http" -ge 400 ] 2>/dev/null; then
-    log "FAILED: $desc (HTTP $http)"
-    sed -n '1,120p' /tmp/profisee-deploy-step.log || true
-    return 1
-  fi
-  log "OK: $desc"
-  log_debug "curl url: $url (http $http)"
-  return 0
-}
-
-download_tar_gz() {
-  local desc="$1"
-  local url="$2"
-  local out="$3"
-  local attempts=3
-  local i=1
-  while [ $i -le $attempts ]; do
-    log "$desc (attempt $i/$attempts)..."
-    local http=""
-    http=$(curl -sS -L $CURL_RETRY_OPTS -w "%%{http_code}" -o "$out" "$url" 2>/tmp/profisee-deploy-step.log)
-    local rc=$?
-    if [ $rc -ne 0 ]; then
-      log "FAILED: $desc (curl exit $rc)"
-      sed -n '1,120p' /tmp/profisee-deploy-step.log || true
-    elif [ "$http" -ge 400 ] 2>/dev/null; then
-      log "FAILED: $desc (HTTP $http)"
-    elif tar -tzf "$out" >/dev/null 2>&1; then
-      log "OK: $desc"
-      return 0
-    else
-      log "FAILED: $desc (invalid tar.gz)"
-    fi
-    rm -f "$out"
-    i=$((i + 1))
-    sleep 2
-  done
-  return 1
-}
 
 log "Using prebuilt profisee-deploy tools image; skipping tool installation."
 
@@ -925,54 +870,64 @@ if [ -n "$windows_nodes" ] && [ "$windows_nodes" -gt 0 ] 2>/dev/null; then
     log "VPC CNI Windows IPAM already enabled."
   fi
 fi
-  log "Ensuring Traefik (NLB)..."
-  need_traefik_upgrade=1
-  if helm status traefik -n traefik >/dev/null 2>&1; then
-    current_os=$(kubectl get deploy traefik -n traefik -o jsonpath='{.spec.template.spec.nodeSelector.kubernetes\.io/os}' 2>/dev/null || true)
-    sg_anno=$(kubectl get svc traefik -n traefik -o jsonpath='{.metadata.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-security-groups}' 2>/dev/null || true)
-    if [ "$current_os" = "linux" ] && [ -z "$sg_anno" ]; then
-      need_traefik_upgrade=0
-    fi
-  fi
-  if [ "$need_traefik_upgrade" -eq 1 ]; then
-  cat > /tmp/traefik-values.yaml <<YAML
-providers:
-  kubernetesIngress:
-    enabled: true
-  kubernetesIngressNginx:
-    enabled: false
-
-service:
-  type: LoadBalancer
-  annotations:
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb
-nodeSelector:
-  kubernetes.io/os: linux
+  log "Ensuring NGINX OSS ingress controller (NLB)..."
+  cat > /tmp/nginx-oss-values.yaml <<YAML
+controller:
+  nginxplus: false
+  ingressClass:
+    name: nginx
+    create: true
+    setAsDefaultIngress: false
+  config:
+    entries:
+      client-header-buffer-size: "512k"
+      client-body-buffer-size: "512k"
+      large-client-header-buffers: "32 512k"
+      proxy-buffer-size: "512k"
+      proxy-buffering: "off"
+      proxy-buffers: "32 512k"
+      proxy-busy-buffers-size: "512k"
+      proxy-connect-timeout: "5400"
+      proxy-next-upstream: "off"
+      proxy-read-timeout: "5400"
+      proxy-request-buffering: "off"
+      proxy-send-timeout: "5400"
+  defaultTLS:
+    secret: profisee/profisee-tls-ingress
+  nodeSelector:
+    kubernetes.io/os: linux
+  replicaCount: 1
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
 YAML
-  run "Add Traefik Helm repo" helm repo add traefik https://traefik.github.io/charts --force-update
-  run "Update Helm repos" helm repo update
-  run "Install/Upgrade Traefik" helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f /tmp/traefik-values.yaml
-  else
-    log "Traefik already configured; skipping Helm upgrade."
-  fi
+  run "Install/Upgrade NGINX OSS ingress controller" helm upgrade --install nginx-ingress oci://ghcr.io/nginx/charts/nginx-ingress -n nginx-ingress --create-namespace -f /tmp/nginx-oss-values.yaml
 
-log "Waiting for Traefik LoadBalancer hostname..."
+log "Waiting for NGINX OSS ingress LoadBalancer hostname..."
 lb_host=""
+nginx_svc=""
 start_ts=$(date +%s)
 timeout_seconds=1200
 while [ -z "$lb_host" ]; do
-  lb_host=$(kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | head -n1 || true)
+  if [ -z "$nginx_svc" ]; then
+    nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  fi
+  if [ -n "$nginx_svc" ]; then
+    lb_host=$(kubectl get svc -n nginx-ingress "$nginx_svc" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  fi
   if [ -n "$lb_host" ]; then
     break
   fi
   now_ts=$(date +%s)
   if [ $((now_ts - start_ts)) -ge $timeout_seconds ]; then
-    log "Timed out waiting for Traefik LoadBalancer hostname."
+    log "Timed out waiting for NGINX OSS ingress LoadBalancer hostname."
     exit 1
   fi
   sleep 10
 done
-  log "Traefik NLB DNS: $lb_host"
+  log "NGINX OSS ingress NLB DNS: $lb_host"
 
   r53_updated=0
   route53_changed=0
@@ -991,7 +946,7 @@ done
     else
       log "Updating Route53 CNAME $ROUTE53_RECORD_NAME -> $lb_host"
       cat > /tmp/route53.json <<JSON
-{"Comment":"Profisee Traefik NLB","Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"$ROUTE53_RECORD_NAME","Type":"CNAME","TTL":60,"ResourceRecords":[{"Value":"$lb_host"}]}}]}
+{"Comment":"Profisee NGINX OSS ingress NLB","Changes":[{"Action":"UPSERT","ResourceRecordSet":{"Name":"$ROUTE53_RECORD_NAME","Type":"CNAME","TTL":60,"ResourceRecords":[{"Value":"$lb_host"}]}}]}
 JSON
       run "Update Route53 record" aws route53 change-resource-record-sets --hosted-zone-id "$ROUTE53_HOSTED_ZONE_ID" --change-batch file:///tmp/route53.json
       r53_updated=1
@@ -1003,19 +958,26 @@ JSON
 
   if [ -n "$ROUTE53_RECORD_NAME" ]; then
     coredns_host=$(printf '%s' "$ROUTE53_RECORD_NAME" | sed 's/\.$//')
-    log "Ensuring CoreDNS rewrite in coredns Corefile: $coredns_host -> traefik.traefik.svc.cluster.local"
+    if [ -z "$nginx_svc" ]; then
+      nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    fi
+    if [ -z "$nginx_svc" ]; then
+      log "Skipping CoreDNS rewrite (NGINX OSS service not found)."
+    else
+    nginx_svc_fqdn="$nginx_svc.nginx-ingress.svc.cluster.local"
+    log "Ensuring CoreDNS rewrite in coredns Corefile: $coredns_host -> $nginx_svc_fqdn"
     current_corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/tmp/profisee-deploy-step.log || true)
     if [ -z "$current_corefile" ]; then
       log "FAILED: Read CoreDNS Corefile"
       sed -n '1,120p' /tmp/profisee-deploy-step.log || true
       exit 1
     fi
-    updated_corefile=$(printf '%s\n' "$current_corefile" | awk -v host="$coredns_host" '
+    updated_corefile=$(printf '%s\n' "$current_corefile" | awk -v host="$coredns_host" -v target="$nginx_svc_fqdn" '
       BEGIN {
-        line = "    rewrite name exact " host " traefik.traefik.svc.cluster.local"
+        line = "    rewrite name exact " host " " target
         inserted = 0
       }
-      $0 ~ /^[[:space:]]*rewrite name exact .* traefik\.traefik\.svc\.cluster\.local$/ { next }
+      $0 ~ /^[[:space:]]*rewrite name exact / && index($0, "rewrite name exact " host " ") > 0 { next }
       $0 ~ /^[[:space:]]*forward[[:space:]]+\.[[:space:]]+/ && !inserted {
         print line
         inserted = 1
@@ -1036,13 +998,14 @@ JSON
     else
       log "CoreDNS rewrite already present; skipping CoreDNS patch."
     fi
+    fi
   else
     log "Skipping CoreDNS rewrite (ROUTE53_RECORD_NAME not set)."
   fi
 
       if [ -n "$PLATFORM_OUTPUTS_S3_BUCKET" ] && [ -n "$PLATFORM_OUTPUTS_S3_KEY" ]; then
         cat > /tmp/platform.json <<JSON
-{"traefik_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
+{"nginx_oss_nlb_dns":"$lb_host","fqdn":"$ROUTE53_RECORD_NAME"}
 JSON
         run "Upload platform outputs" aws s3 cp /tmp/platform.json "s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
       log "Platform outputs uploaded to s3://$PLATFORM_OUTPUTS_S3_BUCKET/$PLATFORM_OUTPUTS_S3_KEY"
@@ -1050,7 +1013,7 @@ JSON
 
     if [ "$APP_DEPLOY_ENABLED" = "true" ]; then
       if [ -z "$lb_host" ]; then
-        log "Skipping app deploy (Traefik NLB hostname missing)."
+        log "Skipping app deploy (NGINX OSS ingress NLB hostname missing)."
       elif [ "$r53_updated" -ne 1 ]; then
         log "Skipping app deploy (Route53 not updated)."
       elif [ -z "$ROUTE53_RECORD_NAME" ]; then
@@ -1151,6 +1114,15 @@ JSON
           log "Profisee chart version (repo): <unknown>"
         fi
         run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" profisee/profisee-platform -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
+        if kubectl -n "$APP_NAMESPACE" get ingress profisee-ingress >/dev/null 2>&1; then
+          run "Set Profisee ingress class to nginx" kubectl -n "$APP_NAMESPACE" patch ingress profisee-ingress --type merge -p '{"spec":{"ingressClassName":"nginx"}}'
+          cat > /tmp/profisee-ingress-annotations.json <<JSON
+{"metadata":{"annotations":{"nginx.org/client-max-body-size":"0","nginx.org/proxy-buffering":"off","nginx.org/proxy-buffers":"32 512k","nginx.org/proxy-buffer-size":"512k","nginx.org/proxy-busy-buffers-size":"512k","nginx.org/proxy-connect-timeout":"5400s","nginx.org/proxy-read-timeout":"5400s","nginx.org/proxy-send-timeout":"5400s","nginx.org/server-snippets":"client_body_buffer_size 512k;\nclient_header_buffer_size 512k;\nlarge_client_header_buffers 32 512k;\nproxy_request_buffering off;\nproxy_next_upstream off;"}}}
+JSON
+          run "Apply NGINX OSS ingress annotations" kubectl -n "$APP_NAMESPACE" patch ingress profisee-ingress --type merge --patch-file /tmp/profisee-ingress-annotations.json
+        else
+          log "Profisee ingress not found; skipping NGINX OSS annotation patch."
+        fi
         installed_version=$(helm get metadata "$APP_RELEASE_NAME" -n "$APP_NAMESPACE" 2>/dev/null | awk '/^VERSION:/ {v=$2} END{print v}')
         if [ -n "$installed_version" ]; then
           log "Profisee chart version (installed): $installed_version"

@@ -435,7 +435,7 @@ if ($profiseeDeployEnabled -eq $true) {
 }
 
 # ---------------------------------------------------------------------------
-# Auto-wire CloudFront origin (Traefik NLB) and apply edge resources
+# Auto-wire CloudFront origin (NGINX OSS ingress NLB) and apply edge resources
 # ---------------------------------------------------------------------------
 $cloudfrontCfg = Get-PropValue $cfg "cloudfront"
 $cloudfrontEnabled = Get-PropValue $cloudfrontCfg "enabled"
@@ -468,16 +468,16 @@ if ($cloudfrontEnabled -eq $true) {
     }
   }
 
-  $nlbDns = Get-PropValue $platformOut "traefik_nlb_dns"
+  $nlbDns = Get-PropValue $platformOut "nginx_oss_nlb_dns"
   if (-not $nlbDns -or $nlbDns -eq "") {
-    Write-Host "CloudFront wiring skipped (Traefik NLB DNS not found yet)."
+    Write-Host "CloudFront wiring skipped (NGINX OSS ingress NLB DNS not found yet)."
   } else {
     $edgeConfigChanged = $false
     $currentOrigin = Get-PropValue $cloudfrontCfg "origin_domain_name"
     if (-not $currentOrigin -or $currentOrigin -eq "" -or $currentOrigin -ne $nlbDns) {
       $cfg.cloudfront.origin_domain_name = $nlbDns
       $edgeConfigChanged = $true
-      Write-Host ("CloudFront origin set to Traefik NLB: {0}" -f $nlbDns)
+      Write-Host ("CloudFront origin set to NGINX OSS ingress NLB: {0}" -f $nlbDns)
     }
 
     $aliasesValue = Get-PropValue $cloudfrontCfg "aliases"

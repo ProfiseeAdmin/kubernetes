@@ -1,19 +1,20 @@
-controller: 
-  extraArgs: 
-    default-ssl-certificate: default/aks-ingress-tls
-  nodeSelector: 
-    beta.kubernetes.io/os: linux
-  replicaCount: 1
-  #service: 
-    #loadBalancerIP: 0.0.0.0
+controller:
+  nginxplus: false
+  ingressClass:
+    name: nginx
+    create: true
+    setAsDefaultIngress: false
   config:
-    proxy-buffering: "off"
-    proxy-buffer-size: "16k"
-    proxy-connect-timeout: "5400"
-    proxy-send-timeout: "5400"
-    proxy-read-timeout: "5400"
-    proxy-next-upstream: "off"
-    proxy-request-buffering: "off"
-defaultBackend: 
-  nodeSelector: 
-    beta.kubernetes.io/os: linux
+    entries:
+      proxy-buffering: "off"
+      proxy-buffer-size: "16k"
+      proxy-connect-timeout: "5400"
+      proxy-send-timeout: "5400"
+      proxy-read-timeout: "5400"
+      proxy-next-upstream: "off"
+      proxy-request-buffering: "off"
+  nodeSelector:
+    kubernetes.io/os: linux
+  replicaCount: 1
+  service:
+    type: LoadBalancer

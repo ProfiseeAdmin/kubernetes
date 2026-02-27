@@ -65,7 +65,7 @@ variable "platform_deployer" {
     secret_arns  = optional(map(string), {})
   })
   default     = {}
-  description = "Fargate one-shot deployer for platform components (Traefik/addons)."
+  description = "Fargate one-shot deployer for platform components (NGINX OSS ingress/addons)."
 
   validation {
     condition     = !try(var.platform_deployer.enabled, false) || (try(var.platform_deployer.image_uri, "") != "")
@@ -260,7 +260,7 @@ variable "cloudfront" {
     logging_bucket           = optional(string)
     tags                     = optional(map(string), {})
   })
-  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after profisee_deploy/Traefik."
+  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after profisee_deploy/NGINX OSS ingress."
 }
 
 variable "route53" {

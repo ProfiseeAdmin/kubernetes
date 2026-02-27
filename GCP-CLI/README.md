@@ -49,28 +49,22 @@ This explains the process to deploy the Profisee platform onto a new GCP Kuberne
 
 3.  Install nginx
 
-            ##helm repo add stable https://charts.helm.sh/stable;
-			#helm repo add nginx https://helm.nginx.com/stable
-            helm repo add nginx https://kubernetes.github.io/ingress-nginx
-
             #get the nginx settings for gcp
-            curl -fsSL -o nginxSettingsGCP.yaml https://raw.githubusercontent.com/Profisee/kubernetes/master/GCP-CLI/nginxSettingsGCP.yaml;
+            curl -fsSL -o nginxSettingsGCP.yaml https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/GCP-CLI/nginxSettingsGCP.yaml;
             #create profisee namespace of needed
 			kubectl create namespace profisee
 
-			#helm install nginx nginx/nginx-ingress --values nginxSettingsGCP.yaml --namespace profisee
-            helm install --namespace profisee nginx nginx/ingress-nginx --values nginxSettingsGCP.yaml
+            helm upgrade --install nginx oci://ghcr.io/nginx/charts/nginx-ingress --namespace profisee --create-namespace --values nginxSettingsGCP.yaml
     
 3.  Get nginx IP and update DNS
             
-		#kubectl get services nginx-nginx-ingress-controller --namespace profisee
-        kubectl get services nginx-ingress-nginx-controller --namespace profisee
+        kubectl get services -l app.kubernetes.io/instance=nginx --namespace profisee
         #Note the external-ip (might take a few minutes) and you need to create a A record in dns to point to it.  
 
 4.  Create Profsiee Settings.yaml
     - Fetch the Settings.yaml template
       
-            curl -fsSL -o Settings.yaml https://raw.githubusercontent.com/Profisee/kubernetes/master/GCP-CLI/Settings.yaml;
+            curl -fsSL -o Settings.yaml https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/GCP-CLI/Settings.yaml;
     -Update all the values
     -upload to cloud shell
 

@@ -44,7 +44,7 @@ $env:AWS_PROFILE = "profisee-deploy"
 .\scripts\tofu-apply.ps1 -DeploymentName acme-prod -AutoApprove
 ```
 
-When `cloudfront.enabled` is `true`, this apply flow auto-wires CloudFront origin to the Traefik NLB DNS and runs the edge apply in the same command.
+When `cloudfront.enabled` is `true`, this apply flow auto-wires CloudFront origin to the NGINX OSS ingress NLB DNS and runs the edge apply in the same command.
 
 ## 6) Destroy
 

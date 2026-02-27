@@ -20,11 +20,11 @@ Bring up VPC + EKS + RDS + ACM (us-east-1). Leave CloudFront + Route53 disabled:
 }
 ```
 
-Apply infra. Then deploy the platform layer (Traefik/NLB).
+Apply infra. Then deploy the platform layer (NGINX OSS ingress/NLB).
 
 ### Stage B - Platform
 
-Deploy Kubernetes add-ons and Traefik. This creates the public NLB DNS name
+Deploy Kubernetes add-ons and the NGINX OSS ingress controller. This creates the public NLB DNS name
 that CloudFront uses as the origin.
 
 ### Stage C - Edge

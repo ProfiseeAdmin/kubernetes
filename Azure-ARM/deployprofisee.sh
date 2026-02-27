@@ -238,59 +238,95 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 fi
 
 
-#Installation of Traefik
-echo $"Installation of Traefik ingress started.";
+#Installation of nginx
+echo $"Installation of nginx ingress started.";
+echo $"Acquiring nginxSettings.yaml file from Profisee repo."
+curl -fsSL -o nginxSettings.yaml "$REPOURL/Azure-ARM/nginxSettings.yaml";
 
-#Grab existing ingress-nginx public IP (if present) before uninstalling.
-echo "Checking for existing ingress-nginx service..."
+#Grab existing ingress-nginx public IP OR existing nginx OSS public IP before uninstalling.
+echo "Checking for existing ingress service..."
 nginxip=$(kubectl -n profisee get services nginx-ingress-nginx-controller --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true)
+if [ -z "$nginxip" ]; then
+	nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk '$2=="LoadBalancer"{print $1; exit}')
+	if [ -z "$nginxservice" ]; then
+		nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk 'NR==1{print $1}')
+	fi
+	if [ -n "$nginxservice" ]; then
+		nginxip=$(kubectl -n profisee get services "$nginxservice" --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true)
+	fi
+fi
 if [ -n "$nginxip" ]; then
-	echo $"Found existing ingress-nginx IP: $nginxip";
+	echo $"Found existing ingress public IP: $nginxip";
 else
-	echo $"No existing ingress-nginx IP found. Traefik will allocate a new IP.";
+	echo $"No existing ingress public IP found. NGINX OSS will allocate a new IP.";
 fi
 
-#If nginx is present, uninstall it.
-echo "If nginx is installed, we'll uninstall it first."
-nginxpresent=$(helm list -n profisee -f nginx -o table --short)
+#If ingress-nginx OR nginx OSS is present, uninstall it first.
+echo "If ingress-nginx or nginx is installed, we'll uninstall it first."
+ingressnginxpresent=$(helm list -n profisee -f '^ingress-nginx$' -o table --short)
+if [ "$ingressnginxpresent" = "ingress-nginx" ]; then
+	helm uninstall -n profisee ingress-nginx;
+	echo $"Will sleep for a minute to allow clean uninstall of ingress-nginx."
+	sleep 60;
+fi
+nginxpresent=$(helm list -n profisee -f '^nginx$' -o table --short)
 if [ "$nginxpresent" = "nginx" ]; then
 	helm uninstall -n profisee nginx;
 	echo $"Will sleep for a minute to allow clean uninstall of nginx."
 	sleep 60;
 fi
+nginxingresspresent=$(helm list -n profisee -f '^nginx-ingress$' -o table --short)
+if [ "$nginxingresspresent" = "nginx-ingress" ]; then
+	helm uninstall -n profisee nginx-ingress;
+	echo $"Will sleep for a minute to allow clean uninstall of nginx-ingress."
+	sleep 60;
+fi
 
-echo $"Adding Traefik repo."
-helm repo add traefik https://traefik.github.io/charts
+echo $"Adding NGINX OSS repo."
+helm repo add nginx-stable https://helm.nginx.com/stable
 helm repo update
 
-#Install Traefik (reuse existing IP if available).
-echo $"Installation of Traefik started.";
-traefikArgs="--set providers.kubernetesIngress.enabled=true --set providers.kubernetesIngress.ingressClass=traefik --set providers.kubernetesIngressNginx.enabled=false --set service.type=LoadBalancer"
+#Install nginx OSS either with or without Let's Encrypt
+echo $"Installation of NGINX OSS ingress started.";
+loadBalancerIpArg=""
 if [ -n "$nginxip" ]; then
-	traefikArgs="$traefikArgs --set service.spec.loadBalancerIP=$nginxip"
+	loadBalancerIpArg="--set controller.service.loadBalancerIP=$nginxip"
 fi
 if [ "$USELETSENCRYPT" = "Yes" ]; then
-	traefikArgs="$traefikArgs --set service.annotations.\"service\.beta\.kubernetes\.io/azure-dns-label-name\"=$DNSHOSTNAME"
+	echo $"Install NGINX OSS ready to integrate with Let's Encrypt's automatic certificate provisioning and renewal."
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml $loadBalancerIpArg --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
+else
+	echo $"Install NGINX OSS without Let's Encrypt integration."
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml $loadBalancerIpArg;
 fi
-helm upgrade --install traefik traefik/traefik -n profisee --create-namespace $traefikArgs
 
-echo $"Installation of Traefik finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
+echo $"Installation of nginx finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
 sleep 30;
 
 #Get the load balancer's public IP so it can be used later on.
-echo $"Let's see if the the load balancer's IP address is available."
-nginxip=$(kubectl -n profisee get services traefik --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
+echo $"Let's see if the load balancer's IP address is available."
+nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk '$2=="LoadBalancer"{print $1; exit}')
+if [ -z "$nginxservice" ]; then
+	nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk 'NR==1{print $1}')
+fi
+if [ -z "$nginxservice" ]; then
+	echo $"Nginx is not configured properly because no ingress service was found. Exiting with error.";
+	exit 1
+fi
+nginxip=$(kubectl -n profisee get services "$nginxservice" --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true);
 if [ -z "$nginxip" ]; then
 	#try again
-	echo $"Traefik is not configured properly because the load balancer's public IP is null, will wait for another minute.";
+	echo $"Nginx is not configured properly because the load balancer's public IP is null, will wait for another minute.";
     sleep 60;
-	nginxip=$(kubectl -n profisee get services traefik --output="jsonpath={.status.loadBalancer.ingress[0].ip}");
+	nginxip=$(kubectl -n profisee get services "$nginxservice" --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true);
 	if [ -z "$nginxip" ]; then
-    	echo $"Traefik is not configured properly because the load balancer's public IP is null. Exiting with error.";
+    	echo $"Nginx is not configured properly because the load balancer's public IP is null. Exiting with error.";
 		exit 1
 	fi
 fi
 echo $"The load balancer's public IP is $nginxip";
+INGRESSSERVICEFQDN="$nginxservice.profisee.svc.cluster.local"
+echo $"The ingress service FQDN is $INGRESSSERVICEFQDN";
 
 #Fix the TLS variables
 echo $"Correction of TLS variables started.";
@@ -550,6 +586,7 @@ echo $"The safe RAM value to assign to Profisee pod is $saferamvalueinkibibytes.
 # echo $"Profisee's stateful set has been patched to use $saferamvalueinkibibytes for RAM."
 curl -fsSL -o coredns-custom.yaml "$REPOURL/Azure-ARM/coredns-custom.yaml";
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' coredns-custom.yaml
+sed -i -e 's/$INGRESSSERVICEFQDN/'"$INGRESSSERVICEFQDN"'/g' coredns-custom.yaml
 
 #Setting values in the Settings.yaml
 sed -i -e 's/$SQLNAME/'"$SQLNAME"'/g' Settings.yaml
@@ -701,3 +738,4 @@ if [ "$AUTHENTICATIONTYPE" = "AzureRBAC" ]; then
 fi;
 
 echo $result > $AZ_SCRIPTS_OUTPUT_PATH
+
