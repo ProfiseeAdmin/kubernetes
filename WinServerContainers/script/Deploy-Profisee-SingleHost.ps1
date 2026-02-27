@@ -13,7 +13,7 @@ param(
   [string]$WorkDir = "C:\ProfiseeDeploy",
 
   [string]$NginxConfUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/WinServerContainers/nginx-config/nginx.conf",
-  [string]$ForensicsScriptUrl = "https://raw.githubusercontent.com/Profisee/kubernetes/refs/heads/master/Azure-ARM/forensics_log_pull.ps1"
+  [string]$ForensicsScriptUrl = "https://raw.githubusercontent.com/Profiseeadmin/kubernetes/refs/heads/master/Azure-ARM/forensics_log_pull.ps1"
 )
 
 Set-StrictMode -Version Latest
@@ -646,7 +646,7 @@ Write-Host ""
 Write-Host "Profisee image selection"
 $acrRegistry = Read-WithHistory -state $customerInputState -key "AcrRegistry" -prompt "ACR registry" -defaultValue "profisee.azurecr.io" -Required
 $acrRepo     = Read-WithHistory -state $customerInputState -key "AcrRepository" -prompt "Repository" -defaultValue "profiseeplatform" -Required
-$acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-153319-win22)" -defaultValue "2025r4.0-153319-win22" -Required
+$acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-155197-win22)" -defaultValue "2025r4.0-155197-win22" -Required
 
 $image = "$acrRegistry/$acrRepo`:$acrTag"
 
@@ -706,7 +706,7 @@ Set-StateInput -state $customerInputState -key "ProfiseeAttachmentRepositoryLogo
 Persist-CustomerInputState -state $customerInputState
 
 Write-Host ""
-$adminAccount = Read-WithHistory -state $customerInputState -key "ProfiseeAdminAccount" -prompt "ProfiseeAdminAccount (email/username)" -Required
+$adminAccount = Read-WithHistory -state $customerInputState -key "ProfiseeAdminAccount" -prompt "ProfiseeAdminAccount (email)" -Required
 $externalUrl  = Read-WithHistory -state $customerInputState -key "ProfiseeExternalDNSUrl" -prompt "ProfiseeExternalDNSUrl (e.g. https://something.com)" -Required
 $webAppName = Read-WithHistory -state $customerInputState -key "ProfiseeWebAppName" -prompt "ProfiseeWebAppName (used in URL path: https://FQDN/<ProfiseeWebAppName>)" -Required
 
@@ -774,7 +774,7 @@ if($oidcProvider.ToLower() -eq "entra"){
 }
 
 Write-Host ""
-$cpuLimit = Read-WithHistory -state $customerInputState -key "ContainerCpuLimit" -prompt "CPU limit for container (--cpus), e.g. 2" -defaultValue "2" -Required
+$cpuLimit = Read-WithHistory -state $customerInputState -key "ContainerCpuLimit" -prompt "CPU limit for container (--cpus), e.g. 4" -defaultValue "4" -Required
 $memLimit = Read-WithHistory -state $customerInputState -key "ContainerMemoryLimit" -prompt "Memory limit for container (--memory), e.g. 8G" -defaultValue "8G" -Required
 $memLimit = Normalize-MemoryLimit $memLimit
 Set-StateInput -state $customerInputState -key "ContainerMemoryLimit" -value $memLimit
@@ -855,7 +855,7 @@ while(-not $imagePulled){
       Write-Host "Update image coordinates and retry pull."
       $acrRegistry = Read-WithHistory -state $customerInputState -key "AcrRegistry" -prompt "ACR registry" -defaultValue "profisee.azurecr.io" -Required
       $acrRepo     = Read-WithHistory -state $customerInputState -key "AcrRepository" -prompt "Repository" -defaultValue "profiseeplatform" -Required
-      $acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-153319-win22)" -defaultValue "2025r4.0-153319-win22" -Required
+      $acrTag      = Read-WithHistory -state $customerInputState -key "AcrTag" -prompt "Image tag (e.g. 2025r4.0-155197-win22)" -defaultValue "2025r4.0-155197-win22" -Required
       $image       = "$acrRegistry/$acrRepo`:$acrTag"
       Login-Acr -registry $acrRegistry -user $acrUser -password $acrPw
       continue
@@ -985,7 +985,7 @@ Start-Nginx
 
 Write-Host ""
 Write-Host "DONE."
-Write-Host "Access: https://<FQDN>/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
+Write-Host "Access: $externalUrl/$webAppName (nginx 443 terminates TLS and proxies to container HTTP)"
 Write-Host "nginx redirects: http://<FQDN> -> https://<FQDN>"
 Write-Host "Container '$resolvedContainerName' is mapped host 127.0.0.1:$HostAppPort -> container :80 (internal only)"
 Write-Host "oidc.json injected at: c:\data\oidc.json"
