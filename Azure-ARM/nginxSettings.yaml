@@ -1,23 +1,12 @@
 controller:
-  nginxplus: false
   ingressClass:
     name: nginx
     create: true
-    setAsDefaultIngress: false
+  enableCustomResources: false
+  nginxplus: false
+  enableSnippets: true
   config:
-    entries:
-      client-header-buffer-size: "512k"
-      client-body-buffer-size: "512k"
-      large-client-header-buffers: "32 512k"
-      proxy-buffer-size: "512k"
-      proxy-buffering: "off"
-      proxy-buffers: "32 512k"
-      proxy-busy-buffers-size: "512k"
-      proxy-connect-timeout: "5400"
-      proxy-next-upstream: "off"
-      proxy-read-timeout: "5400"
-      proxy-request-buffering: "off"
-      proxy-send-timeout: "5400"
+    entries: {}
   defaultTLS:
     secret: profisee/profisee-tls-ingress
   nodeSelector:
