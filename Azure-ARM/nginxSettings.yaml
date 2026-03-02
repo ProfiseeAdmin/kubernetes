@@ -6,7 +6,8 @@ controller:
   nginxplus: false
   enableSnippets: true
   config:
-    entries: {}
+    entries:
+      server-tokens: "false"
   defaultTLS:
     secret: profisee/profisee-tls-ingress
   nodeSelector:
