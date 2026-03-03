@@ -103,10 +103,10 @@ robocopy "C:\Profisee\Services\Chatbot\LogFiles" "$env:TEMP\all-Logs\$logsFolder
 robocopy "C:\Profisee\Services\Matching\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Matching" /E /COPYALL /DCOPY:T
 robocopy "C:\Profisee\Services\Matching.BulkScoring\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Matching.BulkScoring" /E /COPYALL /DCOPY:T
 robocopy "C:\Profisee\Services\Modeling\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Modeling" /E /COPYALL /DCOPY:T
-robocopy "C:\Profisee\Services\ScriptRunner\LogFiles" $env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\ScriptRunner" /E /COPYALL /DCOPY:T
-robocopy "C:\Profisee\Services\PortalArtifacts\LogFiles" $env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\PortalArtifacts" /E /COPYALL /DCOPY:T
-robocopy "C:\Profisee\Services\Proflow\LogFiles" $env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Proflow" /E /COPYALL /DCOPY:T
-robocopy "C:\Profisee\Services\Taskman\LogFiles" $env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Taskman" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\ScriptRunner\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\ScriptRunner" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\PortalArtifacts\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\PortalArtifacts" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\Proflow\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Proflow" /E /COPYALL /DCOPY:T
+robocopy "C:\Profisee\Services\Taskman\LogFiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Taskman" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\web\logfiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Web" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\webportal\logfiles" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Webportal" /E /COPYALL /DCOPY:T
 robocopy "c:\profisee\Mcp\LogFiles\" "$env:TEMP\all-Logs\$logsFolder\ProfiseeLogs\Mcp" /E /COPYALL /DCOPY:T
