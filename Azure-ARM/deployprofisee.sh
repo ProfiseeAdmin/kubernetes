@@ -240,64 +240,64 @@ fi
 
 #Installation of nginx
 echo $"Installation of nginx ingress started.";
+echo $"Adding NGINX OSS repo."
+helm repo add nginx-stable https://helm.nginx.com/stable
+helm repo update
+
 echo $"Acquiring nginxSettings.yaml file from Profisee repo."
 curl -fsSL -o nginxSettings.yaml "$REPOURL/Azure-ARM/nginxSettings.yaml";
 
-#Grab existing ingress-nginx public IP OR existing nginx OSS public IP before uninstalling.
-echo "Checking for existing ingress service..."
-nginxip=$(kubectl -n profisee get services nginx-ingress-nginx-controller --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true)
-if [ -z "$nginxip" ]; then
-	nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk '$2=="LoadBalancer"{print $1; exit}')
-	if [ -z "$nginxservice" ]; then
-		nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk 'NR==1{print $1}')
+#Read existing ingress helm values before uninstalling; either Azure LB DNS name or private IP
+# (i.e. don't read current public IP as that will be removed and replaced by nginx uninstall/reinstall).
+echo "Checking for existing ingress helm values..."
+existingIngressRelease=$(helm list -n profisee -o json | jq -r '.[] | select(.name|test("nginx")) | [.name] | @tsv')
+
+reusePrivateLbIp=""
+existingDnsLabel=""
+if [ -n "$existingIngressRelease" ]; then
+	echo $"Found existing ingress release: $existingIngressRelease";
+	ingressValues=$(helm get values -n profisee "$existingIngressRelease" -o json 2>/dev/null || echo "{}")
+	existingLbIp=$(echo "$ingressValues" | jq -r '.controller.service.loadBalancerIP // .service.spec.loadBalancerIP // empty')
+	existingDnsLabel=$(echo "$ingressValues" | jq -r '.controller.service.annotations["service.beta.kubernetes.io/azure-dns-label-name"] // empty')
+
+	# 10.x means private cluster ingress IP, keep it stable across reinstall.
+	if [[ "$existingLbIp" =~ ^10\. ]]; then
+		reusePrivateLbIp="$existingLbIp"
+		echo $"Detected private ingress loadBalancerIP in values: $reusePrivateLbIp";
 	fi
-	if [ -n "$nginxservice" ]; then
-		nginxip=$(kubectl -n profisee get services "$nginxservice" --output="jsonpath={.status.loadBalancer.ingress[0].ip}" 2>/dev/null || true)
+
+	# DNS label annotation indicates public cluster style; keep DNS host label.
+	if [ -n "$existingDnsLabel" ]; then
+		DNSHOSTNAME="$existingDnsLabel"
+		echo $"Detected public ingress DNS label in values: $DNSHOSTNAME";
 	fi
-fi
-if [ -n "$nginxip" ]; then
-	echo $"Found existing ingress public IP: $nginxip";
 else
-	echo $"No existing ingress public IP found. NGINX OSS will allocate a new IP.";
+	echo $"No existing ingress release found.";
 fi
 
-#If ingress-nginx OR nginx OSS is present, uninstall it first.
-echo "If ingress-nginx or nginx is installed, we'll uninstall it first."
-ingressnginxpresent=$(helm list -n profisee -f '^ingress-nginx$' -o table --short)
-if [ "$ingressnginxpresent" = "ingress-nginx" ]; then
-	helm uninstall -n profisee ingress-nginx;
-	echo $"Will sleep for a minute to allow clean uninstall of ingress-nginx."
-	sleep 60;
+if [ -n "$reusePrivateLbIp" ]; then
+	echo $"Will reuse private loadBalancerIP from helm values: $reusePrivateLbIp";
+else
+	echo $"No private loadBalancerIP found in helm values. AKS will allocate IP on reinstall.";
 fi
-nginxpresent=$(helm list -n profisee -f '^nginx$' -o table --short)
+
+#If nginx is present, uninstall it.
+echo "If nginx is installed, we'll uninstall it first."
+nginxpresent=$(helm list -n profisee -f nginx -o table --short)
 if [ "$nginxpresent" = "nginx" ]; then
 	helm uninstall -n profisee nginx;
 	echo $"Will sleep for a minute to allow clean uninstall of nginx."
 	sleep 60;
 fi
-nginxingresspresent=$(helm list -n profisee -f '^nginx-ingress$' -o table --short)
-if [ "$nginxingresspresent" = "nginx-ingress" ]; then
-	helm uninstall -n profisee nginx-ingress;
-	echo $"Will sleep for a minute to allow clean uninstall of nginx-ingress."
-	sleep 60;
-fi
 
-echo $"Adding NGINX OSS repo."
-helm repo add nginx-stable https://helm.nginx.com/stable
-helm repo update
-
-#Install nginx OSS either with or without Let's Encrypt
-echo $"Installation of NGINX OSS ingress started.";
-loadBalancerIpArg=""
-if [ -n "$nginxip" ]; then
-	loadBalancerIpArg="--set controller.service.loadBalancerIP=$nginxip"
-fi
+#Install nginx either with or without Let's Encrypt
+echo $"Installation of nginx started.";
 if [ "$USELETSENCRYPT" = "Yes" ]; then
-	echo $"Install NGINX OSS ready to integrate with Let's Encrypt's automatic certificate provisioning and renewal."
-	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml $loadBalancerIpArg --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
+	echo $"Install nginx ready to integrate with Let's Encrypt's automatic certificate provisioning and renewal, and set the DNS FQDN to the load balancer's ingress public IP address."
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
 else
-	echo $"Install NGINX OSS without Let's Encrypt integration."
-	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml $loadBalancerIpArg;
+	echo $"Install nginx without integration with Let's Encrypt's automatic certificate provisioning and renewal, also do not set the DNS FQDN to the load balancer's ingress public IP address."
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.loadBalancerIP=$reusePrivateLbIp;
 fi
 
 echo $"Installation of nginx finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
@@ -305,10 +305,7 @@ sleep 30;
 
 #Get the load balancer's public IP so it can be used later on.
 echo $"Let's see if the load balancer's IP address is available."
-nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk '$2=="LoadBalancer"{print $1; exit}')
-if [ -z "$nginxservice" ]; then
-	nginxservice=$(kubectl -n profisee get services -l app.kubernetes.io/instance=nginx --no-headers 2>/dev/null | awk 'NR==1{print $1}')
-fi
+nginxservice=$(kubectl -n profisee get service -o wide | grep nginx | awk '{print $1}' | head -n 1)
 if [ -z "$nginxservice" ]; then
 	echo $"Nginx is not configured properly because no ingress service was found. Exiting with error.";
 	exit 1
