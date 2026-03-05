@@ -18,6 +18,7 @@ This folder provides migration assets for customers running:
 ## Support and Warranty Disclaimer
 
 - Profisee support and warranty coverage applies to the Profisee application/container components as defined by your applicable agreement.
+- While Profisee makes reasonable efforts to cover a wide range of deployment scenarios in these scripts, Profisee cannot be held liable for failures in customer infrastructure environments.
 - Customer-owned and customer-managed infrastructure (including, without limitation, Kubernetes clusters, ingress controllers, DNS/CoreDNS, load balancers, cloud networking, identities, and security policies) remains the customer's responsibility.
 - The migration and rollback scripts in this folder are provided **"as is"** and **without warranties of any kind**, whether express or implied, including implied warranties of merchantability, fitness for a particular purpose, title, and non-infringement.
 - Profisee is not liable for infrastructure-level outages, misconfiguration, data loss, security events, or operational impacts resulting from use or modification of these scripts in customer-managed environments.
