@@ -703,6 +703,28 @@ echo "Waiting for pod to be downloaded and be ready..$(date +"%Y-%m-%d %T")";
 sleep 30;
 kubectl wait --timeout=1800s --for=condition=ready pod/profisee-0 -n profisee
 
+if [ "$USELETSENCRYPT" = "Yes" ]; then
+	echo "Checking whether profisee-tls-ingress is a valid TLS secret before setting nginx defaultTLS.";
+	tlssecrettype=$(kubectl -n profisee get secret profisee-tls-ingress --output="jsonpath={.type}" 2>/dev/null || true)
+	if [ "$tlssecrettype" != "kubernetes.io/tls" ]; then
+		echo "TLS secret is not ready yet. Waiting up to 10 minutes for cert-manager to issue it."
+		for attempt in $(seq 1 40); do
+			sleep 15;
+			tlssecrettype=$(kubectl -n profisee get secret profisee-tls-ingress --output="jsonpath={.type}" 2>/dev/null || true)
+			if [ "$tlssecrettype" = "kubernetes.io/tls" ]; then
+				break
+			fi
+		done
+	fi
+
+	if [ "$tlssecrettype" = "kubernetes.io/tls" ]; then
+		echo "Updating nginx with default TLS secret profisee/profisee-tls-ingress.";
+		helm upgrade --install -n profisee nginx nginx-stable/nginx-ingress --reuse-values --set controller.defaultTLS.secret=profisee/profisee-tls-ingress;
+	else
+		echo "Skipping nginx defaultTLS update because profisee-tls-ingress is not a kubernetes.io/tls secret yet.";
+	fi
+fi
+
 echo $"Profisee deploymented finished $(date +"%Y-%m-%d %T")";
 
 result="{\"Result\":[\
