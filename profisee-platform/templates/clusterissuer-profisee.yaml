@@ -13,10 +13,6 @@ spec:
     - http01:
         ingress:
           ingressClassName: nginx
-          ingressTemplate:
-            metadata:
-              annotations:
-                nginx.org/redirect-to-https: "false"
           podTemplate:
             spec:
               nodeSelector:

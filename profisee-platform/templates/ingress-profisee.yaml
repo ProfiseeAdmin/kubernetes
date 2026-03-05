@@ -21,6 +21,11 @@ metadata:
       large_client_header_buffers 32 512k;
       proxy_request_buffering off;
       proxy_next_upstream off;
+      {{ if .Values.profiseeRunTime.useLetsEncrypt }}
+      if ($request_uri !~* "^/\\.well-known/acme-challenge/") {
+        return 301 https://$host$request_uri;
+      }
+      {{ end }}
     
     nginx.org/path-regex: "case_insensitive"
 
@@ -31,6 +36,7 @@ metadata:
     {{- if .Values.profiseeRunTime.useLetsEncrypt }}
     cert-manager.io/cluster-issuer: letsencrypt
     acme.cert-manager.io/http01-edit-in-place: "true"
+    ingress.kubernetes.io/ssl-redirect: "false"
     {{- end }}
 
 spec:
