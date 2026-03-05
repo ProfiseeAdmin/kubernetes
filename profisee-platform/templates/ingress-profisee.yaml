@@ -30,6 +30,7 @@ metadata:
 
     {{- if .Values.profiseeRunTime.useLetsEncrypt }}
     cert-manager.io/cluster-issuer: letsencrypt
+    acme.cert-manager.io/http01-edit-in-place: "true"
     {{- end }}
 
 spec:
@@ -54,4 +55,3 @@ spec:
             port:
               number: 80
 {{- end }}
-
