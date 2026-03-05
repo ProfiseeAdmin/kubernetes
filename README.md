@@ -1,6 +1,6 @@
 # **<span class="underline">Profisee Kubernetes</span>**
 
-This repository contains all the ways to deploy the Profisee platform to Kubernetes.
+This repository contains all the ways to deploy the Profisee platform.
 
 ## AWS-EKS-CLI
 
@@ -18,7 +18,7 @@ This repository contains all the ways to deploy the Profisee platform to Kuberne
 
 [Home](https://github.com/profiseeadmin/kubernetes/tree/master/Azure-Powershell#deploy-profisee-platform-to-aks-using-powershell) for all the scripts needed to deploy Profisee Platform to AKS via Azure Powershell.
 
-## windows Server 20xx
+## Windows Server 20xx
 
 [Home](https://github.com/profiseeadmin/kubernetes/tree/master/WinServerContainers#windows-server-containers-quick-notes) for all the scripts needed to deploy Profisee Platform to a Windows Server 2022/5 using Docker.
 
