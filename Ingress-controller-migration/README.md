@@ -13,6 +13,7 @@ This folder provides migration assets for customers running:
 - This procedure is intended for a **platform administrator**.
 - Perform this during a **planned maintenance window**.
 - Back up relevant configuration and deployment values before running.
+- If your environment is custom, or you are not confident running this procedure, contact Profisee Support by submitting a ticket at **https://profisee.com/support** before proceeding.
 
 ## Support and Warranty Disclaimer
 
@@ -24,6 +25,8 @@ This folder provides migration assets for customers running:
 
 ## What The Migration Script Does
 
+The ingress controller swap itself typically takes about **2-5 minutes** in normal conditions (not including pre-checks, validation, or any environment-specific troubleshooting).
+
 The migration flow is designed to:
 
 1. Detect whether the current environment is public AKS ingress or private-IP ingress.
@@ -32,7 +35,7 @@ The migration flow is designed to:
 4. Update the cluster CoreDNS custom entry to point to the active NGINX ingress service name.
 5. Discover currently deployed Profisee values (including Purview values).
 6. Re-deploy Profisee with those discovered values.
-7. Restart the Profisee runtime/pod(s) so the environment comes back on the new ingress path.
+7. Restart the Profisee runtime/pod so the environment comes back on the new ingress path.
 
 ## Files In This Folder
 
