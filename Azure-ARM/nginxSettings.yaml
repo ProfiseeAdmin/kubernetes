@@ -8,8 +8,8 @@ controller:
   config:
     entries:
       server-tokens: "false"
-  defaultTLS:
-    secret: profisee/profisee-tls-ingress
+  # defaultTLS:
+  #  secret: profisee/profisee-tls-ingress # will be added after Profisee is installed
   nodeSelector:
     kubernetes.io/os: linux
   replicaCount: 1
