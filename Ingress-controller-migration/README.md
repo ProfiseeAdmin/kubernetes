@@ -1,6 +1,7 @@
 # Ingress Controller Migration (ingress-nginx -> F5 NGINX OSS)
 
-Due to Kubernetes security decommissioning around `ingress-nginx`, Profisee is migrating to **F5 NGINX OSS (Open Source Software)** for ingress.
+Due to Kubernetes security decommissioning around `ingress-nginx`, Profisee is migrating to **F5 NGINX OSS (Open Source Software)** for ingress.  
+Reference: [Ingress NGINX Retirement Notice](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/).
 
 This folder provides migration assets for customers running:
 
