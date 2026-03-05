@@ -43,4 +43,4 @@ The migration flow is designed to:
 - `1. Migrate from Ingress-Nginx to F5 Nginx.txt`: migration runbook/script steps.
 - `2. Rollback from F5 Nginx to Ingress-Nginx.txt`: rollback runbook/script steps.
 
-Use these scripts exactly as administrative runbooks. For public AKS ingress, open your AKS cluster in Azure Portal, select **Connect**, launch **Cloud Shell** (Bash, not PowerShell), and run the script there after auto-login. For private PaaS, sign in to the jumpbox and run the script from the jumpbox.
+Use these scripts as administrative runbooks. For public AKS ingress, open your AKS cluster in Azure Portal, select **Connect**, launch **Cloud Shell** (Bash, not PowerShell), and run the script there after auto-login. For private PaaS, sign in to the jumpbox and run the script from the jumpbox. Depending on whether Bash is available or not, the scripts might have to be converted to PowerShell equivalents.
