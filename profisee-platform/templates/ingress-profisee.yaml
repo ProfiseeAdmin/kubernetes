@@ -29,10 +29,6 @@ metadata:
     
     nginx.org/path-regex: "case_insensitive"
 
-    {{- if .Values.profiseeRunTime.isPaaS }}
-    nginx.org/rewrite-target: /$1
-    {{- end }}
-
     {{- if .Values.profiseeRunTime.useLetsEncrypt }}
     cert-manager.io/cluster-issuer: letsencrypt
     acme.cert-manager.io/http01-edit-in-place: "true"
