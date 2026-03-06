@@ -22,8 +22,10 @@ metadata:
       proxy_request_buffering off;
       proxy_next_upstream off;
       {{ if .Values.profiseeRunTime.useLetsEncrypt }}
-      if ($request_uri !~* "^/\\.well-known/acme-challenge/") {
-        return 301 https://$host$request_uri;
+      if ($scheme = http) {
+        if ($request_uri !~* "^/\.well-known/acme-challenge/") {
+          return 301 https://$host$request_uri;
+        }
       }
       {{ end }}
     
