@@ -22,15 +22,18 @@ metadata:
       proxy_request_buffering off;
       proxy_next_upstream off;
       {{ if .Values.profiseeRunTime.useLetsEncrypt }}
-      if ($scheme = http) {
-        if ($request_uri !~* "^/\.well-known/acme-challenge/") {
-          return 301 https://$host$request_uri;
-        }
+      set $redirect_https 1;
+      if ($scheme = https) {
+        set $redirect_https 0;
+      }
+      if ($request_uri ~* "^/\\.well-known/acme-challenge/") {
+        set $redirect_https 0;
+      }
+      if ($redirect_https = 1) {
+        return 301 https://$host$request_uri;
       }
       {{ end }}
     
-    nginx.org/path-regex: "case_insensitive"
-
     {{- if .Values.profiseeRunTime.useLetsEncrypt }}
     cert-manager.io/cluster-issuer: letsencrypt
     acme.cert-manager.io/http01-edit-in-place: "true"
@@ -48,11 +51,11 @@ spec:
     http:
       paths:
       {{- if .Values.profiseeRunTime.isPaaS }}
-      - path: /(.*)
+      - path: /
       {{- else }}
-      - path: /{{.Values.profiseeRunTime.webAppName}}/?(.*)$
+      - path: /{{.Values.profiseeRunTime.webAppName}}
       {{- end }}
-        pathType: ImplementationSpecific
+        pathType: Prefix
         backend:
           service:
             name: profisee-service
