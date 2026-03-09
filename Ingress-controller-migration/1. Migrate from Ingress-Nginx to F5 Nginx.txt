@@ -108,7 +108,7 @@ if [ "$USELETSENCRYPT" = "Yes" ]; then
 	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
 else
 	echo $"Install nginx without integration with Let's Encrypt's automatic certificate provisioning and renewal, also do not set the DNS FQDN to the load balancer's ingress public IP address."
-	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.loadBalancerIP=$reusePrivateLbIp;
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.loadBalancerIP=$reusePrivateLbIp --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-load-balancer-internal"=true;
 fi
 
 echo $"Installation of nginx finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
