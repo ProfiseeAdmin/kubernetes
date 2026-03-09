@@ -103,18 +103,6 @@
               "required": true,
               "allowedValues": [
                 {
-                  "label": "2023R1.0",
-                  "value": "profiseeplatform:2023r1.0"
-                },
-                {
-                  "label": "2023R2.0-win19",
-                  "value": "profiseeplatform:2023r2.0-win19"
-                },
-                {
-                  "label": "2023R2.0-win22",
-                  "value": "profiseeplatform:2023r2.0-win22"
-                },
-                {
                   "label": "2024R1.0-win19",
                   "value": "profiseeplatform:2024r1.0-win19"
                 },
@@ -419,6 +407,27 @@
             "visible": true
           },
           {
+            "name": "PricingTier",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Pricing tiers for Azure Kubernetes Service",
+            "defaultValue": "Free tier",
+            "toolTip": "AKS offers two pricing tiers for the managed Kubernetes control plane. Choose the pricing tier that best meets your needs.",
+            "constraints": {
+              "allowedValues": [
+                {
+                  "label": "Free tier",
+                  "value": "Free"
+                },
+                {
+                  "label": "Paid tier",
+                  "value": "Standard"
+                }
+              ],
+              "required": false
+            },
+            "visible": true
+          },
+          {
             "name": "AuthenticationType",
             "type": "Microsoft.Common.OptionsGroup",
             "label": "Authentication and Authorization",
@@ -503,7 +512,7 @@
                 "imageReference": {
                   "publisher": "MicrosoftWindowsServer",
                   "offer": "WindowsServer",
-                  "sku": "2019-Datacenter"
+                  "sku": "2022-Datacenter"
                 },
                 "count": 1,
                 "visible": true
@@ -689,8 +698,9 @@
               "required": true,
               "validations": [
                 {
+                  "regex": "^[a-z0-9A-Z -.:\n]{1,60}$",
                   "isValid": "[equals(steps('sql').CheckSqlNameRestApiResponse.available,true)]",
-                  "message": "[steps('sql').CheckSqlNameRestApiResponse.message]"
+                  "message": "Only 1-60 alphanumeric characters, hyphens, spaces, periods, and colons are allowed."
                 }
               ]
             },
@@ -1047,6 +1057,7 @@
       "KubernetesWindowsNodeSize": "[steps('kubernetes').KubernetesWindowsNodeSizeSection.KubernetesWindowsNodeSize]",
       "KubernetesWindowsNodeCount": "[steps('kubernetes').KubernetesWindowsNodeCount]",
       "AuthenticationType": "[steps('kubernetes').AuthenticationType]",
+      "PricingTier": "[steps('kubernetes').PricingTier]",
       "KubernetesVnetName": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.name]",
       "KubernetesVnetResourceGroup": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.resourceGroup]",
       "KubernetesSubnetName": "[steps('kubernetes').KubernetesAdvanced.KubernetesVnetName.subnets.subnet1.name]",

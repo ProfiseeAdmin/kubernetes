@@ -33,11 +33,7 @@ printenv;
 
 #Get AKS credentials, this allows us to use kubectl commands, if needed.
 az aks get-credentials --resource-group $RESOURCEGROUPNAME --name $CLUSTERNAME --overwrite-existing;
-# az extension add --name aks-preview
-# az extension update --name aks-preview
-# az feature register --namespace "Microsoft.ContainerService" --name "EnableWorkloadIdentityPreview"
-# az feature show --namespace "Microsoft.ContainerService" --name "EnableWorkloadIdentityPreview"
-# az provider register --namespace Microsoft.ContainerService
+
 
 #Install dotnet core.
 echo $"Installation of dotnet core started.";
@@ -51,14 +47,7 @@ echo $"Installation of dotnet core finished.";
 #Downloadind and extracting Proisee license reader.
 echo $"Download of Profisee license reader started.";
 curl -fsSL -o LicenseReader "$REPOURL/Utilities/LicenseReader/LicenseReader"
-#curl -fsSL -o LicenseReader.tar.002 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.002"
-#curl -fsSL -o LicenseReader.tar.003 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.003"
-#curl -fsSL -o LicenseReader.tar.004 "$REPOURL/Utilities/LicenseReader/LicenseReader.tar.004"
-#cat LicenseReader.tar.* | tar xf -
-#rm LicenseReader.tar.001
-#rm LicenseReader.tar.002
-#rm LicenseReader.tar.003
-#rm LicenseReader.tar.004
+
 echo $"Download of Profisee license reader finished.";
 
 echo $"Clean Profisee license string of any unwanted characters such as linebreaks, spaces, etc...";
@@ -105,8 +94,20 @@ echo $"Installation of Helm finished.";
 
 #Install kubectl
 echo $"Installation of kubectl started.";
+version="$(curl -fsSL https://dl.k8s.io/release/stable.txt || true)"
+echo $"kubectl version from url is $version"
+
+if [[ -z "$version" ]]; then
+  version="v1.35.0"
+  echo "Failed to fetch latest kubectl version. Falling back to $version"
+else
+  echo "Latest kubectl version is $version"
+fi
+
+curl -fsSLo kubectl "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+sleep 60
 echo $"Installation of kubectl finished.";
 
 #Create profisee namespace in AKS cluster.
@@ -151,7 +152,7 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 
 	#Install Azure Workload Identity driver.
 	echo $"Installation of Key Vault Azure Active Directory Workload Identity driver started."
-    #az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
+    # az aks update -g $RESOURCEGROUPNAME -n $CLUSTERNAME --enable-oidc-issuer --enable-workload-identity
 	OIDC_ISSUER="$(az aks show -n $CLUSTERNAME -g $RESOURCEGROUPNAME --query "oidcIssuerProfile.issuerUrl" -o tsv)"
 	echo $"Installation of Key Vault Azure Active Directory Workload Identity driver finished."
 
@@ -207,9 +208,9 @@ if [ "$USEKEYVAULT" = "Yes" ]; then
 	echo $"principalId is $principalId"
 
     #Check if Key Vault is RBAC or policy based.
-    echo $"Checking if Key Vauls is RBAC based or policy based"
+    echo $"Checking if Key Vault is RBAC based or policy based."
 	rbacEnabled=$(az keyvault show --name $keyVaultName --subscription $keyVaultSubscriptionId --resource-group $keyVaultResourceGroup --query "properties.enableRbacAuthorization")
-	echo $"rbac enabled is $rbacEnabled"
+	echo $"Is RBAC enabled: $rbacEnabled"
     #If Key Vault is RBAC based, assign Key Vault Secrets User role to the Key Vault Specific Managed Identity, otherwise assign Get policies for Keys, Secrets and Certificates.
     if [ "$rbacEnabled" = true ]; then
 		echo $"Setting Key Vault Secrets User RBAC role to the Key Vault Specific Managed Identity."
@@ -244,6 +245,7 @@ echo $"Adding NGINX OSS repo."
 helm repo add nginx-stable https://helm.nginx.com/stable
 helm repo update
 
+#Get profisee nginx settings
 echo $"Acquiring nginxSettings.yaml file from Profisee repo."
 curl -fsSL -o nginxSettings.yaml "$REPOURL/Azure-ARM/nginxSettings.yaml";
 
@@ -252,19 +254,11 @@ curl -fsSL -o nginxSettings.yaml "$REPOURL/Azure-ARM/nginxSettings.yaml";
 echo "Checking for existing ingress helm values..."
 existingIngressRelease=$(helm list -n profisee -o json | jq -r '.[] | select(.name|test("nginx")) | [.name] | @tsv')
 
-reusePrivateLbIp=""
 existingDnsLabel=""
 if [ -n "$existingIngressRelease" ]; then
 	echo $"Found existing ingress release: $existingIngressRelease";
 	ingressValues=$(helm get values -n profisee "$existingIngressRelease" -o json 2>/dev/null || echo "{}")
-	existingLbIp=$(echo "$ingressValues" | jq -r '.controller.service.loadBalancerIP // .service.spec.loadBalancerIP // empty')
 	existingDnsLabel=$(echo "$ingressValues" | jq -r '.controller.service.annotations["service.beta.kubernetes.io/azure-dns-label-name"] // empty')
-
-	# 10.x means private cluster ingress IP, keep it stable across reinstall.
-	if [[ "$existingLbIp" =~ ^10\. ]]; then
-		reusePrivateLbIp="$existingLbIp"
-		echo $"Detected private ingress loadBalancerIP in values: $reusePrivateLbIp";
-	fi
 
 	# DNS label annotation indicates public cluster style; keep DNS host label.
 	if [ -n "$existingDnsLabel" ]; then
@@ -273,12 +267,6 @@ if [ -n "$existingIngressRelease" ]; then
 	fi
 else
 	echo $"No existing ingress release found.";
-fi
-
-if [ -n "$reusePrivateLbIp" ]; then
-	echo $"Will reuse private loadBalancerIP from helm values: $reusePrivateLbIp";
-else
-	echo $"No private loadBalancerIP found in helm values. AKS will allocate IP on reinstall.";
 fi
 
 #If nginx is present, uninstall it.
@@ -297,7 +285,7 @@ if [ "$USELETSENCRYPT" = "Yes" ]; then
 	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.annotations."service\.beta\.kubernetes\.io/azure-dns-label-name"=$DNSHOSTNAME;
 else
 	echo $"Install nginx without integration with Let's Encrypt's automatic certificate provisioning and renewal, also do not set the DNS FQDN to the load balancer's ingress public IP address."
-	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml --set controller.service.loadBalancerIP=$reusePrivateLbIp;
+	helm install -n profisee nginx nginx-stable/nginx-ingress --values nginxSettings.yaml
 fi
 
 echo $"Installation of nginx finished, sleeping for 30 seconds to wait for the load balancer's public IP to become available.";
@@ -581,6 +569,7 @@ echo $"The safe RAM value to assign to Profisee pod is $saferamvalueinkibibytes.
 # echo $"Profisee's stateful set has been patched to use $safecpuvalueinmilicores for CPU."
 # kubectl patch statefulsets -n profisee profisee --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/resources/limits/memory", "value":'"$saferamvalueinkibibytes"'}]'
 # echo $"Profisee's stateful set has been patched to use $saferamvalueinkibibytes for RAM."
+# Setting DNSName value to custom coredns-configmap
 curl -fsSL -o coredns-custom.yaml "$REPOURL/Azure-ARM/coredns-custom.yaml";
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' coredns-custom.yaml
 sed -i -e 's/$INGRESSSERVICEFQDN/'"$INGRESSSERVICEFQDN"'/g' coredns-custom.yaml
@@ -642,6 +631,7 @@ if [ "$USELETSENCRYPT" = "Yes" ]; then
 	helm repo add jetstack https://charts.jetstack.io
 	# Update your local Helm chart repository cache
 	helm repo update
+
 	#If cert-manager is present, uninstall it.
         certmgrpresent=$(helm list -n profisee -f cert-manager -o table --short)
         if [ "$certmgrpresent" = "cert-manager" ]; then
@@ -668,6 +658,12 @@ kubectl create secret generic profisee-settings -n profisee --from-file=Settings
 
 #Replacing Coredns with custom coredns config map
 kubectl replace -f ./coredns-custom.yaml
+
+#Adding this only in dev environment so SuperAdmin can edit the app registration values. Please do not implement this in Prod
+ObjectId="$(az ad user show --id $ADMINACCOUNTNAME --query id -o tsv)"
+echo $"ObjectId of ADMIN is $ObjectId";
+az ad app owner add --id $CLIENTID --owner-object-id $ObjectId
+#################################################################
 
 #################################Install Profisee Start #######################################
 echo "Installation of Profisee platform started $(date +"%Y-%m-%d %T")";

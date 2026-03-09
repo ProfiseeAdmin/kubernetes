@@ -192,5 +192,3 @@ spec:
       imagePullSecrets:
       - name: profisee-containerregistry
 
-
-

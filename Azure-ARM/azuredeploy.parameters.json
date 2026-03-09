@@ -146,6 +146,9 @@
         },
         "InfraAdminAccount":{
             "value": ""
-        }         
+        },
+        "PricingTier":{
+            "value": ""
+        }
     }
 }

@@ -50,7 +50,7 @@ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
 
 # Grab ingress-nginx settings 
-curl -fsSL -o nginxSettings.yaml "https://raw.githubusercontent.com/profisee/kubernetes/master/Azure-ARM/nginxSettings.yaml"
+curl -fsSL -o nginxSettings.yaml "https://raw.githubusercontent.com/profisee/kubernetes/master/Azure-ARM/nginxSettings_old.yaml"
 
 # Determine public or private cluster
 # Read existing ingress helm values before uninstalling; either Azure LB DNS name or private IP

@@ -52,21 +52,18 @@ miname=$(echo $miname | xargs)
 
 #Get the ID of the current user (MI)
 echo "Running az identity show -g $mirg -n $miname --query principalId -o tsv"
-currentIdentityId=$(az identity show -g $mirg -n $miname --subscription $SUBSCRIPTIONID --query principalId -o tsv)
-echo $currentIdentityId
+currentIdentityId=$(az identity show -g $mirg -n $miname --query principalId -o tsv)
 if [ -z "$currentIdentityId" ]; then
 	err="Unable to query the Deployment Managed Identity to get principal id. Exiting with error. IF the Deployment Managed Identity has just been created, this issue is most likely intermittent. Please retry your deployment."
 	echo $err
 	set_resultAndReturn;
 fi
 
-echo "0"
 #Check to make sure you have effective Contributor access at Subscription level. This is now required at Sub level due to the lack of specific roles to use that can grant Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write and Microsoft.ContainerService/register/action. Once these are made part of a role the we will rechecked if we can lower the permissions.
 #Checking Subscription level.
 
 echo "Is the Deployment Managed Identity assigned the Contributor Role at the Subscription level?"
 subscriptionContributor=$(az role assignment list --all --assignee $currentIdentityId --output json --include-inherited --query "[?roleDefinitionName=='Contributor' && scope=='/subscriptions/$SUBSCRIPTIONID'].roleDefinitionName" --output tsv)
-echo $subscriptionContributor
 if [ -z "$subscriptionContributor" ]; then
 	echo "Role is NOT assigned at Subscription level. Exiting with error. Please assign the Contributor role to the Deployment Managed Identity at the Subscription Level. Please visit https://support.profisee.com/wikis/profiseeplatform/planning_your_managed_identity_configuration for more information."
 	#Deployment Managed Identity is not granted Contributor at Subscription level, checking Resource Group level.
