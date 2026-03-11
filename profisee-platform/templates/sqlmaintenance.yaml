@@ -60,4 +60,5 @@ spec:
             - name: profisee-containerregistry
       backoffLimit: 0
 {{- end }}
+{{- end }}
 

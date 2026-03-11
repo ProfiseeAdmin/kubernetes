@@ -3,12 +3,22 @@ entries:
   profisee-platform:
   - apiVersion: v2
     appVersion: 1.16.0
-    created: "2020-09-02T00:00:00.0-05:00"
+    created: "2026-03-11T13:24:44.8855836-04:00"
     description: A Helm chart for Profisee Platform on Kubernetes
-    digest: 5bdd3612eaedc884827ac81f56578f3eee5502c627e3a9f2ec26191f7cd42b5f
+    digest: d5adac4b8d918bfd77bce645dfaa2ecd8d73e35f160d1448f476ad4d0f0252ad
     name: profisee-platform
     type: application
     urls:
     - https://profiseeadmin.github.io/kubernetes/profisee-platform-0.1.41.tgz
     version: 0.1.41
-generated: "2025-02-07T00:00:00.0-05:00"
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2026-03-11T13:24:44.8834981-04:00"
+    description: A Helm chart for Profisee Platform on Kubernetes
+    digest: 14d300635582c16f1e6c72a3afb3514e412be74049415ec15dca94d914ca6169
+    name: profisee-platform
+    type: application
+    urls:
+    - https://profiseeadmin.github.io/kubernetes/profisee-platform-0.1.40.tgz
+    version: 0.1.40
+generated: "2026-03-11T13:24:44.8702784-04:00"
