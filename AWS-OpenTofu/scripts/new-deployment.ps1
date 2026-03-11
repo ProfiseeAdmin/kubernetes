@@ -369,6 +369,30 @@ if (-not $NoPrompt) {
   $json.acm.hosted_zone_id = Read-Value "ACM hosted zone ID" $json.acm.hosted_zone_id
   $json.cloudfront.enabled = Read-Bool "Use CloudFront in front of load balancer" (To-BoolOrDefault (Get-PropValue $json.cloudfront "enabled") $true)
 
+  # If CloudFront is enabled, keep Route53 defaults aligned with ACM inputs unless user set explicit values.
+  if ($json.cloudfront.enabled -eq $true) {
+    $acmDomain = Get-PropValue $json.acm "domain_name"
+    $normalizedAcmDomain = if ($acmDomain) { $acmDomain.ToString().Trim() } else { "" }
+    if ($normalizedAcmDomain.StartsWith("*.")) {
+      $normalizedAcmDomain = $normalizedAcmDomain.Substring(2)
+    }
+
+    $route53RecordName = Get-PropValue $json.route53 "record_name"
+    $route53RecordNameNormalized = if ($route53RecordName) { $route53RecordName.ToString().Trim().ToLower() } else { "" }
+    if (($route53RecordNameNormalized -eq "" -or $route53RecordNameNormalized -eq "app.example.com") -and $normalizedAcmDomain -ne "") {
+      $json.route53.record_name = $normalizedAcmDomain
+      Write-Host ("Route53 record_name defaulted to ACM domain: {0}" -f $normalizedAcmDomain)
+    }
+
+    $route53HostedZoneId = Get-PropValue $json.route53 "hosted_zone_id"
+    $route53HostedZoneIdNormalized = if ($route53HostedZoneId) { $route53HostedZoneId.ToString().Trim().ToUpper() } else { "" }
+    $acmHostedZoneId = Get-PropValue $json.acm "hosted_zone_id"
+    if (($route53HostedZoneIdNormalized -eq "" -or $route53HostedZoneIdNormalized -eq "Z1234567890ABC") -and $acmHostedZoneId) {
+      $json.route53.hosted_zone_id = $acmHostedZoneId
+      Write-Host ("Route53 hosted_zone_id defaulted to ACM hosted zone ID: {0}" -f $acmHostedZoneId)
+    }
+  }
+
     $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
   if ($json.jumpbox.enabled) {
     $json.jumpbox.instance_type = Read-Value "Jumpbox instance type" $json.jumpbox.instance_type

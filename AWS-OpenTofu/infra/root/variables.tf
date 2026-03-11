@@ -273,16 +273,19 @@ variable "route53" {
     record_type            = optional(string, "A")
     evaluate_target_health = optional(bool, false)
   })
-  description = "Route53 record configuration for CloudFront."
+  description = "Route53 record configuration for CloudFront. route53.enabled is deprecated when CloudFront is deployed."
 
   validation {
-    condition = !var.route53.enabled || (
+    condition = !(
+      try(var.cloudfront.enabled, false) &&
+      trimspace(coalesce(try(var.cloudfront.origin_domain_name, null), "")) != ""
+    ) || (
       var.route53.hosted_zone_id != null &&
       var.route53.hosted_zone_id != "" &&
       var.route53.record_name != null &&
       var.route53.record_name != ""
     )
-    error_message = "route53.hosted_zone_id and route53.record_name are required when route53.enabled is true."
+    error_message = "route53.hosted_zone_id and route53.record_name are required when CloudFront is deployed."
   }
 }
 

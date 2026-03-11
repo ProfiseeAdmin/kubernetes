@@ -21,12 +21,19 @@ variable "alias_name" {
 
 variable "alias_zone_id" {
   type        = string
-  description = "Alias target hosted zone ID."
+  default     = null
+  description = "Alias target hosted zone ID (required for alias record types such as A/AAAA)."
 }
 
 variable "evaluate_target_health" {
   type        = bool
   default     = false
   description = "Whether Route53 evaluates target health."
+}
+
+variable "ttl" {
+  type        = number
+  default     = 60
+  description = "TTL for non-alias records (used for CNAME)."
 }
 

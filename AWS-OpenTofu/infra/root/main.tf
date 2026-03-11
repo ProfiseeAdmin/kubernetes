@@ -1347,7 +1347,7 @@ module "cloudfront" {
 }
 
 module "route53" {
-  count  = local.cloudfront_deployed && var.route53.enabled ? 1 : 0
+  count  = local.cloudfront_deployed ? 1 : 0
   source = "../modules/route53"
 
   hosted_zone_id         = var.route53.hosted_zone_id
@@ -1616,7 +1616,7 @@ module "outputs_contract" {
     cloudfront_id                         = local.cloudfront_deployed ? module.cloudfront[0].distribution_id : null
     cloudfront_domain_name                = local.cloudfront_deployed ? module.cloudfront[0].distribution_domain_name : null
     cloudfront_hosted_zone_id             = local.cloudfront_deployed ? module.cloudfront[0].hosted_zone_id : null
-    route53_record_fqdn                   = local.cloudfront_deployed && var.route53.enabled ? module.route53[0].record_fqdn : null
+    route53_record_fqdn                   = local.cloudfront_deployed ? module.route53[0].record_fqdn : null
     acm_certificate_arn                   = module.acm_use1.certificate_arn
     jumpbox_instance_id                   = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
     jumpbox_private_ip                    = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null
