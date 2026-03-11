@@ -110,6 +110,7 @@
     "aliases": [
       "app.example.com"
     ],
+    "viewer_protocol_policy": "allow-all",
     "origin_domain_name": null,
     "origin_custom_headers": {}
   },

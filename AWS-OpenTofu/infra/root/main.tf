@@ -871,39 +871,21 @@ if [ -n "$windows_nodes" ] && [ "$windows_nodes" -gt 0 ] 2>/dev/null; then
     log "VPC CNI Windows IPAM already enabled."
   fi
 fi
-  log "Ensuring NGINX OSS ingress controller (NLB)..."
-  cat > /tmp/nginx-oss-values.yaml <<YAML
-controller:
-  nginxplus: false
-  ingressClass:
-    name: nginx
-    create: true
-    setAsDefaultIngress: false
-  config:
-    entries:
-      client-header-buffer-size: "512k"
-      client-body-buffer-size: "512k"
-      large-client-header-buffers: "32 512k"
-      proxy-buffer-size: "512k"
-      proxy-buffering: "off"
-      proxy-buffers: "32 512k"
-      proxy-busy-buffers-size: "512k"
-      proxy-connect-timeout: "5400"
-      proxy-next-upstream: "off"
-      proxy-read-timeout: "5400"
-      proxy-request-buffering: "off"
-      proxy-send-timeout: "5400"
-  defaultTLS:
-    secret: profisee/profisee-tls-ingress
-  nodeSelector:
-    kubernetes.io/os: linux
-  replicaCount: 1
-  service:
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-YAML
-  run "Install/Upgrade NGINX OSS ingress controller" helm upgrade --install nginx-ingress oci://ghcr.io/nginx/charts/nginx-ingress -n nginx-ingress --create-namespace -f /tmp/nginx-oss-values.yaml
+  log "Installation of nginx ingress started."
+  run "Add NGINX OSS repo" helm repo add nginx-stable https://helm.nginx.com/stable
+  run "Update Helm repos" helm repo update
+  run "Download nginxSettings.yaml" curl -fsSL -o /tmp/nginxSettings.yaml https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/Azure-ARM/nginxSettings.yaml
+  if ! kubectl get namespace "$APP_NAMESPACE" >/dev/null 2>&1; then
+    run "Create app namespace" kubectl create namespace "$APP_NAMESPACE"
+  fi
+  log "If nginx is installed, uninstall it first."
+  nginxpresent=$(helm list -n "$APP_NAMESPACE" -f '^nginx$' -o table --short 2>/dev/null || true)
+  if [ "$nginxpresent" = "nginx" ]; then
+    run "Uninstall existing nginx release" helm uninstall -n "$APP_NAMESPACE" nginx
+    log "Sleeping 60s to allow clean uninstall of nginx."
+    sleep 60
+  fi
+  run "Install nginx ingress" helm install -n "$APP_NAMESPACE" nginx nginx-stable/nginx-ingress --values /tmp/nginxSettings.yaml
 
 log "Waiting for NGINX OSS ingress LoadBalancer hostname..."
 lb_host=""
@@ -911,12 +893,12 @@ nginx_svc=""
 start_ts=$(date +%s)
 timeout_seconds=1200
 while [ -z "$lb_host" ]; do
-  nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | head -n1 || true)
+  nginx_svc=$(kubectl get svc -n "$APP_NAMESPACE" -l app.kubernetes.io/instance=nginx -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.name}{"\n"}{end}' 2>/dev/null | head -n1 || true)
   if [ -z "$nginx_svc" ]; then
-    nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    nginx_svc=$(kubectl get svc -n "$APP_NAMESPACE" -l app.kubernetes.io/instance=nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
   fi
   if [ -n "$nginx_svc" ]; then
-    lb_host=$(kubectl get svc -n nginx-ingress "$nginx_svc" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+    lb_host=$(kubectl get svc -n "$APP_NAMESPACE" "$nginx_svc" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
   fi
   if [ -n "$lb_host" ]; then
     break
@@ -960,12 +942,12 @@ JSON
   if [ -n "$ROUTE53_RECORD_NAME" ]; then
     coredns_host=$(printf '%s' "$ROUTE53_RECORD_NAME" | sed 's/\.$//')
     if [ -z "$nginx_svc" ]; then
-      nginx_svc=$(kubectl get svc -n nginx-ingress -l app.kubernetes.io/instance=nginx-ingress -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+      nginx_svc=$(kubectl get svc -n "$APP_NAMESPACE" -l app.kubernetes.io/instance=nginx -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
     fi
     if [ -z "$nginx_svc" ]; then
       log "Skipping CoreDNS rewrite (NGINX OSS service not found)."
     else
-    nginx_svc_fqdn="$nginx_svc.nginx-ingress.svc.cluster.local"
+    nginx_svc_fqdn="$nginx_svc.$APP_NAMESPACE.svc.cluster.local"
     log "Ensuring CoreDNS rewrite in coredns Corefile: $coredns_host -> $nginx_svc_fqdn"
     current_corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' 2>/tmp/profisee-deploy-step.log || true)
     if [ -z "$current_corefile" ]; then
@@ -1115,15 +1097,6 @@ JSON
           log "Profisee chart version (repo): <unknown>"
         fi
         run "Install/Upgrade Profisee app" helm upgrade --install "$APP_RELEASE_NAME" profisee/profisee-platform -n "$APP_NAMESPACE" --create-namespace -f /tmp/Settings.yaml
-        if kubectl -n "$APP_NAMESPACE" get ingress profisee-ingress >/dev/null 2>&1; then
-          run "Set Profisee ingress class to nginx" kubectl -n "$APP_NAMESPACE" patch ingress profisee-ingress --type merge -p '{"spec":{"ingressClassName":"nginx"}}'
-          cat > /tmp/profisee-ingress-annotations.json <<JSON
-{"metadata":{"annotations":{"nginx.org/client-max-body-size":"0","nginx.org/proxy-buffering":"off","nginx.org/proxy-buffers":"32 512k","nginx.org/proxy-buffer-size":"512k","nginx.org/proxy-busy-buffers-size":"512k","nginx.org/proxy-connect-timeout":"5400s","nginx.org/proxy-read-timeout":"5400s","nginx.org/proxy-send-timeout":"5400s","nginx.org/server-snippets":"client_body_buffer_size 512k;\nclient_header_buffer_size 512k;\nlarge_client_header_buffers 32 512k;\nproxy_request_buffering off;\nproxy_next_upstream off;"}}}
-JSON
-          run "Apply NGINX OSS ingress annotations" kubectl -n "$APP_NAMESPACE" patch ingress profisee-ingress --type merge --patch-file /tmp/profisee-ingress-annotations.json
-        else
-          log "Profisee ingress not found; skipping NGINX OSS annotation patch."
-        fi
         installed_version=$(helm get metadata "$APP_RELEASE_NAME" -n "$APP_NAMESPACE" 2>/dev/null | awk '/^VERSION:/ {v=$2} END{print v}')
         if [ -n "$installed_version" ]; then
           log "Profisee chart version (installed): $installed_version"
@@ -1360,6 +1333,7 @@ module "cloudfront" {
   acm_certificate_arn      = module.acm_use1.certificate_arn
   origin_domain_name       = local.cloudfront_origin_domain_name
   origin_id                = var.cloudfront.origin_id
+  viewer_protocol_policy   = var.cloudfront.viewer_protocol_policy
   origin_protocol_policy   = var.cloudfront.origin_protocol_policy
   origin_ssl_protocols     = var.cloudfront.origin_ssl_protocols
   origin_read_timeout      = var.cloudfront.origin_read_timeout

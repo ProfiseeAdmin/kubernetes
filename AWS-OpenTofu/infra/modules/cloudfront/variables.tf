@@ -32,6 +32,12 @@ variable "origin_protocol_policy" {
   description = "Protocol policy for origin connections."
 }
 
+variable "viewer_protocol_policy" {
+  type        = string
+  default     = "allow-all"
+  description = "Protocol policy for viewer requests (allow-all, redirect-to-https, or https-only)."
+}
+
 variable "origin_ssl_protocols" {
   type        = list(string)
   default     = ["TLSv1.2"]
