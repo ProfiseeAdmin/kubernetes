@@ -66,6 +66,7 @@
   "eks": {
     "cluster_name": "my-product-eks",
     "cluster_version": "1.29",
+    "cluster_log_group_retention_in_days": 14,
     "endpoint_public_access": false,
     "endpoint_private_access": true,
     "linux_node_group": {

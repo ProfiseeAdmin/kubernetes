@@ -154,7 +154,8 @@ variable "eks" {
       list(string),
       ["api", "audit", "authenticator"]
     )
-    cluster_kms_key_arn = optional(string)
+    cluster_log_group_retention_in_days = optional(number, 14)
+    cluster_kms_key_arn                 = optional(string)
     linux_node_group = object({
       instance_types = list(string)
       min_size       = number

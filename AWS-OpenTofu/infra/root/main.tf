@@ -112,6 +112,7 @@ module "eks" {
   endpoint_public_access    = var.eks.endpoint_public_access
   endpoint_private_access   = var.eks.endpoint_private_access
   enabled_cluster_log_types = var.eks.enabled_cluster_log_types
+  cluster_log_group_retention_in_days = var.eks.cluster_log_group_retention_in_days
   cluster_kms_key_arn       = var.eks.cluster_kms_key_arn
   linux_node_group          = var.eks.linux_node_group
   windows_node_group        = var.eks.windows_node_group

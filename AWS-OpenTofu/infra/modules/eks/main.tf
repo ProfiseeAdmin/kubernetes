@@ -34,6 +34,14 @@ resource "aws_iam_role_policy_attachment" "cluster" {
   policy_arn = each.value
 }
 
+resource "aws_cloudwatch_log_group" "cluster" {
+  count = length(var.enabled_cluster_log_types) > 0 ? 1 : 0
+
+  name              = "/aws/eks/${var.cluster_name}/cluster"
+  retention_in_days = var.cluster_log_group_retention_in_days
+  tags              = var.tags
+}
+
 resource "aws_eks_cluster" "this" {
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
@@ -65,7 +73,10 @@ resource "aws_eks_cluster" "this" {
     }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.cluster]
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster,
+    aws_cloudwatch_log_group.cluster
+  ]
 
   tags = var.tags
 }

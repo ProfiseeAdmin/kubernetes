@@ -48,6 +48,12 @@ variable "enabled_cluster_log_types" {
   description = "Control plane log types to enable."
 }
 
+variable "cluster_log_group_retention_in_days" {
+  type        = number
+  default     = 14
+  description = "Retention period (in days) for /aws/eks/<cluster>/cluster control plane logs."
+}
+
 variable "cluster_kms_key_arn" {
   type        = string
   default     = null
