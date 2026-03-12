@@ -257,6 +257,139 @@ function Wait-ForLoadBalancerCleanup([string]$VpcId, [string]$Region, [int]$Time
   Write-Host ("Timed out waiting for load balancer cleanup in VPC {0}; continuing with destroy attempt." -f $VpcId)
 }
 
+function Get-LoadBalancersBySecurityGroup([string]$GroupId, [string]$Region) {
+  if (-not $GroupId) { return @() }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return @() }
+
+  $args = @("elbv2", "describe-load-balancers", "--region", $Region, "--query", "LoadBalancers[?contains(SecurityGroups, '$GroupId')].{Arn:LoadBalancerArn,Name:LoadBalancerName}", "--output", "json")
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to list ELBv2 load balancers for security group {0}: {1}" -f $GroupId, $raw)
+    return @()
+  }
+  if (-not $raw) { return @() }
+  return @($raw | ConvertFrom-Json)
+}
+
+function Remove-LoadBalancersBySecurityGroup([string]$GroupId, [string]$Region) {
+  $lbs = @(Get-LoadBalancersBySecurityGroup -GroupId $GroupId -Region $Region)
+  foreach ($lb in $lbs) {
+    $arn = Get-OptionalProperty $lb "Arn"
+    if (-not $arn) { $arn = Get-OptionalProperty $lb "LoadBalancerArn" }
+    $name = Get-OptionalProperty $lb "Name"
+    if (-not $name) { $name = Get-OptionalProperty $lb "LoadBalancerName" }
+    if (-not $arn) { continue }
+
+    Write-Host ("Deleting ELBv2 load balancer attached to security group {0}: {1} ({2})" -f $GroupId, $name, $arn)
+    $deleteRaw = & aws elbv2 delete-load-balancer --load-balancer-arn $arn --region $Region 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Unable to delete ELBv2 load balancer {0} ({1}): {2}" -f $name, $arn, $deleteRaw)
+    }
+  }
+}
+
+function Get-NetworkInterfacesBySecurityGroup([string]$GroupId, [string]$Region) {
+  if (-not $GroupId) { return @() }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return @() }
+
+  $args = @("ec2", "describe-network-interfaces", "--filters", "Name=group-id,Values=$GroupId", "--region", $Region, "--output", "json")
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to list network interfaces for security group {0}: {1}" -f $GroupId, $raw)
+    return @()
+  }
+  if (-not $raw) { return @() }
+  $data = $raw | ConvertFrom-Json
+  $items = Get-OptionalProperty $data "NetworkInterfaces"
+  if (-not $items) { return @() }
+  return @($items)
+}
+
+function Remove-DetachedEnisBySecurityGroup([string]$GroupId, [string]$Region) {
+  $enis = @(Get-NetworkInterfacesBySecurityGroup -GroupId $GroupId -Region $Region)
+  foreach ($eni in $enis) {
+    $eniId = Get-OptionalProperty $eni "NetworkInterfaceId"
+    if (-not $eniId) { continue }
+    $attachment = Get-OptionalProperty $eni "Attachment"
+    if ($attachment -and (Get-OptionalProperty $attachment "AttachmentId")) {
+      continue
+    }
+
+    $desc = [string](Get-OptionalProperty $eni "Description")
+    $requesterId = [string](Get-OptionalProperty $eni "RequesterId")
+    if ($desc -notmatch '(?i)\belb\b' -and $requesterId -notmatch '(?i)amazon-elb') {
+      continue
+    }
+
+    Write-Host ("Deleting detached ELB ENI tied to security group {0}: {1}" -f $GroupId, $eniId)
+    $deleteRaw = & aws ec2 delete-network-interface --network-interface-id $eniId --region $Region 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Unable to delete ENI {0}: {1}" -f $eniId, $deleteRaw)
+    }
+  }
+}
+
+function Remove-SecurityGroupRuleReferences([string]$TargetGroupId, [string]$Region) {
+  if (-not $TargetGroupId) { return }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return }
+
+  $args = @("ec2", "describe-security-group-rules", "--filters", "Name=referenced-group-id,Values=$TargetGroupId", "--region", $Region, "--output", "json")
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to list security group rule references for {0}: {1}" -f $TargetGroupId, $raw)
+    return
+  }
+  if (-not $raw) { return }
+
+  $data = $raw | ConvertFrom-Json
+  $rules = Get-OptionalProperty $data "SecurityGroupRules"
+  if (-not $rules) { return }
+
+  foreach ($rule in $rules) {
+    $ruleId = Get-OptionalProperty $rule "SecurityGroupRuleId"
+    $groupId = Get-OptionalProperty $rule "GroupId"
+    $isEgress = [bool](Get-OptionalProperty $rule "IsEgress")
+    if (-not $ruleId -or -not $groupId) { continue }
+
+    if ($groupId -eq $TargetGroupId) { continue }
+
+    if ($isEgress) {
+      Write-Host ("Revoking egress SG rule reference {0} from {1} to {2}" -f $ruleId, $groupId, $TargetGroupId)
+      $revokeRaw = & aws ec2 revoke-security-group-egress --group-id $groupId --security-group-rule-ids $ruleId --region $Region 2>&1
+    } else {
+      Write-Host ("Revoking ingress SG rule reference {0} from {1} to {2}" -f $ruleId, $groupId, $TargetGroupId)
+      $revokeRaw = & aws ec2 revoke-security-group-ingress --group-id $groupId --security-group-rule-ids $ruleId --region $Region 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Unable to revoke referenced rule {0}: {1}" -f $ruleId, $revokeRaw)
+    }
+  }
+}
+
+function Wait-ForSecurityGroupRelease([string]$GroupId, [string]$Region, [int]$TimeoutSeconds = 300) {
+  if (-not $GroupId) { return }
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    Remove-LoadBalancersBySecurityGroup -GroupId $GroupId -Region $Region
+    Remove-DetachedEnisBySecurityGroup -GroupId $GroupId -Region $Region
+    Remove-SecurityGroupRuleReferences -TargetGroupId $GroupId -Region $Region
+
+    $lbCount = @(Get-LoadBalancersBySecurityGroup -GroupId $GroupId -Region $Region).Count
+    $eniCount = @(Get-NetworkInterfacesBySecurityGroup -GroupId $GroupId -Region $Region).Count
+    if ($lbCount -eq 0 -and $eniCount -eq 0) {
+      return
+    }
+
+    Write-Host ("Waiting for security group {0} dependencies to clear (elbv2={1}, enis={2})..." -f $GroupId, $lbCount, $eniCount)
+    Start-Sleep -Seconds 10
+  }
+
+  Write-Host ("Timed out waiting for security group {0} dependencies; continuing delete attempt." -f $GroupId)
+}
+
 function Remove-KubernetesServiceSecurityGroups([string]$VpcId, [string]$Region) {
   if (-not $VpcId) { return }
   $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
@@ -290,14 +423,27 @@ function Remove-KubernetesServiceSecurityGroups([string]$VpcId, [string]$Region)
       }
     }
 
-    if (-not $hasServiceTag -and $groupName -notlike "k8s-elb-*") {
+    $description = [string](Get-OptionalProperty $sg "Description")
+    $isK8sElbDescription = $description -match '(?i)^Security group for Kubernetes ELB'
+    if (-not $hasServiceTag -and $groupName -notlike "k8s-elb-*" -and -not $isK8sElbDescription) {
       continue
     }
+
+    Remove-LoadBalancersBySecurityGroup -GroupId $groupId -Region $Region
+    Remove-SecurityGroupRuleReferences -TargetGroupId $groupId -Region $Region
+    Wait-ForSecurityGroupRelease -GroupId $groupId -Region $Region
 
     Write-Host ("Deleting Kubernetes load balancer security group: {0} ({1})" -f $groupName, $groupId)
     $deleteRaw = & aws ec2 delete-security-group --group-id $groupId --region $Region 2>&1
     if ($LASTEXITCODE -ne 0) {
-      Write-Host ("Unable to delete security group {0}: {1}" -f $groupId, $deleteRaw)
+      Write-Host ("Initial delete failed for security group {0}: {1}" -f $groupId, $deleteRaw)
+      Remove-LoadBalancersBySecurityGroup -GroupId $groupId -Region $Region
+      Remove-SecurityGroupRuleReferences -TargetGroupId $groupId -Region $Region
+      Wait-ForSecurityGroupRelease -GroupId $groupId -Region $Region
+      $deleteRawRetry = & aws ec2 delete-security-group --group-id $groupId --region $Region 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host ("Unable to delete security group {0} after retry: {1}" -f $groupId, $deleteRawRetry)
+      }
     }
   }
 }
