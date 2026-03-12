@@ -28,8 +28,8 @@ variable "origin_id" {
 
 variable "origin_protocol_policy" {
   type        = string
-  default     = "https-only"
-  description = "Protocol policy for origin connections."
+  default     = "http-only"
+  description = "Protocol policy for origin connections. Use http-only for NLB origins unless you have a cert/SNI-aligned HTTPS origin."
 }
 
 variable "viewer_protocol_policy" {

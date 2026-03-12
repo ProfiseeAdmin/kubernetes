@@ -169,6 +169,146 @@ function Remove-LoadBalancers([string]$VpcId, [string]$Region) {
   }
 }
 
+function ConvertTo-IntOrZero($Value) {
+  $parsed = 0
+  [void][int]::TryParse(([string]$Value).Trim(), [ref]$parsed)
+  return $parsed
+}
+
+function Get-ElasticLoadBalancerEnis([string]$VpcId, [string]$Region) {
+  if (-not $VpcId) { return @() }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return @() }
+
+  $args = @("ec2", "describe-network-interfaces", "--filters", "Name=vpc-id,Values=$VpcId", "--region", $Region, "--output", "json")
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to list network interfaces in VPC {0}: {1}" -f $VpcId, $raw)
+    return @()
+  }
+  if (-not $raw) { return @() }
+
+  $data = $raw | ConvertFrom-Json
+  $interfaces = @()
+  $items = Get-OptionalProperty $data "NetworkInterfaces"
+  if (-not $items) { return @() }
+
+  foreach ($eni in $items) {
+    $desc = [string](Get-OptionalProperty $eni "Description")
+    $requesterId = [string](Get-OptionalProperty $eni "RequesterId")
+    if ($desc -match '(?i)\belb\b' -or $requesterId -match '(?i)amazon-elb') {
+      $interfaces += $eni
+    }
+  }
+
+  return $interfaces
+}
+
+function Remove-DetachedElasticLoadBalancerEnis([string]$VpcId, [string]$Region) {
+  $enis = @(Get-ElasticLoadBalancerEnis -VpcId $VpcId -Region $Region)
+  foreach ($eni in $enis) {
+    $eniId = Get-OptionalProperty $eni "NetworkInterfaceId"
+    if (-not $eniId) { continue }
+    $attachment = Get-OptionalProperty $eni "Attachment"
+    if ($attachment -and (Get-OptionalProperty $attachment "AttachmentId")) {
+      continue
+    }
+
+    Write-Host ("Deleting detached ELB ENI: {0}" -f $eniId)
+    $deleteRaw = & aws ec2 delete-network-interface --network-interface-id $eniId --region $Region 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Unable to delete detached ENI {0}: {1}" -f $eniId, $deleteRaw)
+    }
+  }
+}
+
+function Wait-ForLoadBalancerCleanup([string]$VpcId, [string]$Region, [int]$TimeoutSeconds = 600) {
+  if (-not $VpcId) { return }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return }
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $elbv2Raw = & aws elbv2 describe-load-balancers --region $Region --query "length(LoadBalancers[?VpcId=='$VpcId'])" --output text 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Failed to query ELBv2 load balancers in VPC {0}: {1}" -f $VpcId, $elbv2Raw)
+      break
+    }
+    $classicRaw = & aws elb describe-load-balancers --region $Region --query "length(LoadBalancerDescriptions[?VPCId=='$VpcId'])" --output text 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Failed to query classic ELBs in VPC {0}: {1}" -f $VpcId, $classicRaw)
+      break
+    }
+
+    $elbv2Count = ConvertTo-IntOrZero $elbv2Raw
+    $classicCount = ConvertTo-IntOrZero $classicRaw
+    Remove-DetachedElasticLoadBalancerEnis -VpcId $VpcId -Region $Region
+    $eniCount = @(Get-ElasticLoadBalancerEnis -VpcId $VpcId -Region $Region).Count
+
+    if ($elbv2Count -eq 0 -and $classicCount -eq 0 -and $eniCount -eq 0) {
+      Write-Host ("Load balancer artifacts in VPC {0} are fully removed." -f $VpcId)
+      return
+    }
+
+    Write-Host ("Waiting for load balancer cleanup in VPC {0} (elbv2={1}, classic={2}, elb_enis={3})..." -f $VpcId, $elbv2Count, $classicCount, $eniCount)
+    Start-Sleep -Seconds 15
+  }
+
+  Write-Host ("Timed out waiting for load balancer cleanup in VPC {0}; continuing with destroy attempt." -f $VpcId)
+}
+
+function Remove-KubernetesServiceSecurityGroups([string]$VpcId, [string]$Region) {
+  if (-not $VpcId) { return }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return }
+
+  $args = @("ec2", "describe-security-groups", "--filters", "Name=vpc-id,Values=$VpcId", "--region", $Region, "--output", "json")
+  $raw = & aws @args 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host ("Failed to list security groups in VPC {0}: {1}" -f $VpcId, $raw)
+    return
+  }
+  if (-not $raw) { return }
+
+  $data = $raw | ConvertFrom-Json
+  $groups = Get-OptionalProperty $data "SecurityGroups"
+  if (-not $groups) { return }
+
+  foreach ($sg in $groups) {
+    $groupId = Get-OptionalProperty $sg "GroupId"
+    $groupName = [string](Get-OptionalProperty $sg "GroupName")
+    if (-not $groupId -or $groupName -eq "default") { continue }
+
+    $hasServiceTag = $false
+    $tags = Get-OptionalProperty $sg "Tags"
+    if ($tags) {
+      foreach ($tag in $tags) {
+        if ((Get-OptionalProperty $tag "Key") -eq "kubernetes.io/service-name") {
+          $hasServiceTag = $true
+          break
+        }
+      }
+    }
+
+    if (-not $hasServiceTag -and $groupName -notlike "k8s-elb-*") {
+      continue
+    }
+
+    Write-Host ("Deleting Kubernetes load balancer security group: {0} ({1})" -f $groupName, $groupId)
+    $deleteRaw = & aws ec2 delete-security-group --group-id $groupId --region $Region 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Unable to delete security group {0}: {1}" -f $groupId, $deleteRaw)
+    }
+  }
+}
+
+function Invoke-VpcDependencyCleanup([string]$VpcId, [string]$Region) {
+  if (-not $VpcId) { return }
+  Remove-LoadBalancers -VpcId $VpcId -Region $Region
+  Wait-ForLoadBalancerCleanup -VpcId $VpcId -Region $Region
+  Remove-KubernetesServiceSecurityGroups -VpcId $VpcId -Region $Region
+}
+
 $resolvedRepoRoot = if ($RepoRoot) { Resolve-Path $RepoRoot } else { Resolve-Path (Join-Path $PSScriptRoot "..") }
 $deploymentPath = Join-Path $resolvedRepoRoot "customer-deployments\$DeploymentName"
 
@@ -199,7 +339,7 @@ $vpcCfg = Get-OptionalProperty $config "vpc"
 $vpcName = Get-OptionalProperty $vpcCfg "name"
 $vpcId = Get-VpcIdByName -VpcName $vpcName -Region $region
 if ($vpcId) {
-  Remove-LoadBalancers -VpcId $vpcId -Region $region
+  Invoke-VpcDependencyCleanup -VpcId $vpcId -Region $region
 } else {
   Write-Host "VPC ID not found; skipping load balancer cleanup."
 }
@@ -223,9 +363,27 @@ try {
   if ($AutoApprove) {
     $destroyArgs += "-auto-approve"
   }
-  tofu @destroyArgs
-  if ($LASTEXITCODE -ne 0) {
-    throw "OpenTofu destroy failed (exit code $LASTEXITCODE)."
+  $maxDestroyAttempts = if ($vpcId) { 2 } else { 1 }
+  $destroySucceeded = $false
+  $destroyExitCode = 1
+  for ($attempt = 1; $attempt -le $maxDestroyAttempts; $attempt++) {
+    Write-Host ("Running OpenTofu destroy (attempt {0}/{1})..." -f $attempt, $maxDestroyAttempts)
+    tofu @destroyArgs
+    $destroyExitCode = $LASTEXITCODE
+    if ($destroyExitCode -eq 0) {
+      $destroySucceeded = $true
+      break
+    }
+
+    if ($attempt -lt $maxDestroyAttempts -and $vpcId) {
+      Write-Host "Destroy failed; retrying after extra VPC dependency cleanup."
+      Invoke-VpcDependencyCleanup -VpcId $vpcId -Region $region
+      continue
+    }
+  }
+
+  if (-not $destroySucceeded) {
+    throw "OpenTofu destroy failed (exit code $destroyExitCode)."
   }
 } finally {
   Pop-Location

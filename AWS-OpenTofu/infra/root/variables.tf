@@ -251,7 +251,7 @@ variable "cloudfront" {
     origin_domain_name       = optional(string)
     origin_id                = optional(string, "origin")
     viewer_protocol_policy   = optional(string, "allow-all")
-    origin_protocol_policy   = optional(string, "https-only")
+    origin_protocol_policy   = optional(string, "http-only")
     origin_ssl_protocols     = optional(list(string), ["TLSv1.2"])
     origin_read_timeout      = optional(number, 60)
     origin_keepalive_timeout = optional(number, 60)
