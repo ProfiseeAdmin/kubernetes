@@ -10,6 +10,12 @@ variable "aliases" {
   description = "Alternate domain names (CNAMEs) for the distribution."
 }
 
+variable "is_ipv6_enabled" {
+  type        = bool
+  default     = false
+  description = "Whether CloudFront should answer on IPv6."
+}
+
 variable "acm_certificate_arn" {
   type        = string
   description = "ACM certificate ARN in us-east-1."

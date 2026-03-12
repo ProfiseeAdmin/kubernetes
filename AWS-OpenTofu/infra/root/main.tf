@@ -1329,6 +1329,7 @@ module "cloudfront" {
   source = "../modules/cloudfront"
 
   enabled                  = local.cloudfront_deployed
+  is_ipv6_enabled          = var.cloudfront.is_ipv6_enabled
   aliases                  = var.cloudfront.aliases
   acm_certificate_arn      = module.acm_use1.certificate_arn
   origin_domain_name       = local.cloudfront_origin_domain_name

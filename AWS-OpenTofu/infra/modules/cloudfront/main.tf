@@ -55,7 +55,7 @@ resource "aws_cloudfront_origin_request_policy" "all_viewer" {
 
 resource "aws_cloudfront_distribution" "this" {
   enabled         = var.enabled
-  is_ipv6_enabled = true
+  is_ipv6_enabled = var.is_ipv6_enabled
   price_class     = var.price_class
   aliases         = local.cloudfront_aliases
   web_acl_id      = var.web_acl_id

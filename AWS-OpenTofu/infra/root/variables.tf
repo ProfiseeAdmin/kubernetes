@@ -247,6 +247,7 @@ variable "acm" {
 variable "cloudfront" {
   type = object({
     enabled                  = optional(bool, true)
+    is_ipv6_enabled          = optional(bool, false)
     aliases                  = optional(list(string), [])
     origin_domain_name       = optional(string)
     origin_id                = optional(string, "origin")
