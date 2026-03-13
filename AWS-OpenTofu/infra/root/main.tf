@@ -1339,7 +1339,7 @@ module "cloudfront" {
   origin_ssl_protocols     = var.cloudfront.origin_ssl_protocols
   origin_read_timeout      = var.cloudfront.origin_read_timeout
   origin_keepalive_timeout = var.cloudfront.origin_keepalive_timeout
-  origin_custom_headers    = var.cloudfront.origin_custom_headers
+  origin_custom_headers    = merge({ "X-Profisee-Origin-Proto" = "https" }, var.cloudfront.origin_custom_headers)
   price_class              = var.cloudfront.price_class
   web_acl_id               = var.cloudfront.web_acl_id
   enable_logging           = var.cloudfront.enable_logging

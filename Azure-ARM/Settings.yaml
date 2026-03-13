@@ -87,6 +87,7 @@ cloud:
         resourceId: ""
     aws:
       isProvider: false
+      usingCloudFront: false
       ebsVolumeId: ""
     google:
       isProvider: false

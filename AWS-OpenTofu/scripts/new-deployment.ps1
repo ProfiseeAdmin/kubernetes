@@ -797,6 +797,17 @@ if ($usePurview) { $purviewUrlValue = $purviewAtlasEndpoint }
 # Force cloud provider flags for AWS
 $settingsContent = $settingsContent -replace '(?m)^(\s*azure:\s*\r?\n\s*isProvider:\s*)true', '${1}false'
 $settingsContent = $settingsContent -replace '(?m)^(\s*aws:\s*\r?\n\s*isProvider:\s*)false', '${1}true'
+$usingCloudFront = To-BoolOrDefault (Get-PropValue $json.cloudfront "enabled") $false
+$usingCloudFrontLiteral = if ($usingCloudFront) { "true" } else { "false" }
+if ($settingsContent -match '(?m)^\s*usingCloudFront:\s*(true|false)\s*$') {
+  $settingsContent = $settingsContent -replace '(?m)^(\s*usingCloudFront:\s*).*$', ('$1' + $usingCloudFrontLiteral)
+} else {
+  $settingsContent = [regex]::Replace(
+    $settingsContent,
+    '(?m)^(\s*aws:\s*\r?\n\s*isProvider:\s*(?:true|false)\s*\r?\n)',
+    "`$1      usingCloudFront: $usingCloudFrontLiteral`r`n"
+  )
+}
 
 # Make EBS volume explicit placeholder for later update
 $settingsContent = $settingsContent -replace '(?m)^(\s*ebsVolumeId:\s*).*$','$1"$EBSVOLUMEID"'
