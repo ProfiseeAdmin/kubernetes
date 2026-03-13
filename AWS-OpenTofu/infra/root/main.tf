@@ -1010,12 +1010,13 @@ JSON
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
         skip_dns_wait=0
+        if [ "$${CLOUDFRONT_ENABLED:-false}" = "true" ]; then
+          log "CloudFront enabled; skipping public DNS propagation wait to NGINX NLB."
+          skip_dns_wait=1
+        fi
         if [ "$route53_changed" -eq 0 ] 2>/dev/null; then
-          cert_ready=$(kubectl get certificate -n "$APP_NAMESPACE" profisee-tls-ingress -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-          if [ "$cert_ready" = "True" ]; then
-            log "TLS cert already issued and Route53 unchanged; skipping public DNS propagation wait."
-            skip_dns_wait=1
-          fi
+          log "Route53 unchanged; skipping public DNS propagation wait."
+          skip_dns_wait=1
         fi
         if [ "$skip_dns_wait" -eq 0 ]; then
           run "Wait for public DNS propagation" wait_for_public_cname "$ROUTE53_RECORD_NAME" "$lb_host"
