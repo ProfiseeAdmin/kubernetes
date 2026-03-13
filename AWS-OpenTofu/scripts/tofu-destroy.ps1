@@ -23,6 +23,14 @@ function Get-OptionalProperty($obj, [string]$Name) {
   return $prop.Value
 }
 
+function Convert-AwsCliOutputToString($Output) {
+  if ($null -eq $Output) { return "" }
+  if ($Output -is [System.Array]) {
+    return (($Output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine).Trim()
+  }
+  return ([string]$Output).Trim()
+}
+
 function Remove-S3BucketContents([string]$Bucket, [string]$Region) {
   $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
   if (-not $awsCmd) {
@@ -339,7 +347,9 @@ function Remove-SecurityGroupRuleReferences([string]$TargetGroupId, [string]$Reg
   $args = @("ec2", "describe-security-group-rules", "--filters", "Name=referenced-group-id,Values=$TargetGroupId", "--region", $Region, "--output", "json")
   $raw = & aws @args 2>&1
   if ($LASTEXITCODE -ne 0) {
-    Write-Host ("Failed to list security group rule references for {0}: {1}" -f $TargetGroupId, $raw)
+    $rawText = Convert-AwsCliOutputToString $raw
+    Write-Host ("Failed to list security group rule references for {0}: {1}" -f $TargetGroupId, $rawText)
+    Remove-SecurityGroupRuleReferencesLegacy -TargetGroupId $TargetGroupId -Region $Region
     return
   }
   if (-not $raw) { return }
@@ -365,6 +375,99 @@ function Remove-SecurityGroupRuleReferences([string]$TargetGroupId, [string]$Reg
     }
     if ($LASTEXITCODE -ne 0) {
       Write-Host ("Unable to revoke referenced rule {0}: {1}" -f $ruleId, $revokeRaw)
+    }
+  }
+}
+
+function Remove-SecurityGroupRuleReferencesLegacy([string]$TargetGroupId, [string]$Region) {
+  if (-not $TargetGroupId) { return }
+  $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
+  if (-not $awsCmd) { return }
+
+  # Ingress references to target SG.
+  $ingressRaw = & aws ec2 describe-security-groups --filters "Name=ip-permission.group-id,Values=$TargetGroupId" --region $Region --output json 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $ingressText = Convert-AwsCliOutputToString $ingressRaw
+    Write-Host ("Fallback ingress SG reference scan failed for {0}: {1}" -f $TargetGroupId, $ingressText)
+  } else {
+    $ingressData = $ingressRaw | ConvertFrom-Json
+    $ingressGroups = Get-OptionalProperty $ingressData "SecurityGroups"
+    foreach ($sg in @($ingressGroups)) {
+      $groupId = Get-OptionalProperty $sg "GroupId"
+      if (-not $groupId -or $groupId -eq $TargetGroupId) { continue }
+      foreach ($perm in @((Get-OptionalProperty $sg "IpPermissions"))) {
+        $pairs = @((Get-OptionalProperty $perm "UserIdGroupPairs") | Where-Object { (Get-OptionalProperty $_ "GroupId") -eq $TargetGroupId })
+        if ($pairs.Count -eq 0) { continue }
+
+        $pairPayload = @()
+        foreach ($p in $pairs) {
+          $pairObj = @{ GroupId = (Get-OptionalProperty $p "GroupId") }
+          $userId = Get-OptionalProperty $p "UserId"
+          if ($userId) { $pairObj.UserId = $userId }
+          $pairPayload += $pairObj
+        }
+
+        $permPayload = @{
+          IpProtocol        = (Get-OptionalProperty $perm "IpProtocol")
+          UserIdGroupPairs  = $pairPayload
+        }
+        $fromPort = Get-OptionalProperty $perm "FromPort"
+        $toPort = Get-OptionalProperty $perm "ToPort"
+        if ($null -ne $fromPort) { $permPayload.FromPort = $fromPort }
+        if ($null -ne $toPort) { $permPayload.ToPort = $toPort }
+
+        $ipPermissionsJson = @{ IpPermissions = @($permPayload) } | ConvertTo-Json -Depth 10 -Compress
+        Write-Host ("Fallback revoking ingress SG reference from {0} to {1}" -f $groupId, $TargetGroupId)
+        $revokeRaw = & aws ec2 revoke-security-group-ingress --group-id $groupId --ip-permissions $ipPermissionsJson --region $Region 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          $revokeText = Convert-AwsCliOutputToString $revokeRaw
+          Write-Host ("Fallback ingress revoke failed for group {0}: {1}" -f $groupId, $revokeText)
+        }
+      }
+    }
+  }
+
+  # Egress references to target SG.
+  $egressRaw = & aws ec2 describe-security-groups --filters "Name=egress.ip-permission.group-id,Values=$TargetGroupId" --region $Region --output json 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $egressText = Convert-AwsCliOutputToString $egressRaw
+    Write-Host ("Fallback egress SG reference scan failed for {0}: {1}" -f $TargetGroupId, $egressText)
+    return
+  }
+
+  $egressData = $egressRaw | ConvertFrom-Json
+  $egressGroups = Get-OptionalProperty $egressData "SecurityGroups"
+  foreach ($sg in @($egressGroups)) {
+    $groupId = Get-OptionalProperty $sg "GroupId"
+    if (-not $groupId -or $groupId -eq $TargetGroupId) { continue }
+    foreach ($perm in @((Get-OptionalProperty $sg "IpPermissionsEgress"))) {
+      $pairs = @((Get-OptionalProperty $perm "UserIdGroupPairs") | Where-Object { (Get-OptionalProperty $_ "GroupId") -eq $TargetGroupId })
+      if ($pairs.Count -eq 0) { continue }
+
+      $pairPayload = @()
+      foreach ($p in $pairs) {
+        $pairObj = @{ GroupId = (Get-OptionalProperty $p "GroupId") }
+        $userId = Get-OptionalProperty $p "UserId"
+        if ($userId) { $pairObj.UserId = $userId }
+        $pairPayload += $pairObj
+      }
+
+      $permPayload = @{
+        IpProtocol       = (Get-OptionalProperty $perm "IpProtocol")
+        UserIdGroupPairs = $pairPayload
+      }
+      $fromPort = Get-OptionalProperty $perm "FromPort"
+      $toPort = Get-OptionalProperty $perm "ToPort"
+      if ($null -ne $fromPort) { $permPayload.FromPort = $fromPort }
+      if ($null -ne $toPort) { $permPayload.ToPort = $toPort }
+
+      $ipPermissionsJson = @{ IpPermissions = @($permPayload) } | ConvertTo-Json -Depth 10 -Compress
+      Write-Host ("Fallback revoking egress SG reference from {0} to {1}" -f $groupId, $TargetGroupId)
+      $revokeRaw = & aws ec2 revoke-security-group-egress --group-id $groupId --ip-permissions $ipPermissionsJson --region $Region 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        $revokeText = Convert-AwsCliOutputToString $revokeRaw
+        Write-Host ("Fallback egress revoke failed for group {0}: {1}" -f $groupId, $revokeText)
+      }
     }
   }
 }
