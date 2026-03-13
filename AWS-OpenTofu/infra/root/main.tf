@@ -14,9 +14,6 @@ locals {
   platform_deployer_settings_key = coalesce(try(var.platform_deployer.settings_key, null), "settings/${var.eks.cluster_name}/Settings.yaml")
   kubeconfig_s3_key              = "kubeconfig/${var.eks.cluster_name}/kubeconfig"
   platform_outputs_s3_key        = "outputs/${var.eks.cluster_name}/platform.json"
-  cloudfront_origin_domain_raw   = try(var.cloudfront.origin_domain_name, null)
-  cloudfront_origin_domain_name  = local.cloudfront_origin_domain_raw == null ? "" : trimspace(local.cloudfront_origin_domain_raw)
-  cloudfront_deployed            = try(var.cloudfront.enabled, false) && local.cloudfront_origin_domain_name != ""
   profisee_deploy_cfg                    = var.profisee_deploy
   profisee_deploy_enabled                = try(local.profisee_deploy_cfg.enabled, false)
   profisee_deploy_tags                   = merge(var.tags, try(local.profisee_deploy_cfg.tags, {}))
@@ -876,7 +873,7 @@ fi
   log "Installation of nginx ingress started."
   run "Add NGINX OSS repo" helm repo add nginx-stable https://helm.nginx.com/stable
   run "Update Helm repos" helm repo update
-  run "Download nginxSettings.yaml" curl -fsSL -o /tmp/nginxSettings.yaml https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/Azure-ARM/nginxSettings.yaml
+  run "Download nginxSettings.yaml" curl -fsSL -o /tmp/nginxSettings.yaml https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/AWS-OpenTofu/nginxSettingsAWS.yaml
   if ! kubectl get namespace "$APP_NAMESPACE" >/dev/null 2>&1; then
     run "Create app namespace" kubectl create namespace "$APP_NAMESPACE"
   fi
@@ -915,10 +912,7 @@ done
 
   r53_updated=0
   route53_changed=0
-  if [ "$${CLOUDFRONT_ENABLED:-false}" = "true" ]; then
-    log "CloudFront enabled; skipping Route53 NGINX CNAME update in profisee_deploy."
-    r53_updated=1
-  elif [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
+  if [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
     record_name_dot="$ROUTE53_RECORD_NAME"
     case "$record_name_dot" in
       *.) ;;
@@ -1009,10 +1003,6 @@ JSON
         log "Skipping app deploy (missing SETTINGS_S3_*)."
       else
         skip_dns_wait=0
-        if [ "$${CLOUDFRONT_ENABLED:-false}" = "true" ]; then
-          log "CloudFront enabled; skipping public DNS propagation wait to NGINX NLB."
-          skip_dns_wait=1
-        fi
         if [ "$route53_changed" -eq 0 ] 2>/dev/null; then
           log "Route53 unchanged; skipping public DNS propagation wait."
           skip_dns_wait=1
@@ -1127,7 +1117,6 @@ JSON
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
       ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
-      CLOUDFRONT_ENABLED         = try(var.cloudfront.enabled, false) ? "true" : "false"
       RUNTIME_SQL_MODE           = "rds_dbadmin"
       APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
       APP_RELEASE_NAME           = local.app_deploy_release_name
@@ -1329,41 +1318,6 @@ module "acm_use1" {
   validation_method         = var.acm.validation_method
   create_route53_records    = var.acm.create_route53_records
   tags                      = var.acm.tags
-}
-
-module "cloudfront" {
-  count  = local.cloudfront_deployed ? 1 : 0
-  source = "../modules/cloudfront"
-
-  enabled                  = local.cloudfront_deployed
-  is_ipv6_enabled          = var.cloudfront.is_ipv6_enabled
-  aliases                  = var.cloudfront.aliases
-  acm_certificate_arn      = module.acm_use1.certificate_arn
-  origin_domain_name       = local.cloudfront_origin_domain_name
-  origin_id                = var.cloudfront.origin_id
-  viewer_protocol_policy   = var.cloudfront.viewer_protocol_policy
-  origin_protocol_policy   = var.cloudfront.origin_protocol_policy
-  origin_ssl_protocols     = var.cloudfront.origin_ssl_protocols
-  origin_read_timeout      = var.cloudfront.origin_read_timeout
-  origin_keepalive_timeout = var.cloudfront.origin_keepalive_timeout
-  origin_custom_headers    = merge({ "X-Profisee-Origin-Proto" = "https" }, var.cloudfront.origin_custom_headers)
-  price_class              = var.cloudfront.price_class
-  web_acl_id               = var.cloudfront.web_acl_id
-  enable_logging           = var.cloudfront.enable_logging
-  logging_bucket           = var.cloudfront.logging_bucket
-  tags                     = var.cloudfront.tags
-}
-
-module "route53" {
-  count  = local.cloudfront_deployed ? 1 : 0
-  source = "../modules/route53"
-
-  hosted_zone_id         = var.route53.hosted_zone_id
-  record_name            = var.route53.record_name
-  record_type            = var.route53.record_type
-  alias_name             = module.cloudfront[0].distribution_domain_name
-  alias_zone_id          = module.cloudfront[0].hosted_zone_id
-  evaluate_target_health = var.route53.evaluate_target_health
 }
 
 locals {
@@ -1621,10 +1575,7 @@ module "outputs_contract" {
     rds_endpoint                          = module.rds_sqlserver.endpoint
     rds_port                              = module.rds_sqlserver.port
     rds_master_user_secret_arn            = module.rds_sqlserver.master_user_secret_arn
-    cloudfront_id                         = local.cloudfront_deployed ? module.cloudfront[0].distribution_id : null
-    cloudfront_domain_name                = local.cloudfront_deployed ? module.cloudfront[0].distribution_domain_name : null
-    cloudfront_hosted_zone_id             = local.cloudfront_deployed ? module.cloudfront[0].hosted_zone_id : null
-    route53_record_fqdn                   = local.cloudfront_deployed ? module.route53[0].record_fqdn : null
+    route53_record_fqdn                   = null
     acm_certificate_arn                   = module.acm_use1.certificate_arn
     jumpbox_instance_id                   = local.jumpbox_enabled ? module.jumpbox_windows[0].instance_id : null
     jumpbox_private_ip                    = local.jumpbox_enabled ? module.jumpbox_windows[0].private_ip : null

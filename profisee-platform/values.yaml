@@ -86,7 +86,6 @@ cloud:
         clientId: ""
     aws:
       isProvider: false
-      usingCloudFront: false
       ebsVolumeId: ""
     google:
       isProvider: false

@@ -105,17 +105,6 @@
     "domain_name": "app.example.com",
     "hosted_zone_id": "Z1234567890ABC"
   },
-  "cloudfront": {
-    "enabled": true,
-    "is_ipv6_enabled": false,
-    "aliases": [
-      "app.example.com"
-    ],
-    "viewer_protocol_policy": "allow-all",
-    "origin_protocol_policy": "http-only",
-    "origin_domain_name": null,
-    "origin_custom_headers": {}
-  },
   "route53": {
     "enabled": true,
     "hosted_zone_id": "Z1234567890ABC",

@@ -6,7 +6,7 @@ variable "region" {
 variable "use1_region" {
   type        = string
   default     = "us-east-1"
-  description = "AWS region for us-east-1 resources (CloudFront ACM certificates)."
+  description = "AWS region for us-east-1 resources (ACM certificates)."
 }
 
 variable "tags" {
@@ -244,28 +244,6 @@ variable "acm" {
   description = "ACM certificate configuration (us-east-1)."
 }
 
-variable "cloudfront" {
-  type = object({
-    enabled                  = optional(bool, true)
-    is_ipv6_enabled          = optional(bool, false)
-    aliases                  = optional(list(string), [])
-    origin_domain_name       = optional(string)
-    origin_id                = optional(string, "origin")
-    viewer_protocol_policy   = optional(string, "allow-all")
-    origin_protocol_policy   = optional(string, "http-only")
-    origin_ssl_protocols     = optional(list(string), ["TLSv1.2"])
-    origin_read_timeout      = optional(number, 60)
-    origin_keepalive_timeout = optional(number, 60)
-    origin_custom_headers    = optional(map(string), {})
-    price_class              = optional(string, "PriceClass_100")
-    web_acl_id               = optional(string)
-    enable_logging           = optional(bool, false)
-    logging_bucket           = optional(string)
-    tags                     = optional(map(string), {})
-  })
-  description = "CloudFront distribution configuration. origin_domain_name can be auto-wired after profisee_deploy/NGINX OSS ingress."
-}
-
 variable "route53" {
   type = object({
     enabled                = optional(bool, true)
@@ -274,20 +252,7 @@ variable "route53" {
     record_type            = optional(string, "A")
     evaluate_target_health = optional(bool, false)
   })
-  description = "Route53 record configuration for CloudFront. route53.enabled is deprecated when CloudFront is deployed."
-
-  validation {
-    condition = !(
-      try(var.cloudfront.enabled, false) &&
-      trimspace(coalesce(try(var.cloudfront.origin_domain_name, null), "")) != ""
-    ) || (
-      var.route53.hosted_zone_id != null &&
-      var.route53.hosted_zone_id != "" &&
-      var.route53.record_name != null &&
-      var.route53.record_name != ""
-    )
-    error_message = "route53.hosted_zone_id and route53.record_name are required when CloudFront is deployed."
-  }
+  description = "Route53 record configuration."
 }
 
 variable "jumpbox" {

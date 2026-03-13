@@ -27,7 +27,7 @@ function Write-InputFormatLegend() {
 
 Write-InputFormatLegend
 Write-Note "Note: RDS identifier must be lowercase letters, numbers, and hyphens, and start with a letter."
-Write-Note "Note: List fields (AZs, subnet CIDRs, EKS instance types, CloudFront aliases, RDP CIDRs) should be comma-separated."
+Write-Note "Note: List fields (AZs, subnet CIDRs, EKS instance types, RDP CIDRs) should be comma-separated."
 Write-Note "Note: This script normalizes identifiers and converts lists to proper JSON arrays before writing the config."
 
 $defaultProfiseeDeployImage = "profisee.azurecr.io/profiseeplatformdev:aws-ecs-tools-latest"
@@ -267,14 +267,6 @@ try {
     $json.PSObject.Properties.Remove("db_init")
     Write-Host "Removed legacy db_init block; using profisee_deploy only."
   }
-  Ensure-ObjectProperty $json "cloudfront" @{} | Out-Null
-  Ensure-ObjectProperty $json.cloudfront "enabled" $true | Out-Null
-  Ensure-ObjectProperty $json.cloudfront "aliases" @() | Out-Null
-  Ensure-ObjectProperty $json.cloudfront "origin_domain_name" $null | Out-Null
-  Ensure-ObjectProperty $json.cloudfront "origin_custom_headers" @{} | Out-Null
-  if ($json.cloudfront.origin_domain_name -eq "nlb-abc123.us-east-1.elb.amazonaws.com") {
-    $json.cloudfront.origin_domain_name = $null
-  }
   Ensure-ObjectProperty $json "route53" @{} | Out-Null
   Ensure-ObjectProperty $json.route53 "enabled" $true | Out-Null
   Ensure-ObjectProperty $json.route53 "hosted_zone_id" $null | Out-Null
@@ -293,7 +285,7 @@ try {
 
   if (-not $NoPrompt) {
     $json.region = Read-Value "Primary region" $json.region
-    $json.use1_region = Read-Value "us-east-1 region (ACM/CloudFront)" $json.use1_region
+    $json.use1_region = Read-Value "us-east-1 region (ACM)" $json.use1_region
 
   $json.tags.Project = Read-Value "Tag: Project" $json.tags.Project
   $json.tags.Environment = Read-Value "Tag: Environment" $json.tags.Environment
@@ -367,31 +359,6 @@ if (-not $NoPrompt) {
 
   $json.acm.domain_name = Read-Value "ACM domain name" $json.acm.domain_name
   $json.acm.hosted_zone_id = Read-Value "ACM hosted zone ID" $json.acm.hosted_zone_id
-  $json.cloudfront.enabled = Read-Bool "Use CloudFront in front of load balancer" (To-BoolOrDefault (Get-PropValue $json.cloudfront "enabled") $true)
-
-  # If CloudFront is enabled, keep Route53 defaults aligned with ACM inputs unless user set explicit values.
-  if ($json.cloudfront.enabled -eq $true) {
-    $acmDomain = Get-PropValue $json.acm "domain_name"
-    $normalizedAcmDomain = if ($acmDomain) { $acmDomain.ToString().Trim() } else { "" }
-    if ($normalizedAcmDomain.StartsWith("*.")) {
-      $normalizedAcmDomain = $normalizedAcmDomain.Substring(2)
-    }
-
-    $route53RecordName = Get-PropValue $json.route53 "record_name"
-    $route53RecordNameNormalized = if ($route53RecordName) { $route53RecordName.ToString().Trim().ToLower() } else { "" }
-    if (($route53RecordNameNormalized -eq "" -or $route53RecordNameNormalized -eq "app.example.com") -and $normalizedAcmDomain -ne "") {
-      $json.route53.record_name = $normalizedAcmDomain
-      Write-Host ("Route53 record_name defaulted to ACM domain: {0}" -f $normalizedAcmDomain)
-    }
-
-    $route53HostedZoneId = Get-PropValue $json.route53 "hosted_zone_id"
-    $route53HostedZoneIdNormalized = if ($route53HostedZoneId) { $route53HostedZoneId.ToString().Trim().ToUpper() } else { "" }
-    $acmHostedZoneId = Get-PropValue $json.acm "hosted_zone_id"
-    if (($route53HostedZoneIdNormalized -eq "" -or $route53HostedZoneIdNormalized -eq "Z1234567890ABC") -and $acmHostedZoneId) {
-      $json.route53.hosted_zone_id = $acmHostedZoneId
-      Write-Host ("Route53 hosted_zone_id defaulted to ACM hosted zone ID: {0}" -f $acmHostedZoneId)
-    }
-  }
 
     $json.jumpbox.enabled = Read-Bool "Jumpbox enabled" $json.jumpbox.enabled
   if ($json.jumpbox.enabled) {
@@ -411,7 +378,6 @@ $json.vpc.public_subnet_cidrs = Coerce-List "Public subnet CIDRs" $json.vpc.publ
 $json.vpc.private_subnet_cidrs = Coerce-List "Private subnet CIDRs" $json.vpc.private_subnet_cidrs
 $json.eks.linux_node_group.instance_types = Coerce-List "EKS linux instance types" $json.eks.linux_node_group.instance_types
 $json.eks.windows_node_group.instance_types = Coerce-List "EKS windows instance types" $json.eks.windows_node_group.instance_types
-$json.cloudfront.aliases = Coerce-List "CloudFront aliases" $json.cloudfront.aliases
 $json.jumpbox.allowed_rdp_cidrs = Coerce-List "Jumpbox RDP CIDRs" $json.jumpbox.allowed_rdp_cidrs
 
 if ($json.profisee_deploy -and $json.profisee_deploy.enabled -eq $true -and (-not $json.profisee_deploy.image_uri -or $json.profisee_deploy.image_uri -eq "")) {
@@ -470,14 +436,6 @@ $externalDnsName = $json.route53.record_name
 if (-not $externalDnsName -or $externalDnsName -eq "") { $externalDnsName = $json.acm.domain_name }
 if ($externalDnsName -and $externalDnsName.StartsWith("*.")) {
   $externalDnsName = $externalDnsName.Substring(2)
-}
-$cloudfrontAliases = @($json.cloudfront.aliases | Where-Object {
-  $_ -and $_.ToString().Trim() -ne "" -and $_.ToString().Trim().ToLower() -ne "app.example.com"
-})
-if ($cloudfrontAliases.Count -eq 0 -and $externalDnsName) {
-  $json.cloudfront.aliases = @($externalDnsName)
-} else {
-  $json.cloudfront.aliases = $cloudfrontAliases
 }
 $externalDnsUrl = if ($externalDnsName) { "https://$externalDnsName" } else { "" }
 
@@ -797,17 +755,6 @@ if ($usePurview) { $purviewUrlValue = $purviewAtlasEndpoint }
 # Force cloud provider flags for AWS
 $settingsContent = $settingsContent -replace '(?m)^(\s*azure:\s*\r?\n\s*isProvider:\s*)true', '${1}false'
 $settingsContent = $settingsContent -replace '(?m)^(\s*aws:\s*\r?\n\s*isProvider:\s*)false', '${1}true'
-$usingCloudFront = To-BoolOrDefault (Get-PropValue $json.cloudfront "enabled") $false
-$usingCloudFrontLiteral = if ($usingCloudFront) { "true" } else { "false" }
-if ($settingsContent -match '(?m)^\s*usingCloudFront:\s*(true|false)\s*$') {
-  $settingsContent = $settingsContent -replace '(?m)^(\s*usingCloudFront:\s*).*$', ('$1' + $usingCloudFrontLiteral)
-} else {
-  $settingsContent = [regex]::Replace(
-    $settingsContent,
-    '(?m)^(\s*aws:\s*\r?\n\s*isProvider:\s*(?:true|false)\s*\r?\n)',
-    "`$1      usingCloudFront: $usingCloudFrontLiteral`r`n"
-  )
-}
 
 # Make EBS volume explicit placeholder for later update
 $settingsContent = $settingsContent -replace '(?m)^(\s*ebsVolumeId:\s*).*$','$1"$EBSVOLUMEID"'

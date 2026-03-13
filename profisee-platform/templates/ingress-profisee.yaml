@@ -27,11 +27,6 @@ metadata:
       if ($scheme = https) {
         set $redirect_https 0;
       }
-      {{ if and .Values.cloud.aws.isProvider .Values.cloud.aws.usingCloudFront }}
-      if ($http_x_profisee_origin_proto = https) {
-        set $redirect_https 0;
-      }
-      {{ end }}
       if ($request_uri ~* "^/\\.well-known/acme-challenge/") {
         set $redirect_https 0;
       }
