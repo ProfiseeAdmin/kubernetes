@@ -344,11 +344,19 @@ function Remove-SecurityGroupRuleReferences([string]$TargetGroupId, [string]$Reg
   $awsCmd = Get-Command aws -ErrorAction SilentlyContinue
   if (-not $awsCmd) { return }
 
+  if ($script:SupportsReferencedGroupIdFilter -eq $false) {
+    Remove-SecurityGroupRuleReferencesLegacy -TargetGroupId $TargetGroupId -Region $Region
+    return
+  }
+
   $args = @("ec2", "describe-security-group-rules", "--filters", "Name=referenced-group-id,Values=$TargetGroupId", "--region", $Region, "--output", "json")
   $raw = & aws @args 2>&1
   if ($LASTEXITCODE -ne 0) {
     $rawText = Convert-AwsCliOutputToString $raw
     Write-Host ("Failed to list security group rule references for {0}: {1}" -f $TargetGroupId, $rawText)
+    if ($rawText -match "(?i)filter 'referenced-group-id' is invalid") {
+      $script:SupportsReferencedGroupIdFilter = $false
+    }
     Remove-SecurityGroupRuleReferencesLegacy -TargetGroupId $TargetGroupId -Region $Region
     return
   }
@@ -416,7 +424,7 @@ function Remove-SecurityGroupRuleReferencesLegacy([string]$TargetGroupId, [strin
         if ($null -ne $fromPort) { $permPayload.FromPort = $fromPort }
         if ($null -ne $toPort) { $permPayload.ToPort = $toPort }
 
-        $ipPermissionsJson = @{ IpPermissions = @($permPayload) } | ConvertTo-Json -Depth 10 -Compress
+        $ipPermissionsJson = ConvertTo-Json -InputObject @($permPayload) -Depth 10 -Compress
         Write-Host ("Fallback revoking ingress SG reference from {0} to {1}" -f $groupId, $TargetGroupId)
         $revokeRaw = & aws ec2 revoke-security-group-ingress --group-id $groupId --ip-permissions $ipPermissionsJson --region $Region 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -461,7 +469,7 @@ function Remove-SecurityGroupRuleReferencesLegacy([string]$TargetGroupId, [strin
       if ($null -ne $fromPort) { $permPayload.FromPort = $fromPort }
       if ($null -ne $toPort) { $permPayload.ToPort = $toPort }
 
-      $ipPermissionsJson = @{ IpPermissions = @($permPayload) } | ConvertTo-Json -Depth 10 -Compress
+      $ipPermissionsJson = ConvertTo-Json -InputObject @($permPayload) -Depth 10 -Compress
       Write-Host ("Fallback revoking egress SG reference from {0} to {1}" -f $groupId, $TargetGroupId)
       $revokeRaw = & aws ec2 revoke-security-group-egress --group-id $groupId --ip-permissions $ipPermissionsJson --region $Region 2>&1
       if ($LASTEXITCODE -ne 0) {
@@ -539,13 +547,15 @@ function Remove-KubernetesServiceSecurityGroups([string]$VpcId, [string]$Region)
     Write-Host ("Deleting Kubernetes load balancer security group: {0} ({1})" -f $groupName, $groupId)
     $deleteRaw = & aws ec2 delete-security-group --group-id $groupId --region $Region 2>&1
     if ($LASTEXITCODE -ne 0) {
-      Write-Host ("Initial delete failed for security group {0}: {1}" -f $groupId, $deleteRaw)
+      $deleteRawText = Convert-AwsCliOutputToString $deleteRaw
+      Write-Host ("Initial delete failed for security group {0}: {1}" -f $groupId, $deleteRawText)
       Remove-LoadBalancersBySecurityGroup -GroupId $groupId -Region $Region
       Remove-SecurityGroupRuleReferences -TargetGroupId $groupId -Region $Region
       Wait-ForSecurityGroupRelease -GroupId $groupId -Region $Region
       $deleteRawRetry = & aws ec2 delete-security-group --group-id $groupId --region $Region 2>&1
       if ($LASTEXITCODE -ne 0) {
-        Write-Host ("Unable to delete security group {0} after retry: {1}" -f $groupId, $deleteRawRetry)
+        $deleteRawRetryText = Convert-AwsCliOutputToString $deleteRawRetry
+        Write-Host ("Unable to delete security group {0} after retry: {1}" -f $groupId, $deleteRawRetryText)
       }
     }
   }
