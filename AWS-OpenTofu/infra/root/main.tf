@@ -916,7 +916,10 @@ done
 
   r53_updated=0
   route53_changed=0
-  if [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
+  if [ "$${CLOUDFRONT_ENABLED:-false}" = "true" ]; then
+    log "CloudFront enabled; skipping Route53 NGINX CNAME update in profisee_deploy."
+    r53_updated=1
+  elif [ -n "$ROUTE53_HOSTED_ZONE_ID" ] && [ -n "$ROUTE53_RECORD_NAME" ]; then
     record_name_dot="$ROUTE53_RECORD_NAME"
     case "$record_name_dot" in
       *.) ;;
@@ -1124,6 +1127,7 @@ JSON
       PLATFORM_OUTPUTS_S3_KEY    = local.settings_bucket_enabled ? local.platform_outputs_s3_key : ""
       ROUTE53_HOSTED_ZONE_ID     = try(var.route53.hosted_zone_id, "")
       ROUTE53_RECORD_NAME        = try(var.route53.record_name, "")
+      CLOUDFRONT_ENABLED         = try(var.cloudfront.enabled, false) ? "true" : "false"
       RUNTIME_SQL_MODE           = "rds_dbadmin"
       APP_DEPLOY_ENABLED         = local.app_deploy_enabled ? "true" : "false"
       APP_RELEASE_NAME           = local.app_deploy_release_name
