@@ -880,14 +880,13 @@ fi
   if ! kubectl get namespace "$APP_NAMESPACE" >/dev/null 2>&1; then
     run "Create app namespace" kubectl create namespace "$APP_NAMESPACE"
   fi
-  log "If nginx is installed, uninstall it first."
   nginxpresent=$(helm list -n "$APP_NAMESPACE" -f '^nginx$' -o table --short 2>/dev/null || true)
   if [ "$nginxpresent" = "nginx" ]; then
-    run "Uninstall existing nginx release" helm uninstall -n "$APP_NAMESPACE" nginx
-    log "Sleeping 60s to allow clean uninstall of nginx."
-    sleep 60
+    log "nginx release already exists; upgrading in-place."
+  else
+    log "nginx release not found; installing."
   fi
-  run "Install nginx ingress" helm install -n "$APP_NAMESPACE" nginx nginx-stable/nginx-ingress --values /tmp/nginxSettings.yaml
+  run "Upsert nginx ingress" helm upgrade --install -n "$APP_NAMESPACE" nginx nginx-stable/nginx-ingress --values /tmp/nginxSettings.yaml
 
 log "Waiting for NGINX OSS ingress LoadBalancer hostname..."
 lb_host=""
