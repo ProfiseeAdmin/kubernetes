@@ -498,7 +498,8 @@ locals {
   )
   profisee_deploy_secret_env     = { for k, v in local.profisee_deploy_secret_arns : "SECRET_${upper(k)}_ARN" => v }
   profisee_deploy_acr_secret_arn = try(local.profisee_deploy_secret_arns["acr"], null)
-  profisee_deploy_command        = <<-EOT
+  profisee_deploy_command        = replace(
+    <<-EOT
 set -e
 set -o pipefail 2>/dev/null || true
 
@@ -1107,6 +1108,7 @@ JSON
       fi
     fi
   EOT
+  , "\r", "")
   profisee_deploy_env = merge(
     {
       AWS_REGION                 = var.region
