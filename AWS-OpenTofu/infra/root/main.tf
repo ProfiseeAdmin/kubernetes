@@ -499,7 +499,8 @@ locals {
   profisee_deploy_secret_env     = { for k, v in local.profisee_deploy_secret_arns : "SECRET_${upper(k)}_ARN" => v }
   profisee_deploy_acr_secret_arn = try(local.profisee_deploy_secret_arns["acr"], null)
   profisee_deploy_command        = <<-EOT
-set -eo pipefail
+set -e
+set -o pipefail 2>/dev/null || true
 
 log() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"; }
 log_err() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >&2; }
