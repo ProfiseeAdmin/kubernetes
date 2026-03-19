@@ -25,8 +25,8 @@
       "defaultValue": "",
       "type": "String"
     },
-    "UsePurview": {
-      "defaultValue": "",
+    "UseGovernance": {
+      "defaultValue": "No",
       "type": "String"
     },
     "PurviewUrl": {
@@ -46,6 +46,18 @@
       "type": "String"
     },
     "PurviewAccountResourceGroup": {
+      "defaultValue": "",
+      "type": "String"
+    },
+    "AlationUrl": {
+      "defaultValue": "",
+      "type": "String"
+    },
+    "AlationUsername": {
+      "defaultValue": "",
+      "type": "String"
+    },
+    "AlationPassword": {
       "defaultValue": "",
       "type": "String"
     },
@@ -250,12 +262,15 @@
     "UseKeyVault":"[parameters('UseKeyVault')]",
     "KeyVault":"[parameters('KeyVault')]",
 
-    "UsePurview":"[parameters('UsePurview')]",
+    "UseGovernance":"[parameters('UseGovernance')]",
     "PurviewUrl":"[parameters('PurviewUrl')]",
     "PurviewCollectionId":"[parameters('PurviewCollectionFriendlyName')]",
     "PurviewClientId":"[parameters('PurviewClientId')]",
     "PurviewClientSecret":"[parameters('PurviewClientSecret')]",
-    "PurviewAccountResourceGroup":"[parameters('PurviewAccountResourceGroup')]"
+    "PurviewAccountResourceGroup":"[parameters('PurviewAccountResourceGroup')]",
+    "AlationUrl":"[parameters('AlationUrl')]",
+    "AlationUsername":"[parameters('AlationUsername')]",
+    "AlationPassword":"[parameters('AlationPassword')]"
   },
     "resources":
     [
@@ -311,8 +326,8 @@
                         "value": "[variables('KeyVault')]"
                     },
                     {
-                        "name": "USEPURVIEW",
-                        "value": "[variables('UsePurview')]"
+                        "name": "USEGOVERNANCE",
+                        "value": "[variables('UseGovernance')]"
                     },
                     {
                         "name": "PURVIEWURL",
@@ -804,8 +819,8 @@
                       "value": "[reference(resourceId('Microsoft.ContainerService/managedClusters', variables('KubernetesClusterName'))).identityProfile.kubeletidentity.objectId]"
                     },
                     {
-                      "name": "USEPURVIEW",
-                      "value": "[variables('UsePurview')]"
+                      "name": "USEGOVERNANCE",
+                      "value": "[variables('UseGovernance')]"
                     },
                     {
                         "name": "PURVIEWURL",
@@ -826,6 +841,18 @@
                     {
                       "name": "PURVIEWACCOUNTRESOURCEGROUP",
                       "value": "[variables('PurviewAccountResourceGroup')]"
+                    },
+                    {
+                      "name": "ALATIONURL",
+                      "value": "[variables('AlationUrl')]"
+                    },
+                    {
+                      "name": "ALATIONUSERNAME",
+                      "value": "[variables('AlationUsername')]"
+                    },
+                    {
+                      "name": "ALATIONPASSWORD",
+                      "value": "[variables('AlationPassword')]"
                     },
                     {
                       "name": "AUTHENTICATIONTYPE",

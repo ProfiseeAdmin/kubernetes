@@ -277,20 +277,24 @@
             "visible": "[equals(steps('profisee').ActiveDirectoryCreateApp,'No')]"
           },
           {
-            "name": "UsePurview",
+            "name": "UseGovernance",
             "type": "Microsoft.Common.OptionsGroup",
-            "label": "Integrate Profisee with Microsoft Purview?",
-            "defaultValue": "No, no need at this point.",
-            "toolTip": "Profisee can integrate with Microsoft Purview during initial configuration or at a later time.",
+            "label": "Select governance integration",
+            "defaultValue": "No",
+            "toolTip": "Select whether Profisee should configure no governance integration, Microsoft Purview, or Alation during the initial deployment.",
             "constraints": {
               "allowedValues": [
                 {
-                  "label": "Yes, integrate with Microsoft Purview.",
-                  "value": "Yes"
+                  "label": "No",
+                  "value": "No"
                 },
                 {
-                  "label": "No, no need at this point.",
-                  "value": "No"
+                  "label": "Purview",
+                  "value": "Purview"
+                },
+                {
+                  "label": "Alation",
+                  "value": "Alation"
                 }
               ],
               "required": true
@@ -308,7 +312,7 @@
                 "location": "All"
               }
             },
-            "visible": "[equals(steps('profisee').UsePurview,'Yes')]"
+            "visible": "[equals(steps('profisee').UseGovernance,'Purview')]"
           },
           {
             "name": "GetPurviewUrlRestApiResponse",
@@ -317,7 +321,8 @@
               "method": "GET",
               "path": "[concat(subscription().id,'/resourceGroups/',last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5)),'/providers/Microsoft.Purview/accounts/',steps('profisee').PurviewAccountName.name,'?api-version=2021-12-01')]",
               "body": ""
-            }
+            },
+            "visible": "[equals(steps('profisee').UseGovernance,'Purview')]"
           },
           {
             "name": "PurviewCollectionFriendlyName",
@@ -331,7 +336,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UsePurview,'Yes')]"
+            "visible": "[equals(steps('profisee').UseGovernance,'Purview')]"
           },
           {
             "name": "PurviewClientID",
@@ -345,7 +350,7 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UsePurview,'Yes')]"
+            "visible": "[equals(steps('profisee').UseGovernance,'Purview')]"
           },
           {
             "name": "PurviewClientSecret",
@@ -359,7 +364,50 @@
               "regex": "",
               "validationMessage": ""
             },
-            "visible": "[equals(steps('profisee').UsePurview,'Yes')]"
+            "visible": "[equals(steps('profisee').UseGovernance,'Purview')]"
+          },
+          {
+            "name": "AlationUrl",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Alation URL",
+            "defaultValue": "",
+            "placeholder": "",
+            "toolTip": "Provide the base URL for the Alation instance Profisee should integrate with.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseGovernance,'Alation')]"
+          },
+          {
+            "name": "AlationUsername",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Alation username",
+            "defaultValue": "",
+            "placeholder": "",
+            "toolTip": "Provide the username for the Alation account Profisee should use.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseGovernance,'Alation')]"
+          },
+          {
+            "name": "AlationPassword",
+            "type": "Microsoft.Common.PasswordBox",
+            "label": {
+              "password": "Alation password",
+              "confirmPassword": "Confirm password"
+            },
+            "toolTip": "Provide the password for the Alation account Profisee should use.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseGovernance,'Alation')]"
           }
         ]
       },
@@ -1086,12 +1134,15 @@
       "InfraAdminAccount": "[steps('networking').InfraAdminAccount]",
       "UseKeyVault": "[steps('profisee').UseKeyVault]",
       "KeyVault": "[steps('profisee').KeyVault.id]",
-      "UsePurview": "[steps('profisee').UsePurview]",
-      "PurviewUrl": "[steps('profisee').GetPurviewUrlRestApiResponse.properties.endpoints.catalog]",
-      "PurviewClientId": "[steps('profisee').PurviewClientID]",
-      "PurviewCollectionFriendlyName": "[steps('profisee').PurviewCollectionFriendlyName]",
-      "PurviewClientSecret": "[steps('profisee').PurviewClientSecret]",
-      "PurviewAccountResourceGroup": "[last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5))]",
+      "UseGovernance": "[steps('profisee').UseGovernance]",
+      "PurviewUrl": "[if(equals(steps('profisee').UseGovernance, 'Purview'), steps('profisee').GetPurviewUrlRestApiResponse.properties.endpoints.catalog, '')]",
+      "PurviewClientId": "[if(equals(steps('profisee').UseGovernance, 'Purview'), steps('profisee').PurviewClientID, '')]",
+      "PurviewCollectionFriendlyName": "[if(equals(steps('profisee').UseGovernance, 'Purview'), steps('profisee').PurviewCollectionFriendlyName, '')]",
+      "PurviewClientSecret": "[if(equals(steps('profisee').UseGovernance, 'Purview'), steps('profisee').PurviewClientSecret, '')]",
+      "PurviewAccountResourceGroup": "[if(equals(steps('profisee').UseGovernance, 'Purview'), last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5)), '')]",
+      "AlationUrl": "[if(equals(steps('profisee').UseGovernance, 'Alation'), steps('profisee').AlationUrl, '')]",
+      "AlationUsername": "[if(equals(steps('profisee').UseGovernance, 'Alation'), steps('profisee').AlationUsername, '')]",
+      "AlationPassword": "[if(equals(steps('profisee').UseGovernance, 'Alation'), steps('profisee').AlationPassword, '')]",
       "ProfiseeWebAppName": "[steps('profisee').ProfiseeWebAppName]"
     }
   }

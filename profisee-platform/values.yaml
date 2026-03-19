@@ -91,9 +91,15 @@ cloud:
       isProvider: false
       gceVolumeName: ""
 integrations:
+  governance:
+    provider: "$GOVERNANCEPROVIDER"
   purview:
     tenantId: "$PURVIEWTENANTID"
     url: "$PURVIEWURL"
     collectionId: "$PURVIEWCOLLECTIONID"
     clientId: "$PURVIEWCLIENTID"
     clientSecret: "$PURVIEWCLIENTSECRET"
+  alation:
+    url: "$ALATIONURL"
+    username: "$ALATIONUSERNAME"
+    password: "$ALATIONPASSWORD"

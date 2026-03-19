@@ -468,20 +468,44 @@ if [ "$SQLSERVERCREATENEW" = "Yes" ]; then
 	echo "Addition of the SQL firewall rule finished.";
 fi
 
-#Acquire the collection id from the collection name
-if [ "$USEPURVIEW" = "Yes" ]; then
-	echo "Obtain collection id from provided collection friendly name started.";
-	echo "Grab a token."
-	purviewtoken=$(curl --location --no-progress-meter --request GET "https://login.microsoftonline.com/$TENANTID/oauth2/token" --header 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "client_id=$PURVIEWCLIENTID" --data-urlencode "client_secret=$PURVIEWCLIENTSECRET" --data-urlencode 'grant_type=client_credentials' --data-urlencode 'resource=https://purview.azure.net'  | jq --raw-output '.access_token');
-	echo "Token acquired."
-	echo "Find collection Id.";
-	echo $"Stripping /catalog from $PURVIEWURL."
-	PURVIEWACCOUNTFQDN=${PURVIEWURL::-8}
-	echo $"Purview account name is $PURVIEWACCOUNTFQDN. Using it."
-	COLLECTIONTRUEID=$(curl --location --no-progress-meter --request GET "$PURVIEWACCOUNTFQDN/account/collections?api-version=2019-11-01-preview" --header "Authorization: Bearer $purviewtoken" | jq --raw-output '.value | .[] | select(.friendlyName=="'$PURVIEWCOLLECTIONID'") | .name')
-	echo $"Collection id is $COLLECTIONTRUEID, using that.";
-	echo "Obtain collection id from provided collection friendly name completed.";
-fi
+COLLECTIONTRUEID=""
+GOVERNANCEPROVIDER="No"
+PURVIEWURLVALUE=""
+PURVIEWTENANTIDVALUE=""
+PURVIEWCOLLECTIONIDVALUE=""
+PURVIEWCLIENTIDVALUE=""
+PURVIEWCLIENTSECRETVALUE=""
+ALATIONURLVALUE=""
+ALATIONUSERNAMEVALUE=""
+ALATIONPASSWORDVALUE=""
+
+case "$USEGOVERNANCE" in
+	"Purview")
+		GOVERNANCEPROVIDER="Purview"
+		echo "Obtain collection id from provided collection friendly name started.";
+		echo "Grab a token."
+		purviewtoken=$(curl --location --no-progress-meter --request GET "https://login.microsoftonline.com/$TENANTID/oauth2/token" --header 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "client_id=$PURVIEWCLIENTID" --data-urlencode "client_secret=$PURVIEWCLIENTSECRET" --data-urlencode 'grant_type=client_credentials' --data-urlencode 'resource=https://purview.azure.net'  | jq --raw-output '.access_token');
+		echo "Token acquired."
+		echo "Find collection Id.";
+		echo $"Stripping /catalog from $PURVIEWURL."
+		PURVIEWACCOUNTFQDN=${PURVIEWURL::-8}
+		echo $"Purview account name is $PURVIEWACCOUNTFQDN. Using it."
+		COLLECTIONTRUEID=$(curl --location --no-progress-meter --request GET "$PURVIEWACCOUNTFQDN/account/collections?api-version=2019-11-01-preview" --header "Authorization: Bearer $purviewtoken" | jq --raw-output '.value | .[] | select(.friendlyName=="'$PURVIEWCOLLECTIONID'") | .name')
+		echo $"Collection id is $COLLECTIONTRUEID, using that.";
+		echo "Obtain collection id from provided collection friendly name completed.";
+		PURVIEWURLVALUE="$PURVIEWURL"
+		PURVIEWTENANTIDVALUE="$TENANTID"
+		PURVIEWCOLLECTIONIDVALUE="$COLLECTIONTRUEID"
+		PURVIEWCLIENTIDVALUE="$PURVIEWCLIENTID"
+		PURVIEWCLIENTSECRETVALUE="$PURVIEWCLIENTSECRET"
+		;;
+	"Alation")
+		GOVERNANCEPROVIDER="Alation"
+		ALATIONURLVALUE="$ALATIONURL"
+		ALATIONUSERNAMEVALUE="$ALATIONUSERNAME"
+		ALATIONPASSWORDVALUE="$ALATIONPASSWORD"
+		;;
+esac
 
 echo "The variables will now be set in the Settings.yaml file"
 #Setting storage related variables
@@ -593,11 +617,15 @@ sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' Settings.yaml
 sed -i -e 's~$LICENSEDATA~'"$LICENSEDATA"'~g' Settings.yaml
 sed -i -e 's/$ACRREPONAME/'"$ACRREPONAME"'/g' Settings.yaml
 sed -i -e 's/$ACRREPOLABEL/'"$ACRREPOLABEL"'/g' Settings.yaml
-sed -i -e 's~$PURVIEWURL~'"$PURVIEWURL"'~g' Settings.yaml
-sed -i -e 's/$PURVIEWTENANTID/'"$TENANTID"'/g' Settings.yaml
-sed -i -e 's/$PURVIEWCOLLECTIONID/'"$COLLECTIONTRUEID"'/g' Settings.yaml
-sed -i -e 's/$PURVIEWCLIENTID/'"$PURVIEWCLIENTID"'/g' Settings.yaml
-sed -i -e 's/$PURVIEWCLIENTSECRET/'"$PURVIEWCLIENTSECRET"'/g' Settings.yaml
+sed -i -e 's/$GOVERNANCEPROVIDER/'"$GOVERNANCEPROVIDER"'/g' Settings.yaml
+sed -i -e 's~$PURVIEWURL~'"$PURVIEWURLVALUE"'~g' Settings.yaml
+sed -i -e 's/$PURVIEWTENANTID/'"$PURVIEWTENANTIDVALUE"'/g' Settings.yaml
+sed -i -e 's/$PURVIEWCOLLECTIONID/'"$PURVIEWCOLLECTIONIDVALUE"'/g' Settings.yaml
+sed -i -e 's/$PURVIEWCLIENTID/'"$PURVIEWCLIENTIDVALUE"'/g' Settings.yaml
+sed -i -e 's~$PURVIEWCLIENTSECRET~'"$PURVIEWCLIENTSECRETVALUE"'~g' Settings.yaml
+sed -i -e 's~$ALATIONURL~'"$ALATIONURLVALUE"'~g' Settings.yaml
+sed -i -e 's~$ALATIONUSERNAME~'"$ALATIONUSERNAMEVALUE"'~g' Settings.yaml
+sed -i -e 's~$ALATIONPASSWORD~'"$ALATIONPASSWORDVALUE"'~g' Settings.yaml
 sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml

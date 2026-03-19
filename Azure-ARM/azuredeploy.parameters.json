@@ -23,6 +23,9 @@
         "ActiveDirectoryClientSecret": {
             "value": ""
         },
+        "UseGovernance": {
+            "value": "No"
+        },
         "PurviewUrl": {
             "value": ""
         },
@@ -33,6 +36,15 @@
             "value": ""
         },
         "PurviewClientSecret": {
+            "value": ""
+        },
+        "AlationUrl": {
+            "value": ""
+        },
+        "AlationUsername": {
+            "value": ""
+        },
+        "AlationPassword": {
             "value": ""
         },
         "ManagedIdentityName": {

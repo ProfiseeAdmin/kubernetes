@@ -36,11 +36,12 @@ echo $"UPDATEDNS is $UPDATEDNS"
 echo $"UPDATEAAD is $UPDATEAAD"
 echo $"USEKEYVAULT is $USEKEYVAULT"
 echo $"KEYVAULT is $KEYVAULT"
-echo $"USEPURVIEW is $USEPURVIEW"
+echo $"USEGOVERNANCE is $USEGOVERNANCE"
 echo $"PURVIEWURL is $PURVIEWURL"
 echo $"PURVIEWCOLLECTIONID is $PURVIEWCOLLECTIONID"
 echo $"PURVIEWCLIENTID is $PURVIEWCLIENTID"
-echo $"PURVIEWCLIENTSECRET is $PURVIEWCLIENTSECRET"
+echo $"ALATIONURL is $ALATIONURL"
+echo $"ALATIONUSERNAME is $ALATIONUSERNAME"
 echo $"TENANTID is $TENANTID"
 
 IFS='/' read -r -a miparts <<< "$AZ_SCRIPTS_USER_ASSIGNED_IDENTITY" #splits the mi on slashes
@@ -110,7 +111,7 @@ fi
 # If using Purview, check for the following:
 # 1. Has the Purview Application Registration been added to the Data Curators role in the Purview account. If not, exit with error.
 # 2. Does the Purview Application Registartion have the proper permissions. If not, output warnings and continue.
-if [ "$USEPURVIEW" = "Yes" ]; then
+if [ "$USEGOVERNANCE" = "Purview" ]; then
 	purviewClientPermissions=$(az ad app permission list --id $PURVIEWCLIENTID --output tsv --query [].resourceAccess[].id)
 
 	#Check if User.Read permission has been granted to the Purview specific Azure Application Registration.
