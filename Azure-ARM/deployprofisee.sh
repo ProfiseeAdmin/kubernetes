@@ -469,7 +469,7 @@ if [ "$SQLSERVERCREATENEW" = "Yes" ]; then
 fi
 
 COLLECTIONTRUEID=""
-GOVERNANCEPROVIDER="No"
+GOVERNANCEPROVIDER="none"
 PURVIEWURLVALUE=""
 PURVIEWTENANTIDVALUE=""
 PURVIEWCOLLECTIONIDVALUE=""
@@ -480,8 +480,8 @@ ALATIONUSERNAMEVALUE=""
 ALATIONPASSWORDVALUE=""
 
 case "$USEGOVERNANCE" in
-	"Purview")
-		GOVERNANCEPROVIDER="Purview"
+	"azurePurview")
+		GOVERNANCEPROVIDER="azurePurview"
 		echo "Obtain collection id from provided collection friendly name started.";
 		echo "Grab a token."
 		purviewtoken=$(curl --location --no-progress-meter --request GET "https://login.microsoftonline.com/$TENANTID/oauth2/token" --header 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "client_id=$PURVIEWCLIENTID" --data-urlencode "client_secret=$PURVIEWCLIENTSECRET" --data-urlencode 'grant_type=client_credentials' --data-urlencode 'resource=https://purview.azure.net'  | jq --raw-output '.access_token');
@@ -499,8 +499,8 @@ case "$USEGOVERNANCE" in
 		PURVIEWCLIENTIDVALUE="$PURVIEWCLIENTID"
 		PURVIEWCLIENTSECRETVALUE="$PURVIEWCLIENTSECRET"
 		;;
-	"Alation")
-		GOVERNANCEPROVIDER="Alation"
+	"alation")
+		GOVERNANCEPROVIDER="alation"
 		ALATIONURLVALUE="$ALATIONURL"
 		ALATIONUSERNAMEVALUE="$ALATIONUSERNAME"
 		ALATIONPASSWORDVALUE="$ALATIONPASSWORD"

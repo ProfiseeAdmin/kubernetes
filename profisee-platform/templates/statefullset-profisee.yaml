@@ -155,7 +155,7 @@ spec:
             secretKeyRef:
                 name: profisee-oidc-secret
                 key: ProfiseeOidcClientSecret
-        {{- if eq .Values.integrations.governance.provider "Purview" }}
+        {{- if eq .Values.integrations.governance.provider "azurePurview" }}
         - name: ProfiseePurviewUrl
           valueFrom:
             secretKeyRef:
@@ -182,7 +182,7 @@ spec:
                 name: profisee-purview
                 key: ProfiseePurviewClientSecret
         {{- end }}
-        {{- if eq .Values.integrations.governance.provider "Alation" }}
+        {{- if eq .Values.integrations.governance.provider "alation" }}
         - name: ProfiseeAlationUrl
           valueFrom:
             secretKeyRef:

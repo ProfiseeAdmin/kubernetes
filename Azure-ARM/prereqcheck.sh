@@ -111,7 +111,7 @@ fi
 # If using Purview, check for the following:
 # 1. Has the Purview Application Registration been added to the Data Curators role in the Purview account. If not, exit with error.
 # 2. Does the Purview Application Registartion have the proper permissions. If not, output warnings and continue.
-if [ "$USEGOVERNANCE" = "Purview" ]; then
+if [ "$USEGOVERNANCE" = "azurePurview" ]; then
 	purviewClientPermissions=$(az ad app permission list --id $PURVIEWCLIENTID --output tsv --query [].resourceAccess[].id)
 
 	#Check if User.Read permission has been granted to the Purview specific Azure Application Registration.
