@@ -598,6 +598,14 @@ curl -fsSL -o coredns-custom.yaml "$REPOURL/Azure-ARM/coredns-custom.yaml";
 sed -i -e 's/$EXTERNALDNSNAME/'"$EXTERNALDNSNAME"'/g' coredns-custom.yaml
 sed -i -e 's/$INGRESSSERVICEFQDN/'"$INGRESSSERVICEFQDN"'/g' coredns-custom.yaml
 
+# Only Alation is user-supplied here; escape '&' for sed replacement and '~' for the chosen sed delimiter.
+ALATIONURL_ESCAPED=${ALATIONURLVALUE//&/\\&}
+ALATIONURL_ESCAPED=${ALATIONURL_ESCAPED//~/\\~}
+ALATIONUSERNAME_ESCAPED=${ALATIONUSERNAMEVALUE//&/\\&}
+ALATIONUSERNAME_ESCAPED=${ALATIONUSERNAME_ESCAPED//~/\\~}
+ALATIONPASSWORD_ESCAPED=${ALATIONPASSWORDVALUE//&/\\&}
+ALATIONPASSWORD_ESCAPED=${ALATIONPASSWORD_ESCAPED//~/\\~}
+
 #Setting values in the Settings.yaml
 sed -i -e 's/$SQLNAME/'"$SQLNAME"'/g' Settings.yaml
 sed -i -e 's/$SQLDBNAME/'"$SQLDBNAME"'/g' Settings.yaml
@@ -618,14 +626,14 @@ sed -i -e 's~$LICENSEDATA~'"$LICENSEDATA"'~g' Settings.yaml
 sed -i -e 's/$ACRREPONAME/'"$ACRREPONAME"'/g' Settings.yaml
 sed -i -e 's/$ACRREPOLABEL/'"$ACRREPOLABEL"'/g' Settings.yaml
 sed -i -e 's/$GOVERNANCEPROVIDER/'"$GOVERNANCEPROVIDER"'/g' Settings.yaml
-sed -i -e 's~$PURVIEWURL~'"$PURVIEWURLVALUE"'~g' Settings.yaml
-sed -i -e 's/$PURVIEWTENANTID/'"$PURVIEWTENANTIDVALUE"'/g' Settings.yaml
-sed -i -e 's/$PURVIEWCOLLECTIONID/'"$PURVIEWCOLLECTIONIDVALUE"'/g' Settings.yaml
-sed -i -e 's/$PURVIEWCLIENTID/'"$PURVIEWCLIENTIDVALUE"'/g' Settings.yaml
-sed -i -e 's~$PURVIEWCLIENTSECRET~'"$PURVIEWCLIENTSECRETVALUE"'~g' Settings.yaml
-sed -i -e 's~$ALATIONURL~'"$ALATIONURLVALUE"'~g' Settings.yaml
-sed -i -e 's~$ALATIONUSERNAME~'"$ALATIONUSERNAMEVALUE"'~g' Settings.yaml
-sed -i -e 's~$ALATIONPASSWORD~'"$ALATIONPASSWORDVALUE"'~g' Settings.yaml
+sed -i -e 's~$PURVIEWURL~'"$PURVIEWURL"'~g' Settings.yaml
+sed -i -e 's/$PURVIEWTENANTID/'"$TENANTID"'/g' Settings.yaml
+sed -i -e 's/$PURVIEWCOLLECTIONID/'"$COLLECTIONTRUEID"'/g' Settings.yaml
+sed -i -e 's/$PURVIEWCLIENTID/'"$PURVIEWCLIENTID"'/g' Settings.yaml
+sed -i -e 's/$PURVIEWCLIENTSECRET/'"$PURVIEWCLIENTSECRET"'/g' Settings.yaml
+sed -i -e 's~$ALATIONURL~'"$ALATIONURL_ESCAPED"'~g' Settings.yaml
+sed -i -e 's~$ALATIONUSERNAME~'"$ALATIONUSERNAME_ESCAPED"'~g' Settings.yaml
+sed -i -e 's~$ALATIONPASSWORD~'"$ALATIONPASSWORD_ESCAPED"'~g' Settings.yaml
 sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
