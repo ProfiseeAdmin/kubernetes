@@ -470,11 +470,6 @@ fi
 
 COLLECTIONTRUEID=""
 GOVERNANCEPROVIDER="none"
-PURVIEWURLVALUE=""
-PURVIEWTENANTIDVALUE=""
-PURVIEWCOLLECTIONIDVALUE=""
-PURVIEWCLIENTIDVALUE=""
-PURVIEWCLIENTSECRETVALUE=""
 ALATIONURLVALUE=""
 ALATIONUSERNAMEVALUE=""
 ALATIONPASSWORDVALUE=""
@@ -493,11 +488,6 @@ case "$USEGOVERNANCE" in
 		COLLECTIONTRUEID=$(curl --location --no-progress-meter --request GET "$PURVIEWACCOUNTFQDN/account/collections?api-version=2019-11-01-preview" --header "Authorization: Bearer $purviewtoken" | jq --raw-output '.value | .[] | select(.friendlyName=="'$PURVIEWCOLLECTIONID'") | .name')
 		echo $"Collection id is $COLLECTIONTRUEID, using that.";
 		echo "Obtain collection id from provided collection friendly name completed.";
-		PURVIEWURLVALUE="$PURVIEWURL"
-		PURVIEWTENANTIDVALUE="$TENANTID"
-		PURVIEWCOLLECTIONIDVALUE="$COLLECTIONTRUEID"
-		PURVIEWCLIENTIDVALUE="$PURVIEWCLIENTID"
-		PURVIEWCLIENTSECRETVALUE="$PURVIEWCLIENTSECRET"
 		;;
 	"alation")
 		GOVERNANCEPROVIDER="alation"
