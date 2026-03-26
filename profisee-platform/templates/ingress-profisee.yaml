@@ -43,10 +43,12 @@ metadata:
 
 spec:
   ingressClassName: nginx
+  {{- if .Values.profiseeRunTime.isPaaS }}
   tls:
   - hosts:
     - {{.Values.profiseeRunTime.externalDnsName}}
     secretName: profisee-tls-ingress
+  {{- end }} 
   rules:
   - host: {{.Values.profiseeRunTime.externalDnsName}}
     http:
