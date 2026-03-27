@@ -31,9 +31,6 @@ if ($CreateDeployRole) {
   if ($DeployRoleTrustedPrincipalArns.Count -eq 0) {
     throw "CreateDeployRole requires -DeployRoleTrustedPrincipalArns."
   }
-  if ($DeployRolePolicyArns.Count -eq 0) {
-    throw "CreateDeployRole requires -DeployRolePolicyArns."
-  }
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")

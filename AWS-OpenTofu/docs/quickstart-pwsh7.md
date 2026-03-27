@@ -19,7 +19,6 @@ Use your AWS account ID in trusted principal ARN.
   -CreateDeployRole `
   -DeployRoleName profisee-opentofu-deploy `
   -DeployRoleTrustedPrincipalArns arn:aws:iam::<ACCOUNT_ID>:root `
-  -DeployRolePolicyArns arn:aws:iam::aws:policy/AdministratorAccess `
   -BackendOutPath .\customer-deployments\acme-prod\backend.hcl `
   -AutoApprove
 ```

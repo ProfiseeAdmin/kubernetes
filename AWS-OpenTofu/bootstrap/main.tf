@@ -138,6 +138,66 @@ resource "aws_iam_role" "deploy" {
   tags               = local.tags
 }
 
+data "aws_iam_policy_document" "deploy_scope" {
+  count = var.create_deploy_role ? 1 : 0
+
+  statement {
+    sid    = "OpenTofuDeploymentScope"
+    effect = "Allow"
+    actions = [
+      "acm:*",
+      "autoscaling:*",
+      "cloudwatch:*",
+      "dynamodb:*",
+      "ec2:*",
+      "ecs:*",
+      "eks:*",
+      "elasticloadbalancing:*",
+      "iam:AddRoleToInstanceProfile",
+      "iam:AttachRolePolicy",
+      "iam:CreateInstanceProfile",
+      "iam:CreateOpenIDConnectProvider",
+      "iam:CreatePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:CreateRole",
+      "iam:CreateServiceLinkedRole",
+      "iam:DeleteInstanceProfile",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:Get*",
+      "iam:List*",
+      "iam:PassRole",
+      "iam:PutRolePolicy",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:Tag*",
+      "iam:Untag*",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+      "kms:*",
+      "logs:*",
+      "rds:*",
+      "route53:*",
+      "s3:*",
+      "secretsmanager:*",
+      "ssm:*",
+      "sts:GetCallerIdentity"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "deploy_scope" {
+  count = var.create_deploy_role ? 1 : 0
+
+  name   = "${var.deploy_role_name}-scope"
+  role   = aws_iam_role.deploy[0].id
+  policy = data.aws_iam_policy_document.deploy_scope[0].json
+}
+
 resource "aws_iam_role_policy_attachment" "deploy" {
   for_each = var.create_deploy_role ? toset(var.deploy_role_policy_arns) : toset([])
 

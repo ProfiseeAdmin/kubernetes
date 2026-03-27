@@ -64,11 +64,6 @@ variable "deploy_role_trusted_principal_arns" {
 variable "deploy_role_policy_arns" {
   type        = list(string)
   default     = []
-  description = "Policy ARNs to attach to the deploy role."
-
-  validation {
-    condition     = !var.create_deploy_role || length(var.deploy_role_policy_arns) > 0
-    error_message = "When create_deploy_role is true, deploy_role_policy_arns must not be empty."
-  }
+  description = "Optional additional policy ARNs to attach to the deploy role."
 }
 
