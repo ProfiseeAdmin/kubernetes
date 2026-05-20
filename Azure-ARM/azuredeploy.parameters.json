@@ -151,8 +151,7 @@
             "value": ""
         },
         "WindowsNodeVersion":{
-            "value": "",
-            "defaultValue": "Windows2025"
+            "value": ""
         },    
         "AuthenticationType":{
             "value": ""
