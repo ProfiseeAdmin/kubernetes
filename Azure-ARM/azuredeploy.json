@@ -853,6 +853,10 @@
                     //   "value": "[variables('PurviewAccountResourceGroup')]"
                     // },
                     {
+                      "name": "PURVIEWTENANTID",
+                      "value": "[variables('PurviewTenantID)]"
+                    },
+                    {
                       "name": "ALATIONURL",
                       "value": "[variables('AlationUrl')]"
                     },
