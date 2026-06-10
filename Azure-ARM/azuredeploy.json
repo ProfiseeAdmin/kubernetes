@@ -45,10 +45,14 @@
       "defaultValue": "",
       "type": "String"
     },
-    "PurviewAccountResourceGroup": {
+    "PurviewTenantID": {
       "defaultValue": "",
       "type": "String"
-    },
+    },    
+    // "PurviewAccountResourceGroup": {
+    //   "defaultValue": "",
+    //   "type": "String"
+    // },
     "AlationUrl": {
       "defaultValue": "",
       "type": "String"
@@ -198,6 +202,7 @@
   },
   "variables":
   {
+    "PreReqCheckScriptURL":"https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/prereqcheck.sh",
     "ScriptURL":"https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/deployprofisee.sh",
     "PreReqCheckScriptURL":"https://raw.githubusercontent.com/profiseeadmin/kubernetes/master/Azure-ARM/prereqcheck.sh",
     "KubernetesVnetResourceGroup":"[parameters('KubernetesVnetResourceGroup')]",
@@ -267,7 +272,8 @@
     "PurviewCollectionId":"[parameters('PurviewCollectionFriendlyName')]",
     "PurviewClientId":"[parameters('PurviewClientId')]",
     "PurviewClientSecret":"[parameters('PurviewClientSecret')]",
-    "PurviewAccountResourceGroup":"[parameters('PurviewAccountResourceGroup')]",
+    "PurviewTenantID":"[parameters('PurviewTenantID')]",
+    // "PurviewAccountResourceGroup":"[parameters('PurviewAccountResourceGroup')]",
     "AlationUrl":"[parameters('AlationUrl')]",
     "AlationUsername":"[parameters('AlationUsername')]",
     "AlationPassword":"[parameters('AlationPassword')]"
@@ -344,7 +350,11 @@
                     {
                         "name": "PURVIEWCLIENTSECRET",
                         "value": "[variables('PurviewClientSecret')]"
-                    }
+                    },
+                    {
+                        "name": "PURVIEWTENANTID",
+                        "value": "[variables('PurviewTenantID')]"
+                    }                    
                 ]
             }
         },
@@ -838,10 +848,10 @@
                       "name": "PURVIEWCLIENTSECRET",
                       "value": "[variables('PurviewClientSecret')]"
                     },
-                    {
-                      "name": "PURVIEWACCOUNTRESOURCEGROUP",
-                      "value": "[variables('PurviewAccountResourceGroup')]"
-                    },
+                    // {
+                    //   "name": "PURVIEWACCOUNTRESOURCEGROUP",
+                    //   "value": "[variables('PurviewAccountResourceGroup')]"
+                    // },
                     {
                       "name": "ALATIONURL",
                       "value": "[variables('AlationUrl')]"

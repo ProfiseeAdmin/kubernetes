@@ -97,7 +97,7 @@
             "name": "ProfiseeVersion",
             "type": "Microsoft.Common.DropDown",
             "label": "Profisee version",
-            "defaultValue": "2026r2.0-win22",
+            "defaultValue": "2026r2.0-win25",
             "toolTip": "Which release of the Profisee Platform to deploy.",
             "constraints": {
               "required": true,
@@ -115,6 +115,10 @@
                   "value": "profiseeplatform:2025r1.0-win22"
                 },
                 {
+                  "label": "2025r2.0-win19",
+                  "value": "profiseeplatform:2025r2.0-win19"
+                },
+                {
                   "label": "2025r2.0-win22",
                   "value": "profiseeplatform:2025r2.0-win22"
                 },
@@ -128,16 +132,16 @@
                 },
                 {
                   "label": "2026r1.0-win22",
-                  "value": "profiseeplatformdev:2026r1.0-win22"
-                },
-                {
-                  "label": "2026r2.0-win25",
-                  "value": "profiseeplatformdev:2026r2.0-win25"
+                  "value": "profiseeplatform:2026r1.0-win22"                  
                 },
                 {
                   "label": "2026r2.0-win22",
-                  "value": "profiseeplatformdev:2026r2.0-win22"
-                }
+                  "value": "profiseeplatformdev:2026r2.0-win22"                  
+                },
+                {
+                  "label": "2026r2.0-win25",
+                  "value": "profiseeplatformdev:2026r2.0-win25"                  
+                }                               
               ]
             },
             "visible": true
@@ -291,24 +295,15 @@
           },
           {
             "name": "PurviewAccountName",
-            "type": "Microsoft.Solutions.ResourceSelector",
-            "label": "Select Purview Account",
-            "resourceType": "Microsoft.Purview/accounts",
-            "options": {
-              "filter": {
-                "subscription": "All",
-                "location": "All"
-              }
-            },
-            "visible": "[equals(steps('profisee').UseGovernance,'azurePurview')]"
-          },
-          {
-            "name": "GetPurviewUrlRestApiResponse",
-            "type": "Microsoft.Solutions.ArmApiControl",
-            "request": {
-              "method": "GET",
-              "path": "[concat(subscription().id,'/resourceGroups/',last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5)),'/providers/Microsoft.Purview/accounts/',steps('profisee').PurviewAccountName.name,'?api-version=2021-12-01')]",
-              "body": ""
+            "type": "Microsoft.Common.TextBox",
+            "label": "Select Purview Account URL",
+            "defaultValue": "",
+            "placeholder": "THiS iS CaSe SenSiTiVe!",
+            "toolTip": "Please provide the Purview Collection URL that you see in your Purview account. Profisee will deploy to that collection. If you would like to deploy in the root collection, please specify its friendly name.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
             },
             "visible": "[equals(steps('profisee').UseGovernance,'azurePurview')]"
           },
@@ -354,6 +349,20 @@
             },
             "visible": "[equals(steps('profisee').UseGovernance,'azurePurview')]"
           },
+          {
+            "name": "PurviewTenantID",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Purview Tenant ID",
+            "defaultValue": "",
+            "placeholder": "",
+            "toolTip": "Please Provide Tenant ID for Purview specific application and paste its value here.",
+            "constraints": {
+              "required": true,
+              "regex": "",
+              "validationMessage": ""
+            },
+            "visible": "[equals(steps('profisee').UseGovernance,'azurePurview')]"
+          },          
           {
             "name": "AlationUrl",
             "type": "Microsoft.Common.TextBox",
@@ -1084,7 +1093,7 @@
       "ActiveDirectoryCreateApp": "[steps('profisee').ActiveDirectoryCreateApp]",
       "ActiveDirectoryClientId": "[steps('profisee').UserSuppliedClientId.ActiveDirectoryClientId]",
       "ActiveDirectoryClientSecret": "[steps('profisee').UserSuppliedClientSecret.ActiveDirectoryClientSecret]",
-      "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win25'), 'Windows2025', 'Windows2022')]",
+      "WindowsNodeVersion": "[if(contains(steps('profisee').ProfiseeVersion, '-win22'), 'Windows2022', 'Windows2025')]",
       "KubernetesClusterName": "[steps('kubernetes').KubernetesClusterName]",
       "KubernetesVersion": "[steps('kubernetes').KubernetesVersion]",
       "KubenetesInfrastructureResourceGroupName": "[steps('kubernetes').KubenetesInfrastructureResourceGroupName]",
@@ -1123,11 +1132,11 @@
       "UseKeyVault": "[steps('profisee').UseKeyVault]",
       "KeyVault": "[steps('profisee').KeyVault.id]",
       "UseGovernance": "[steps('profisee').UseGovernance]",
-      "PurviewUrl": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').GetPurviewUrlRestApiResponse.properties.endpoints.catalog, '')]",
+      "PurviewUrl": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').PurviewAccountName, '')]",
       "PurviewClientId": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').PurviewClientID, '')]",
       "PurviewCollectionFriendlyName": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').PurviewCollectionFriendlyName, '')]",
       "PurviewClientSecret": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').PurviewClientSecret, '')]",
-      "PurviewAccountResourceGroup": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), last(take(split(steps('profisee').PurviewAccountName.id, '/'), 5)), '')]",
+      "PurviewTenantID": "[if(equals(steps('profisee').UseGovernance, 'azurePurview'), steps('profisee').PurviewTenantID, '')]",
       "AlationUrl": "[if(equals(steps('profisee').UseGovernance, 'alation'), steps('profisee').AlationUrl, '')]",
       "AlationUsername": "[if(equals(steps('profisee').UseGovernance, 'alation'), steps('profisee').AlationUsername, '')]",
       "AlationPassword": "[if(equals(steps('profisee').UseGovernance, 'alation'), steps('profisee').AlationPassword, '')]",

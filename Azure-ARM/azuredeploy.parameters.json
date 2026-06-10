@@ -3,7 +3,7 @@
     "contentVersion": "1.0.0.0",
     "parameters": {
         "ProfiseeVersion": {
-            "value": "profiseeplatformdev:2026r1.0-win22"
+            "value": "profiseeplatformdev:2026r2.0-win25"
         },
         "ProfiseeAdminUserAccount": {
             "value": ""
@@ -38,6 +38,9 @@
         "PurviewClientSecret": {
             "value": ""
         },
+        "PurviewTenantID": {
+            "value": ""
+        },        
         "AlationUrl": {
             "value": ""
         },
