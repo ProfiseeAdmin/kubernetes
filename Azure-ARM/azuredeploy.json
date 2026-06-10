@@ -854,7 +854,7 @@
                     // },
                     {
                       "name": "PURVIEWTENANTID",
-                      "value": "[variables('PurviewTenantID)]"
+                      "value": "[variables('PurviewTenantID')]"
                     },
                     {
                       "name": "ALATIONURL",
