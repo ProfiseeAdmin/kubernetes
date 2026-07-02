@@ -376,7 +376,7 @@ ACRREPOLABEL="${repostring[1],,}"
 
 
 if [[ "$ACRREPOLABEL" == *"2026r2"* ]]; then
-    azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/federation/entra/signin"
+    azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/federation/Azure%20Active%20Directory/signin"
 else
     azureAppReplyUrl="${EXTERNALDNSURL}/${WEBAPPNAME}/auth/signin-microsoft"
 fi
