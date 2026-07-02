@@ -545,7 +545,7 @@ WINDOWS_NODE_VERSION="$(az aks show -n $CLUSTERNAME -g $RESOURCEGROUPNAME --quer
 # fi
 
 #Add AzureAD Claims and Pod Count
-OIDCNAME="entra"
+OIDCNAME="Azure Active Directory"
 OIDCCMUserName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
 OIDCCMUserID="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
 OIDCCMFirstName="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"
