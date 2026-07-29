@@ -101,7 +101,7 @@ spec:
                 - |-
                   Start-Sleep -Seconds 30; foreach ($script in @("forensics_log_pull.ps1", "Collect-ProfiseeDiagnostics.ps1")) {
                     Remove-Item -Path ".\Fileshare\$script" -Force -ErrorAction SilentlyContinue;
-                    $url = "https://raw.githubusercontent.com/profisee/kubernetes/master/Azure-ARM/$script";
+                    $url = "https://raw.githubusercontent.com/ProfiseeAdmin/kubernetes/master/Azure-ARM/$script";
                     $out = ".\Fileshare\$script";
                     $downloaded = $false;
                     for ($i = 0; $i -lt 3; $i++) {
