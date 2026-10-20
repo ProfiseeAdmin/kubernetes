@@ -111,6 +111,12 @@
     Per-endpoint timeout for the (parallel) health probes. Default 10000; -PreStop
     lowers it to 3000 unless you pass a value.
 
+.PARAMETER MaxPerDay
+    -PreStop only: the most bundles this host may create per calendar day. When
+    this host already has that many *-All-Logs-*.zip files in -OutputPath dated
+    today, the run exits immediately without collecting, so a crash-looping pod
+    cannot flood the fileshare. Default 10; 0 = no limit.
+
 .EXAMPLE
     .\forensics_log_pull.ps1
 
@@ -152,7 +158,8 @@ param(
     [switch] $KeepStaging,
     [switch] $PreStop,
     [int]    $TimeBudgetSeconds = 0,
-    [int]    $HealthTimeoutMs   = 10000
+    [int]    $HealthTimeoutMs   = 10000,
+    [int]    $MaxPerDay         = 20
 )
 
 $ScriptVersion = '1.1'
@@ -165,6 +172,16 @@ $ErrorActionPreference = 'Stop'
 if ($PreStop) {
     if (-not $PSBoundParameters.ContainsKey('TimeBudgetSeconds')) { $TimeBudgetSeconds = 45 }
     if (-not $PSBoundParameters.ContainsKey('HealthTimeoutMs'))   { $HealthTimeoutMs   = 3000 }
+}   # <-- CHANGED: PreStop block now ends here
+
+# <-- CHANGED: daily cap moved out of the PreStop block, so it applies to every run
+if ($MaxPerDay -gt 0) {
+    $today = @(Get-ChildItem -Path $OutputPath -Filter "*-$env:COMPUTERNAME-All-Logs-*.zip" -File -ErrorAction SilentlyContinue |
+               Where-Object { $_.LastWriteTime -ge (Get-Date).Date }).Count
+    if ($today -ge $MaxPerDay) {
+        Write-Host ("Skipping collection: {0} already has {1} bundle(s) today in {2} (limit {3})" -f $env:COMPUTERNAME, $today, $OutputPath, $MaxPerDay)
+        exit 0
+    }
 }
 
 # Hard per-invocation timeout (ms) for external commands that can hang mid-run
