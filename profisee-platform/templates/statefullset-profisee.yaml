@@ -197,6 +197,11 @@ spec:
             secretKeyRef:
                 name: profisee-oidc-secret
                 key: ProfiseeOidcClientSecret
+        - name: ProfiseedataDBConnectionString
+          valueFrom:
+            secretKeyRef:
+                name: Profisee-data-DBConnectionString
+                key: ProfiseedataDBConnectionString             
         {{- if eq .Values.integrations.governance.provider "azurePurview" }}
         - name: ProfiseePurviewUrl
           valueFrom:

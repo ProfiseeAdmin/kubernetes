@@ -3,6 +3,7 @@ sqlServer:
     databaseName: "$SQLDBNAME"
     userName: "$SQLUSERNAME"
     password: "$SQLUSERPASSWORD"
+    DBConnectionString: ""
 profiseeRunTime:
     useLetsEncrypt: $USELETSENCRYPT
     adminAccount: "$ADMINACCOUNTNAME"
