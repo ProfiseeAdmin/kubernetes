@@ -638,6 +638,9 @@ sed -i -e 's~$ALATIONPASSWORD~'"$ALATIONPASSWORD_ESCAPED"'~g' Settings.yaml
 sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
+
+sed -i -e 's/$DBConnectionString/'"$RDSCONNECTIONSTRING"'/g' Settings.yaml
+
 if [ "$USEKEYVAULT" = "Yes" ]; then
 	sed -i -e 's/$USEKEYVAULT/'true'/g' Settings.yaml
 

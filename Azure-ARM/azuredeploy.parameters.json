@@ -164,6 +164,9 @@
         },
         "PricingTier":{
             "value": ""
-        }
+        },
+        "RDSConnectionString":{
+            "value": ""
+        }        
     }
 }

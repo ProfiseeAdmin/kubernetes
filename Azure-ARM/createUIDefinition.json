@@ -107,18 +107,6 @@
                   "value": "profiseeplatform:2024r2.0-win22"
                 },
                 {
-                  "label": "2025r0.0-win22",
-                  "value": "profiseeplatform:2025r0.0-win22"
-                },
-                {
-                  "label": "2025r1.0-win22",
-                  "value": "profiseeplatform:2025r1.0-win22"
-                },
-                {
-                  "label": "2025r2.0-win22",
-                  "value": "profiseeplatform:2025r2.0-win22"
-                },
-                {
                   "label": "2025r3.0-win22",
                   "value": "profiseeplatform:2025r3.0-win22"
                 },
@@ -131,13 +119,17 @@
                   "value": "profiseeplatform:2026r1.0-win22"                  
                 },
                 {
-                  "label": "2026r2.0-win22",
-                  "value": "profiseeplatformdev:2026r2.0-win22"                  
-                },
-                {
                   "label": "2026r2.0-win25",
                   "value": "profiseeplatformdev:2026r2.0-win25"                  
-                }                               
+                },
+                {
+                  "label": "2026r3.0-win25",
+                  "value": "profiseeplatform:2026r3.0-win25"                  
+                },
+                {
+                  "label": "2026r4.0-win25",
+                  "value": "profiseeplatformdev:2026r4.0-win25"                  
+                }                                                                
               ]
             },
             "visible": true
@@ -817,7 +809,20 @@
               "validationMessage": ""
             },
             "visible": true
-          }
+          },
+          {
+          "name": "RDSConnectionString",
+          "type": "Microsoft.Common.TextBox",
+          "label": "RDS Connection String",
+          "defaultValue": "",
+          "toolTip": "RDS Connection String",
+          "constraints": {
+            "required": true,
+            "regex": "",
+            "validationMessage": ""
+          },
+          "visible": true
+         }         
         ]
       },
       {
@@ -1110,6 +1115,7 @@
       "SQLServerUser": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerUserSecret, steps('sql').SQLServerUser)]",
       "SQLServerPassword": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerPasswordSecret, steps('sql').SQLServerPassword)]",
       "SQLServerDatabaseName": "[steps('sql').SQLServerDatabaseName]",
+      "RDSConnectionString": "[steps('sql').RDSConnectionString]",
       "StorageAccountCreateNew": "[if(equals(steps('storage').StorageAccountNameSection.StorageAccountName.newOrExisting, 'new'), 'Yes', 'No')]",
       "StorageAccountName": "[steps('storage').StorageAccountNameSection.StorageAccountName.name]",
       "StorageAccountResourceGroupName": "[coalesce(steps('storage').StorageAccountNameSection.StorageAccountName.resourceGroup,resourceGroup().name)]",
