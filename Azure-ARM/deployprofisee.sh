@@ -639,6 +639,9 @@ sed -i -e 's/$WEBAPPNAME/'"$WEBAPPNAME"'/g' Settings.yaml
 sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
 
+
+echo $"RDSstring is $RDSCONNECTIONSTRING";
+echo "11"
 sed -i -e 's/$DBConnectionString/'"$RDSCONNECTIONSTRING"'/g' Settings.yaml
 
 if [ "$USEKEYVAULT" = "Yes" ]; then
