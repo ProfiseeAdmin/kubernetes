@@ -199,7 +199,7 @@
       "defaultValue": "[newGuid()]",
       "type": "String"
     },
-    "ProfiseeanywhereConnectionString":{
+    "ProfiseeAnywhereConnectionString":{
       "defaultValue": "",
       "type": "string"
     }   
@@ -253,7 +253,7 @@
     "SQLServerDatabaseName":"[parameters('SQLServerDatabaseName')]",
     "SQLUSERPASSWORD":"[parameters('SQLServerPassword')]",
     "SQLUSERNAME":"[parameters('SQLServerUser')]",
-    "ProfiseeanywhereConnectionString":"[parameters('ProfiseeanywhereConnectionString')]",
+    "ProfiseeAnywhereConnectionString":"[parameters('ProfiseeAnywhereConnectionString')]",
 
     "StorageAccountCreateNew" : "[parameters('StorageAccountCreateNew')]",
     "StorageAccountName":"[parameters('StorageAccountName')]",
@@ -887,7 +887,7 @@
                     },
                     {
                       "name": "PROFISEEANYWHERECONNECTIONSTRING",
-                      "value": "[variables('ProfiseeanywhereConnectionString')]"
+                      "value": "[variables('ProfiseeAnywhereConnectionString')]"
                     },                    
                     {
                       "name": "WINDOWSNODEVERSION",

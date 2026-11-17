@@ -799,11 +799,11 @@
             "visible": true
           },
           {
-          "name": "ProfiseeanywhereConnectionString",
+          "name": "ProfiseeAnywhereConnectionString",
           "type": "Microsoft.Common.TextBox",
-          "label": "Profisee anywhere Connection String",
+          "label": "Profisee Anywhere Connection String",
           "defaultValue": "",
-          "toolTip": "Profisee anywhere Connection String",
+          "toolTip": "Profisee Anywhere Connection String",
           "constraints": {
             "required": false,
             "regex": "",
@@ -1103,7 +1103,7 @@
       "SQLServerUser": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerUserSecret, steps('sql').SQLServerUser)]",
       "SQLServerPassword": "[if(equals(steps('profisee').UseKeyVault, 'Yes'), steps('sql').SQLServerPasswordSecret, steps('sql').SQLServerPassword)]",
       "SQLServerDatabaseName": "[steps('sql').SQLServerDatabaseName]",
-      "RDSConnectionString": "[steps('sql').RDSConnectionString]",
+      "ProfiseeAnywhereConnectionString": "[steps('sql').ProfiseeAnywhereConnectionString]",
       "StorageAccountCreateNew": "[if(equals(steps('storage').StorageAccountNameSection.StorageAccountName.newOrExisting, 'new'), 'Yes', 'No')]",
       "StorageAccountName": "[steps('storage').StorageAccountNameSection.StorageAccountName.name]",
       "StorageAccountResourceGroupName": "[coalesce(steps('storage').StorageAccountNameSection.StorageAccountName.resourceGroup,resourceGroup().name)]",
