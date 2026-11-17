@@ -165,8 +165,8 @@
         "PricingTier":{
             "value": ""
         },
-        "RDSConnectionString":{
+        "ProfiseenywhereConnectionString":{
             "value": ""
-        }        
+        }       
     }
 }

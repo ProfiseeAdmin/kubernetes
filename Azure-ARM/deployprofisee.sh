@@ -640,9 +640,9 @@ sed -i -e 's/$CPULIMITSVALUE/'"$safecpuvalueinmilicores"'/g' Settings.yaml
 sed -i -e 's/$MEMORYLIMITSVALUE/'"$saferamvalueinkibibytes"'/g' Settings.yaml
 
 
-echo $"RDSstring is $RDSCONNECTIONSTRING";
+echo $"ProfiseeanywhereConnectionString is $PROFISEEANYWHERECONNECTIONSTRING";
 echo "11"
-sed -i -e 's/$DBConnectionString/'"$RDSCONNECTIONSTRING"'/g' Settings.yaml
+sed -i -e 's/$DBDataConnectionString/'"$PROFISEEANYWHERECONNECTIONSTRING"'/g' Settings.yaml
 
 if [ "$USEKEYVAULT" = "Yes" ]; then
 	sed -i -e 's/$USEKEYVAULT/'true'/g' Settings.yaml

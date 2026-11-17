@@ -799,11 +799,11 @@
             "visible": true
           },
           {
-          "name": "RDSConnectionString",
+          "name": "ProfiseeanywhereConnectionString",
           "type": "Microsoft.Common.TextBox",
-          "label": "RDS Connection String",
+          "label": "Profisee anywhere Connection String",
           "defaultValue": "",
-          "toolTip": "RDS Connection String",
+          "toolTip": "Profisee anywhere Connection String",
           "constraints": {
             "required": false,
             "regex": "",

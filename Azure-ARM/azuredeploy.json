@@ -199,10 +199,10 @@
       "defaultValue": "[newGuid()]",
       "type": "String"
     },
-    "RDSConnectionString":{
+    "ProfiseeanywhereConnectionString":{
       "defaultValue": "",
       "type": "string"
-    }    
+    }   
   },
   "variables":
   {
@@ -253,7 +253,7 @@
     "SQLServerDatabaseName":"[parameters('SQLServerDatabaseName')]",
     "SQLUSERPASSWORD":"[parameters('SQLServerPassword')]",
     "SQLUSERNAME":"[parameters('SQLServerUser')]",
-    "RDSConnectionString":"[parameters('RDSConnectionString')]",
+    "ProfiseeanywhereConnectionString":"[parameters('ProfiseeanywhereConnectionString')]",
 
     "StorageAccountCreateNew" : "[parameters('StorageAccountCreateNew')]",
     "StorageAccountName":"[parameters('StorageAccountName')]",
@@ -886,8 +886,8 @@
                       "value": "[variables('InfraAdminAccount')]"
                     },
                     {
-                      "name": "RDSCONNECTIONSTRING",
-                      "value": "[variables('RDSConnectionString')]"
+                      "name": "PROFISEEANYWHERECONNECTIONSTRING",
+                      "value": "[variables('ProfiseeanywhereConnectionString')]"
                     },                    
                     {
                       "name": "WINDOWSNODEVERSION",

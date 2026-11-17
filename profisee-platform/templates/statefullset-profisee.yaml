@@ -201,7 +201,7 @@ spec:
           valueFrom:
             secretKeyRef:
                 name: profisee-data-dbconnectionstring
-                key: ProfiseedataDBConnectionString             
+                key: ProfiseedataDBConnectionString            
         {{- if eq .Values.integrations.governance.provider "azurePurview" }}
         - name: ProfiseePurviewUrl
           valueFrom:
